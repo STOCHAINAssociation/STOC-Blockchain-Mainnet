@@ -6,6 +6,7 @@ import "cosmos/msg/v1/msg.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
 import "stoc/stoc/params.proto";
+import "stoc/stoc/token.proto";
 
 option go_package = "stoc/x/stoc/types";
 
@@ -16,6 +17,9 @@ service Msg {
   // UpdateParams defines a (governance) operation for updating the module
   // parameters. The authority defaults to the x/gov module account.
   rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+
+  //CreateToken creates a new token
+  rpc CreateToken(MsgCreateToken) returns (MsgCreateTokenResponse); 
 }
 
 // MsgUpdateParams is the Msg/UpdateParams request type.
@@ -35,6 +39,30 @@ message MsgUpdateParams {
   ];
 }
 
+//MsgCreateToken defiends the message for creating a new token
+message MsgCreateToken{
+  option(cosmos.msg.v1.signer) = "creator";
+
+  string creator = 1;
+  string name = 2;
+  string symbol = 3;
+  string initial_supply = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int", 
+    (gogoproto.nullable) = false
+  ];
+  string total_supply = 5 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int", 
+    (gogoproto.nullable) = false
+  ];
+  uint32 decimals = 6;
+  string logo = 7;
+  repeated WalletDistribution distributions = 8 [(gogoproto.nullable) = false];
+  TokenTax tax = 9 [(gogoproto.nullable) = false];
+}
+
+message MsgCreateTokenResponse{
+  string symbol = 1;
+}
 // MsgUpdateParamsResponse defines the response structure for executing a
 // MsgUpdateParams message.
 message MsgUpdateParamsResponse {}

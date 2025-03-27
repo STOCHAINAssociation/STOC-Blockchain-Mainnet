@@ -3,23 +3,27 @@ package keeper
 import (
 	"fmt"
 
+	"stoc/x/stoc/types"
+
 	"cosmossdk.io/core/store"
 	"cosmossdk.io/log"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	"stoc/x/stoc/types"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 )
 
 type (
 	Keeper struct {
 		cdc          codec.BinaryCodec
 		storeService store.KVStoreService
+		// tokenStoreKey storetypes.StoreKey
 		logger       log.Logger
 
 		// the address capable of executing a MsgUpdateParams message. Typically, this
 		// should be the x/gov module account.
 		authority string
+		accountKeeper types.AccountKeeper
+		bankKeeper bankkeeper.Keeper
 	}
 )
 
@@ -28,7 +32,8 @@ func NewKeeper(
 	storeService store.KVStoreService,
 	logger log.Logger,
 	authority string,
-
+	bankKeeper bankkeeper.Keeper,
+	accountKeeper types.AccountKeeper,
 ) Keeper {
 	if _, err := sdk.AccAddressFromBech32(authority); err != nil {
 		panic(fmt.Sprintf("invalid authority address: %s", authority))
@@ -37,8 +42,10 @@ func NewKeeper(
 	return Keeper{
 		cdc:          cdc,
 		storeService: storeService,
-		authority:    authority,
 		logger:       logger,
+		authority:    authority,
+		bankKeeper:   bankKeeper,
+		accountKeeper: accountKeeper,
 	}
 }
 
