@@ -26,7 +26,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		Decimals:      msg.Decimals,
 		Logo:          msg.Logo,
 		Distributions: msg.Distributions,
-		Tax:           msg.Tax,
+		Tax: types.TokenTax{
+			Percent: math.LegacyZeroDec(),
+			RecipientAddress: "",
+		},
 		Creator:       msg.Creator,
 	}
 	
@@ -63,8 +66,9 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 				return nil, sdkerrors.Wrap(err, "invalid distribution address")
 			}
 			
-			// Calculate amount for this recipient
-			amount := initialSupply.Mul(math.NewIntFromBigInt(dist.Percent.BigInt()))
+			// Calculate amount using simple percentage math (40 means 40%)
+			// Calculate: amount = initialSupply * percent / 100
+			amount := initialSupply.MulRaw(int64(dist.Percent)).QuoRaw(100)
 			
 			// Mint tokens to the recipient
 			coin := sdk.NewCoin(token.Symbol, amount)

@@ -39,10 +39,7 @@ message WalletDistribution {
   option (gogoproto.equal) = true;
   
   string address = 1;
-  string percent = 2 [
-    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
-    (gogoproto.nullable) = false
-  ];
+  uint32 percent = 2;
 }
 
 // TokenTax defines tax configuration for token transactions
