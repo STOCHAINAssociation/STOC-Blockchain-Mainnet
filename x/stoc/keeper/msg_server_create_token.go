@@ -18,6 +18,16 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	"name", msg.Name,
 	"creator", msg.Creator)
 	// Create a token object
+
+	distributions := msg.Distributions
+    if len(distributions) == 0 {
+        distributions = []types.WalletDistribution{
+            {
+                Address: msg.Creator,
+                Percent: 100,
+            },
+        }
+    }
 	token := types.Token{
 		Name:          msg.Name,
 		Symbol:        msg.Symbol,
@@ -25,7 +35,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		TotalSupply:   msg.TotalSupply,
 		Decimals:      msg.Decimals,
 		Logo:          msg.Logo,
-		Distributions: msg.Distributions,
+		Distributions: distributions,
 		Tax: types.TokenTax{
 			Percent: math.LegacyZeroDec(),
 			RecipientAddress: "",
