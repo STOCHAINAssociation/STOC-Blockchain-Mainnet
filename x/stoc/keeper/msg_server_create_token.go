@@ -12,22 +12,30 @@ import (
 
 func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken) (*types.MsgCreateTokenResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	
-	k.Logger().Info("Starting token creation", 
-	"symbol", msg.Symbol, 
-	"name", msg.Name,
-	"creator", msg.Creator)
+
+	k.Logger().Info("Starting token creation",
+		"symbol", msg.Symbol,
+		"name", msg.Name,
+		"creator", msg.Creator)
 	// Create a token object
 
 	distributions := msg.Distributions
-    if len(distributions) == 0 {
-        distributions = []types.WalletDistribution{
-            {
-                Address: msg.Creator,
-                Percent: 100,
-            },
-        }
-    }
+	if len(distributions) == 0 {
+		distributions = []types.WalletDistribution{
+			{
+				Address: msg.Creator,
+				Percent: 100,
+			},
+		}
+	}
+	taxToUse := msg.Tax
+	if taxToUse.Percent.IsNil() {
+		taxToUse = types.TokenTax{
+			Percent:          math.LegacyZeroDec(),
+			RecipientAddress: "",
+		}
+	}
+
 	token := types.Token{
 		Name:          msg.Name,
 		Symbol:        msg.Symbol,
@@ -36,38 +44,35 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		Decimals:      msg.Decimals,
 		Logo:          msg.Logo,
 		Distributions: distributions,
-		Tax: types.TokenTax{
-			Percent: math.LegacyZeroDec(),
-			RecipientAddress: "",
-		},
+		Tax:           taxToUse,
 		Creator:       msg.Creator,
 	}
-	
+
 	// Validate token
 	if err := types.Validate(token); err != nil {
 		k.Logger().Error("Token validation failed", "error", err)
 		return nil, sdkerrors.Wrap(err, "invalid token")
 	}
-	
+
 	// Check if token symbol already exists
 	if k.HasToken(ctx, token.Symbol) {
 		k.Logger().Error("Token symbol already exists", "symbol", token.Symbol)
 		return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.Symbol)
 	}
-	
+
 	// Save the token
 	k.SetToken(ctx, token)
 	k.Logger().Info("Token saved to store", "symbol", token.Symbol)
-	
+
 	// Mint initial supply and distribute according to distribution list
 	creator, err := sdk.AccAddressFromBech32(msg.Creator)
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "invalid creator address")
 	}
-	
+
 	// Calculate the initial supply as tokens (adjusted for decimals)
 	initialSupply := token.InitialSupply
-	
+
 	// If distributions specified, distribute according to percentages
 	if len(token.Distributions) > 0 {
 		for _, dist := range token.Distributions {
@@ -75,17 +80,17 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			if err != nil {
 				return nil, sdkerrors.Wrap(err, "invalid distribution address")
 			}
-			
+
 			// Calculate amount using simple percentage math (40 means 40%)
 			// Calculate: amount = initialSupply * percent / 100
 			amount := initialSupply.MulRaw(int64(dist.Percent)).QuoRaw(100)
-			
+
 			// Mint tokens to the recipient
 			coin := sdk.NewCoin(token.Symbol, amount)
 			if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 				return nil, err
 			}
-			
+
 			if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
 				return nil, err
 			}
@@ -96,12 +101,12 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
-		
+
 		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, creator, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
 	}
-	
+
 	// Emit token creation event
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
@@ -112,16 +117,16 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			sdk.NewAttribute(types.AttributeKeyInitialSupply, token.InitialSupply.String()),
 		),
 	)
-	
+
 	// After minting:
-	k.Logger().Info("Token minting complete", 
-		"symbol", token.Symbol, 
+	k.Logger().Info("Token minting complete",
+		"symbol", token.Symbol,
 		"amount", initialSupply.String(),
 		"recipient", creator.String())
-	
+
 	// Final success log
 	k.Logger().Info("Token creation successful", "symbol", token.Symbol)
-	
+
 	return &types.MsgCreateTokenResponse{
 		Symbol: token.Symbol,
 	}, nil
