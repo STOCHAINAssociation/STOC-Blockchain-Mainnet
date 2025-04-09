@@ -73,6 +73,12 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// Calculate the initial supply as tokens (adjusted for decimals)
 	initialSupply := token.InitialSupply
 
+	// Determine if we should mint remaining tokens to module account
+	remainingSupply := math.NewInt(0)
+	if token.TotalSupply.GT(token.InitialSupply) {
+		remainingSupply = token.TotalSupply.Sub(token.InitialSupply)
+	}
+
 	// If distributions specified, distribute according to percentages
 	if len(token.Distributions) > 0 {
 		for _, dist := range token.Distributions {
@@ -107,6 +113,18 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		}
 	}
 
+	//If there are remaining tokens (totals > initial), mint them to module account
+
+	if remainingSupply.GT(math.ZeroInt()) {
+		coin := sdk.NewCoin(token.Symbol, remainingSupply)
+		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
+			return nil, err
+		}
+
+		k.Logger().Info("Minting remaining tokens to module account", "symbol", token.Symbol, "amount", remainingSupply.String())
+
+	}
+
 	// Emit token creation event
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
@@ -130,7 +148,5 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	return &types.MsgCreateTokenResponse{
 		Symbol: token.Symbol,
 	}, nil
-	// return &types.MsgCreateTokenResponse{
-	// 	Symbol: "test",
-	// }, nil
+
 }
