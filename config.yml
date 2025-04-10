@@ -1,0 +1,36 @@
+validation: sovereign
+version: 1
+build:
+  binary: stocd
+  proto:
+    path: ""
+accounts:
+- name: admin
+  coins:
+  - 9000000000000000ustoc
+- name: validator1
+  coins:
+  - 500000000000000ustoc
+- name: validator2
+  coins:
+  - 490000000000000ustoc
+faucet:
+  name: validator1
+  coins: []
+  openapi:
+    path: docs/static/openapi.yml
+genesis:
+  app_state:
+    crisis:
+      constant_fee:
+        denom: ustoc
+    staking:
+      params:
+        bond_denom: ustoc
+validators:
+- name: validator1
+  bonded: 10000000000ustoc
+- name: validator2
+  bonded: 10000000000ustoc
+  app:
+    minimum-gas-prices: 0.0001ustoc
