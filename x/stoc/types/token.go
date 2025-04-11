@@ -76,15 +76,3 @@ func Validate(token Token) error {
 
 	return nil
 }
-
-func ValidateMintToken(symbol string, amount math.Int) error {
-	if symbol == "" {
-		return fmt.Errorf("symbol cannot be empty")
-	}
-
-	if amount.IsNil() || amount.IsZero() || amount.IsNegative() {
-		return fmt.Errorf("mint amount must be positive")
-	}
-
-	return nil
-}
