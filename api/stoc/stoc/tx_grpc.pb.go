@@ -19,8 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_UpdateParams_FullMethodName = "/stoc.stoc.Msg/UpdateParams"
-	Msg_CreateToken_FullMethodName  = "/stoc.stoc.Msg/CreateToken"
+	Msg_UpdateParams_FullMethodName  = "/stoc.stoc.Msg/UpdateParams"
+	Msg_CreateToken_FullMethodName   = "/stoc.stoc.Msg/CreateToken"
+	Msg_ReleaseTokens_FullMethodName = "/stoc.stoc.Msg/ReleaseTokens"
+	Msg_MintTokens_FullMethodName    = "/stoc.stoc.Msg/MintTokens"
 )
 
 // MsgClient is the client API for Msg service.
@@ -32,6 +34,10 @@ type MsgClient interface {
 	UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error)
 	// CreateToken creates a new token
 	CreateToken(ctx context.Context, in *MsgCreateToken, opts ...grpc.CallOption) (*MsgCreateTokenResponse, error)
+	// ReleaseTokens releases tokens to a recipient
+	ReleaseTokens(ctx context.Context, in *MsgReleaseTokens, opts ...grpc.CallOption) (*MsgReleaseTokensResponse, error)
+	// MintTokens mints tokens to a recipient
+	MintTokens(ctx context.Context, in *MsgMintTokens, opts ...grpc.CallOption) (*MsgMintTokensResponse, error)
 }
 
 type msgClient struct {
@@ -60,6 +66,24 @@ func (c *msgClient) CreateToken(ctx context.Context, in *MsgCreateToken, opts ..
 	return out, nil
 }
 
+func (c *msgClient) ReleaseTokens(ctx context.Context, in *MsgReleaseTokens, opts ...grpc.CallOption) (*MsgReleaseTokensResponse, error) {
+	out := new(MsgReleaseTokensResponse)
+	err := c.cc.Invoke(ctx, Msg_ReleaseTokens_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) MintTokens(ctx context.Context, in *MsgMintTokens, opts ...grpc.CallOption) (*MsgMintTokensResponse, error) {
+	out := new(MsgMintTokensResponse)
+	err := c.cc.Invoke(ctx, Msg_MintTokens_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
@@ -69,6 +93,10 @@ type MsgServer interface {
 	UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error)
 	// CreateToken creates a new token
 	CreateToken(context.Context, *MsgCreateToken) (*MsgCreateTokenResponse, error)
+	// ReleaseTokens releases tokens to a recipient
+	ReleaseTokens(context.Context, *MsgReleaseTokens) (*MsgReleaseTokensResponse, error)
+	// MintTokens mints tokens to a recipient
+	MintTokens(context.Context, *MsgMintTokens) (*MsgMintTokensResponse, error)
 	mustEmbedUnimplementedMsgServer()
 }
 
@@ -81,6 +109,12 @@ func (UnimplementedMsgServer) UpdateParams(context.Context, *MsgUpdateParams) (*
 }
 func (UnimplementedMsgServer) CreateToken(context.Context, *MsgCreateToken) (*MsgCreateTokenResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateToken not implemented")
+}
+func (UnimplementedMsgServer) ReleaseTokens(context.Context, *MsgReleaseTokens) (*MsgReleaseTokensResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReleaseTokens not implemented")
+}
+func (UnimplementedMsgServer) MintTokens(context.Context, *MsgMintTokens) (*MsgMintTokensResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MintTokens not implemented")
 }
 func (UnimplementedMsgServer) mustEmbedUnimplementedMsgServer() {}
 
@@ -131,6 +165,42 @@ func _Msg_CreateToken_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_ReleaseTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgReleaseTokens)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ReleaseTokens(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ReleaseTokens_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ReleaseTokens(ctx, req.(*MsgReleaseTokens))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_MintTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgMintTokens)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).MintTokens(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_MintTokens_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).MintTokens(ctx, req.(*MsgMintTokens))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Msg_ServiceDesc is the grpc.ServiceDesc for Msg service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -145,6 +215,14 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateToken",
 			Handler:    _Msg_CreateToken_Handler,
+		},
+		{
+			MethodName: "ReleaseTokens",
+			Handler:    _Msg_ReleaseTokens_Handler,
+		},
+		{
+			MethodName: "MintTokens",
+			Handler:    _Msg_MintTokens_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

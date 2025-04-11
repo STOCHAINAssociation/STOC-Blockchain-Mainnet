@@ -2,12 +2,14 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 
 	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
 func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken) (*types.MsgCreateTokenResponse, error) {
@@ -46,6 +48,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		Distributions: distributions,
 		Tax:           taxToUse,
 		Creator:       msg.Creator,
+		Unlimited:     msg.Unlimited,
 	}
 
 	// Validate token
@@ -59,10 +62,6 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		k.Logger().Error("Token symbol already exists", "symbol", token.Symbol)
 		return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.Symbol)
 	}
-
-	// Save the token
-	k.SetToken(ctx, token)
-	k.Logger().Info("Token saved to store", "symbol", token.Symbol)
 
 	// Mint initial supply and distribute according to distribution list
 	creator, err := sdk.AccAddressFromBech32(msg.Creator)
@@ -79,6 +78,9 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		remainingSupply = token.TotalSupply.Sub(token.InitialSupply)
 	}
 
+	token.RemainingSupply = remainingSupply
+
+	k.SetToken(ctx, token)
 	// If distributions specified, distribute according to percentages
 	if len(token.Distributions) > 0 {
 		for _, dist := range token.Distributions {
@@ -124,6 +126,44 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		k.Logger().Info("Minting remaining tokens to module account", "symbol", token.Symbol, "amount", remainingSupply.String())
 
 	}
+
+	// register metadata for token so that the wallet can display it correctly
+	denomMetadata := banktypes.Metadata{
+		Description: fmt.Sprintf("Token %s created on Stoc chain", token.Name),
+		DenomUnits: []*banktypes.DenomUnit{
+			{
+				Denom:    token.Symbol,
+				Exponent: 0,
+				Aliases:  []string{token.Symbol},
+			},
+		},
+		Base:    token.Symbol,
+		Display: token.Symbol,
+		Name:    token.Name,
+		Symbol:  token.Symbol,
+		URI:     token.Logo,
+		URIHash: "",
+	}
+
+	// if token has decimals, add DenomUnit with exponent = decimals
+	if token.Decimals > 0 {
+		smallestDenom := token.Symbol
+		displayDenom := token.Symbol
+
+		denomMetadata.DenomUnits = []*banktypes.DenomUnit{
+			{
+				Denom:    smallestDenom,
+				Exponent: 0,
+			},
+			{
+				Denom:    displayDenom,
+				Exponent: uint32(token.Decimals),
+				Aliases:  []string{token.Symbol},
+			},
+		}
+	}
+
+	k.bankKeeper.SetDenomMetaData(ctx, denomMetadata)
 
 	// Emit token creation event
 	ctx.EventManager().EmitEvent(

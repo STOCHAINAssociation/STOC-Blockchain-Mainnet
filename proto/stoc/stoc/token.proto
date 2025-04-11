@@ -32,6 +32,14 @@ message Token {
   
   // Creator of the token
   string creator = 9;
+
+  // Remaining supply of the token
+  string remaining_supply = 10 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false
+  ];
+
+  bool unlimited = 11;
 }
 
 // WalletDistribution defines how initial tokens are distributed
