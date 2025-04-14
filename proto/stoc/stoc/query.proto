@@ -17,14 +17,19 @@ service Query {
     option (google.api.http).get = "/stoc/stoc/params";
   }
 
-   // Token returns information about a specific token
+   // Token returns information about a specific token by minimal_denom
    rpc Token(QueryTokenRequest) returns (QueryTokenResponse) {
-    option (google.api.http).get = "/stoc/stoc/tokens/{symbol}";
+    option (google.api.http).get = "/stoc/stoc/tokens/{minimal_denom}";
   }
   
   // Tokens returns all tokens
   rpc Tokens(QueryTokensRequest) returns (QueryTokensResponse) {
     option (google.api.http).get = "/stoc/stoc/tokens";
+  }
+
+  // TokensBySymbol returns tokens with a specific symbol
+  rpc TokensBySymbol(QueryTokensBySymbolRequest) returns (QueryTokensBySymbolResponse) {
+    option (google.api.http).get = "/stoc/stoc/tokens_by_symbol/{symbol}";
   }
 }
 
@@ -42,7 +47,7 @@ message QueryParamsResponse {
 
 // QueryTokenRequest is the request type for the Query/Token RPC method
 message QueryTokenRequest {
-  string symbol = 1;
+  string minimal_denom = 1;
 }
 
 // QueryTokenResponse is the response type for the Query/Token RPC method
@@ -60,4 +65,12 @@ message QueryTokensRequest {
 message QueryTokensResponse {
   repeated Token tokens = 1 [(gogoproto.nullable) = false];
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryTokensBySymbolRequest {
+  string symbol = 1;
+}
+
+message QueryTokensBySymbolResponse {
+  repeated Token tokens = 1 [(gogoproto.nullable) = false];
 }

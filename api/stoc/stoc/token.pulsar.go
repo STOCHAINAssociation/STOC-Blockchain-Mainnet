@@ -15,59 +15,60 @@ import (
 	sync "sync"
 )
 
-var _ protoreflect.List = (*_Token_7_list)(nil)
+var _ protoreflect.List = (*_Token_8_list)(nil)
 
-type _Token_7_list struct {
+type _Token_8_list struct {
 	list *[]*WalletDistribution
 }
 
-func (x *_Token_7_list) Len() int {
+func (x *_Token_8_list) Len() int {
 	if x.list == nil {
 		return 0
 	}
 	return len(*x.list)
 }
 
-func (x *_Token_7_list) Get(i int) protoreflect.Value {
+func (x *_Token_8_list) Get(i int) protoreflect.Value {
 	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
 }
 
-func (x *_Token_7_list) Set(i int, value protoreflect.Value) {
+func (x *_Token_8_list) Set(i int, value protoreflect.Value) {
 	valueUnwrapped := value.Message()
 	concreteValue := valueUnwrapped.Interface().(*WalletDistribution)
 	(*x.list)[i] = concreteValue
 }
 
-func (x *_Token_7_list) Append(value protoreflect.Value) {
+func (x *_Token_8_list) Append(value protoreflect.Value) {
 	valueUnwrapped := value.Message()
 	concreteValue := valueUnwrapped.Interface().(*WalletDistribution)
 	*x.list = append(*x.list, concreteValue)
 }
 
-func (x *_Token_7_list) AppendMutable() protoreflect.Value {
+func (x *_Token_8_list) AppendMutable() protoreflect.Value {
 	v := new(WalletDistribution)
 	*x.list = append(*x.list, v)
 	return protoreflect.ValueOfMessage(v.ProtoReflect())
 }
 
-func (x *_Token_7_list) Truncate(n int) {
+func (x *_Token_8_list) Truncate(n int) {
 	for i := n; i < len(*x.list); i++ {
 		(*x.list)[i] = nil
 	}
 	*x.list = (*x.list)[:n]
 }
 
-func (x *_Token_7_list) NewElement() protoreflect.Value {
+func (x *_Token_8_list) NewElement() protoreflect.Value {
 	v := new(WalletDistribution)
 	return protoreflect.ValueOfMessage(v.ProtoReflect())
 }
 
-func (x *_Token_7_list) IsValid() bool {
+func (x *_Token_8_list) IsValid() bool {
 	return x.list != nil
 }
 
 var (
 	md_Token                  protoreflect.MessageDescriptor
+	fd_Token_id               protoreflect.FieldDescriptor
 	fd_Token_name             protoreflect.FieldDescriptor
 	fd_Token_symbol           protoreflect.FieldDescriptor
 	fd_Token_initial_supply   protoreflect.FieldDescriptor
@@ -79,11 +80,13 @@ var (
 	fd_Token_creator          protoreflect.FieldDescriptor
 	fd_Token_remaining_supply protoreflect.FieldDescriptor
 	fd_Token_unlimited        protoreflect.FieldDescriptor
+	fd_Token_minimal_denom    protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_stoc_stoc_token_proto_init()
 	md_Token = File_stoc_stoc_token_proto.Messages().ByName("Token")
+	fd_Token_id = md_Token.Fields().ByName("id")
 	fd_Token_name = md_Token.Fields().ByName("name")
 	fd_Token_symbol = md_Token.Fields().ByName("symbol")
 	fd_Token_initial_supply = md_Token.Fields().ByName("initial_supply")
@@ -95,6 +98,7 @@ func init() {
 	fd_Token_creator = md_Token.Fields().ByName("creator")
 	fd_Token_remaining_supply = md_Token.Fields().ByName("remaining_supply")
 	fd_Token_unlimited = md_Token.Fields().ByName("unlimited")
+	fd_Token_minimal_denom = md_Token.Fields().ByName("minimal_denom")
 }
 
 var _ protoreflect.Message = (*fastReflection_Token)(nil)
@@ -162,6 +166,12 @@ func (x *fastReflection_Token) Interface() protoreflect.ProtoMessage {
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
 func (x *fastReflection_Token) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Id != "" {
+		value := protoreflect.ValueOfString(x.Id)
+		if !f(fd_Token_id, value) {
+			return
+		}
+	}
 	if x.Name != "" {
 		value := protoreflect.ValueOfString(x.Name)
 		if !f(fd_Token_name, value) {
@@ -199,7 +209,7 @@ func (x *fastReflection_Token) Range(f func(protoreflect.FieldDescriptor, protor
 		}
 	}
 	if len(x.Distributions) != 0 {
-		value := protoreflect.ValueOfList(&_Token_7_list{list: &x.Distributions})
+		value := protoreflect.ValueOfList(&_Token_8_list{list: &x.Distributions})
 		if !f(fd_Token_distributions, value) {
 			return
 		}
@@ -228,6 +238,12 @@ func (x *fastReflection_Token) Range(f func(protoreflect.FieldDescriptor, protor
 			return
 		}
 	}
+	if x.MinimalDenom != "" {
+		value := protoreflect.ValueOfString(x.MinimalDenom)
+		if !f(fd_Token_minimal_denom, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -243,6 +259,8 @@ func (x *fastReflection_Token) Range(f func(protoreflect.FieldDescriptor, protor
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_Token) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
+	case "stoc.stoc.Token.id":
+		return x.Id != ""
 	case "stoc.stoc.Token.name":
 		return x.Name != ""
 	case "stoc.stoc.Token.symbol":
@@ -265,6 +283,8 @@ func (x *fastReflection_Token) Has(fd protoreflect.FieldDescriptor) bool {
 		return x.RemainingSupply != ""
 	case "stoc.stoc.Token.unlimited":
 		return x.Unlimited != false
+	case "stoc.stoc.Token.minimal_denom":
+		return x.MinimalDenom != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.Token"))
@@ -281,6 +301,8 @@ func (x *fastReflection_Token) Has(fd protoreflect.FieldDescriptor) bool {
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_Token) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
+	case "stoc.stoc.Token.id":
+		x.Id = ""
 	case "stoc.stoc.Token.name":
 		x.Name = ""
 	case "stoc.stoc.Token.symbol":
@@ -303,6 +325,8 @@ func (x *fastReflection_Token) Clear(fd protoreflect.FieldDescriptor) {
 		x.RemainingSupply = ""
 	case "stoc.stoc.Token.unlimited":
 		x.Unlimited = false
+	case "stoc.stoc.Token.minimal_denom":
+		x.MinimalDenom = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.Token"))
@@ -319,6 +343,9 @@ func (x *fastReflection_Token) Clear(fd protoreflect.FieldDescriptor) {
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_Token) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
+	case "stoc.stoc.Token.id":
+		value := x.Id
+		return protoreflect.ValueOfString(value)
 	case "stoc.stoc.Token.name":
 		value := x.Name
 		return protoreflect.ValueOfString(value)
@@ -339,9 +366,9 @@ func (x *fastReflection_Token) Get(descriptor protoreflect.FieldDescriptor) prot
 		return protoreflect.ValueOfString(value)
 	case "stoc.stoc.Token.distributions":
 		if len(x.Distributions) == 0 {
-			return protoreflect.ValueOfList(&_Token_7_list{})
+			return protoreflect.ValueOfList(&_Token_8_list{})
 		}
-		listValue := &_Token_7_list{list: &x.Distributions}
+		listValue := &_Token_8_list{list: &x.Distributions}
 		return protoreflect.ValueOfList(listValue)
 	case "stoc.stoc.Token.tax":
 		value := x.Tax
@@ -355,6 +382,9 @@ func (x *fastReflection_Token) Get(descriptor protoreflect.FieldDescriptor) prot
 	case "stoc.stoc.Token.unlimited":
 		value := x.Unlimited
 		return protoreflect.ValueOfBool(value)
+	case "stoc.stoc.Token.minimal_denom":
+		value := x.MinimalDenom
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.Token"))
@@ -375,6 +405,8 @@ func (x *fastReflection_Token) Get(descriptor protoreflect.FieldDescriptor) prot
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_Token) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
+	case "stoc.stoc.Token.id":
+		x.Id = value.Interface().(string)
 	case "stoc.stoc.Token.name":
 		x.Name = value.Interface().(string)
 	case "stoc.stoc.Token.symbol":
@@ -389,7 +421,7 @@ func (x *fastReflection_Token) Set(fd protoreflect.FieldDescriptor, value protor
 		x.Logo = value.Interface().(string)
 	case "stoc.stoc.Token.distributions":
 		lv := value.List()
-		clv := lv.(*_Token_7_list)
+		clv := lv.(*_Token_8_list)
 		x.Distributions = *clv.list
 	case "stoc.stoc.Token.tax":
 		x.Tax = value.Message().Interface().(*TokenTax)
@@ -399,6 +431,8 @@ func (x *fastReflection_Token) Set(fd protoreflect.FieldDescriptor, value protor
 		x.RemainingSupply = value.Interface().(string)
 	case "stoc.stoc.Token.unlimited":
 		x.Unlimited = value.Bool()
+	case "stoc.stoc.Token.minimal_denom":
+		x.MinimalDenom = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.Token"))
@@ -423,13 +457,15 @@ func (x *fastReflection_Token) Mutable(fd protoreflect.FieldDescriptor) protoref
 		if x.Distributions == nil {
 			x.Distributions = []*WalletDistribution{}
 		}
-		value := &_Token_7_list{list: &x.Distributions}
+		value := &_Token_8_list{list: &x.Distributions}
 		return protoreflect.ValueOfList(value)
 	case "stoc.stoc.Token.tax":
 		if x.Tax == nil {
 			x.Tax = new(TokenTax)
 		}
 		return protoreflect.ValueOfMessage(x.Tax.ProtoReflect())
+	case "stoc.stoc.Token.id":
+		panic(fmt.Errorf("field id of message stoc.stoc.Token is not mutable"))
 	case "stoc.stoc.Token.name":
 		panic(fmt.Errorf("field name of message stoc.stoc.Token is not mutable"))
 	case "stoc.stoc.Token.symbol":
@@ -448,6 +484,8 @@ func (x *fastReflection_Token) Mutable(fd protoreflect.FieldDescriptor) protoref
 		panic(fmt.Errorf("field remaining_supply of message stoc.stoc.Token is not mutable"))
 	case "stoc.stoc.Token.unlimited":
 		panic(fmt.Errorf("field unlimited of message stoc.stoc.Token is not mutable"))
+	case "stoc.stoc.Token.minimal_denom":
+		panic(fmt.Errorf("field minimal_denom of message stoc.stoc.Token is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.Token"))
@@ -461,6 +499,8 @@ func (x *fastReflection_Token) Mutable(fd protoreflect.FieldDescriptor) protoref
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_Token) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
+	case "stoc.stoc.Token.id":
+		return protoreflect.ValueOfString("")
 	case "stoc.stoc.Token.name":
 		return protoreflect.ValueOfString("")
 	case "stoc.stoc.Token.symbol":
@@ -475,7 +515,7 @@ func (x *fastReflection_Token) NewField(fd protoreflect.FieldDescriptor) protore
 		return protoreflect.ValueOfString("")
 	case "stoc.stoc.Token.distributions":
 		list := []*WalletDistribution{}
-		return protoreflect.ValueOfList(&_Token_7_list{list: &list})
+		return protoreflect.ValueOfList(&_Token_8_list{list: &list})
 	case "stoc.stoc.Token.tax":
 		m := new(TokenTax)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
@@ -485,6 +525,8 @@ func (x *fastReflection_Token) NewField(fd protoreflect.FieldDescriptor) protore
 		return protoreflect.ValueOfString("")
 	case "stoc.stoc.Token.unlimited":
 		return protoreflect.ValueOfBool(false)
+	case "stoc.stoc.Token.minimal_denom":
+		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.Token"))
@@ -554,6 +596,10 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 		var n int
 		var l int
 		_ = l
+		l = len(x.Id)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		l = len(x.Name)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
@@ -598,6 +644,10 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 		if x.Unlimited {
 			n += 2
 		}
+		l = len(x.MinimalDenom)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -627,6 +677,13 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
+		if len(x.MinimalDenom) > 0 {
+			i -= len(x.MinimalDenom)
+			copy(dAtA[i:], x.MinimalDenom)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.MinimalDenom)))
+			i--
+			dAtA[i] = 0x6a
+		}
 		if x.Unlimited {
 			i--
 			if x.Unlimited {
@@ -635,21 +692,21 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 				dAtA[i] = 0
 			}
 			i--
-			dAtA[i] = 0x58
+			dAtA[i] = 0x60
 		}
 		if len(x.RemainingSupply) > 0 {
 			i -= len(x.RemainingSupply)
 			copy(dAtA[i:], x.RemainingSupply)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.RemainingSupply)))
 			i--
-			dAtA[i] = 0x52
+			dAtA[i] = 0x5a
 		}
 		if len(x.Creator) > 0 {
 			i -= len(x.Creator)
 			copy(dAtA[i:], x.Creator)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Creator)))
 			i--
-			dAtA[i] = 0x4a
+			dAtA[i] = 0x52
 		}
 		if x.Tax != nil {
 			encoded, err := options.Marshal(x.Tax)
@@ -663,7 +720,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 			copy(dAtA[i:], encoded)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 			i--
-			dAtA[i] = 0x42
+			dAtA[i] = 0x4a
 		}
 		if len(x.Distributions) > 0 {
 			for iNdEx := len(x.Distributions) - 1; iNdEx >= 0; iNdEx-- {
@@ -678,7 +735,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 				copy(dAtA[i:], encoded)
 				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 				i--
-				dAtA[i] = 0x3a
+				dAtA[i] = 0x42
 			}
 		}
 		if len(x.Logo) > 0 {
@@ -686,38 +743,45 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 			copy(dAtA[i:], x.Logo)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Logo)))
 			i--
-			dAtA[i] = 0x32
+			dAtA[i] = 0x3a
 		}
 		if x.Decimals != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.Decimals))
 			i--
-			dAtA[i] = 0x28
+			dAtA[i] = 0x30
 		}
 		if len(x.TotalSupply) > 0 {
 			i -= len(x.TotalSupply)
 			copy(dAtA[i:], x.TotalSupply)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.TotalSupply)))
 			i--
-			dAtA[i] = 0x22
+			dAtA[i] = 0x2a
 		}
 		if len(x.InitialSupply) > 0 {
 			i -= len(x.InitialSupply)
 			copy(dAtA[i:], x.InitialSupply)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.InitialSupply)))
 			i--
-			dAtA[i] = 0x1a
+			dAtA[i] = 0x22
 		}
 		if len(x.Symbol) > 0 {
 			i -= len(x.Symbol)
 			copy(dAtA[i:], x.Symbol)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Symbol)))
 			i--
-			dAtA[i] = 0x12
+			dAtA[i] = 0x1a
 		}
 		if len(x.Name) > 0 {
 			i -= len(x.Name)
 			copy(dAtA[i:], x.Name)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Name)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.Id) > 0 {
+			i -= len(x.Id)
+			copy(dAtA[i:], x.Id)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Id)))
 			i--
 			dAtA[i] = 0xa
 		}
@@ -772,6 +836,38 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 			switch fieldNum {
 			case 1:
 				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Id = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
 				}
 				var stringLen uint64
@@ -802,7 +898,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 				}
 				x.Name = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 2:
+			case 3:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Symbol", wireType)
 				}
@@ -834,7 +930,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 				}
 				x.Symbol = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 3:
+			case 4:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field InitialSupply", wireType)
 				}
@@ -866,7 +962,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 				}
 				x.InitialSupply = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 4:
+			case 5:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TotalSupply", wireType)
 				}
@@ -898,7 +994,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 				}
 				x.TotalSupply = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 5:
+			case 6:
 				if wireType != 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Decimals", wireType)
 				}
@@ -917,7 +1013,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 						break
 					}
 				}
-			case 6:
+			case 7:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Logo", wireType)
 				}
@@ -949,7 +1045,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 				}
 				x.Logo = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 7:
+			case 8:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Distributions", wireType)
 				}
@@ -983,7 +1079,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
-			case 8:
+			case 9:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Tax", wireType)
 				}
@@ -1019,7 +1115,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
-			case 9:
+			case 10:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Creator", wireType)
 				}
@@ -1051,7 +1147,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 				}
 				x.Creator = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 10:
+			case 11:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field RemainingSupply", wireType)
 				}
@@ -1083,7 +1179,7 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 				}
 				x.RemainingSupply = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 11:
+			case 12:
 				if wireType != 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Unlimited", wireType)
 				}
@@ -1103,6 +1199,38 @@ func (x *fastReflection_Token) ProtoMethods() *protoiface.Methods {
 					}
 				}
 				x.Unlimited = bool(v != 0)
+			case 13:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MinimalDenom", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.MinimalDenom = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -2109,21 +2237,23 @@ type Token struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Symbol        string `protobuf:"bytes,2,opt,name=symbol,proto3" json:"symbol,omitempty"`
-	InitialSupply string `protobuf:"bytes,3,opt,name=initial_supply,json=initialSupply,proto3" json:"initial_supply,omitempty"`
-	TotalSupply   string `protobuf:"bytes,4,opt,name=total_supply,json=totalSupply,proto3" json:"total_supply,omitempty"`
-	Decimals      uint32 `protobuf:"varint,5,opt,name=decimals,proto3" json:"decimals,omitempty"`
-	Logo          string `protobuf:"bytes,6,opt,name=logo,proto3" json:"logo,omitempty"`
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Symbol        string `protobuf:"bytes,3,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	InitialSupply string `protobuf:"bytes,4,opt,name=initial_supply,json=initialSupply,proto3" json:"initial_supply,omitempty"`
+	TotalSupply   string `protobuf:"bytes,5,opt,name=total_supply,json=totalSupply,proto3" json:"total_supply,omitempty"`
+	Decimals      uint32 `protobuf:"varint,6,opt,name=decimals,proto3" json:"decimals,omitempty"`
+	Logo          string `protobuf:"bytes,7,opt,name=logo,proto3" json:"logo,omitempty"`
 	// Wallet distributions for initial supply
-	Distributions []*WalletDistribution `protobuf:"bytes,7,rep,name=distributions,proto3" json:"distributions,omitempty"`
+	Distributions []*WalletDistribution `protobuf:"bytes,8,rep,name=distributions,proto3" json:"distributions,omitempty"`
 	// Tax configuration
-	Tax *TokenTax `protobuf:"bytes,8,opt,name=tax,proto3" json:"tax,omitempty"`
+	Tax *TokenTax `protobuf:"bytes,9,opt,name=tax,proto3" json:"tax,omitempty"`
 	// Creator of the token
-	Creator string `protobuf:"bytes,9,opt,name=creator,proto3" json:"creator,omitempty"`
+	Creator string `protobuf:"bytes,10,opt,name=creator,proto3" json:"creator,omitempty"`
 	// Remaining supply of the token
-	RemainingSupply string `protobuf:"bytes,10,opt,name=remaining_supply,json=remainingSupply,proto3" json:"remaining_supply,omitempty"`
-	Unlimited       bool   `protobuf:"varint,11,opt,name=unlimited,proto3" json:"unlimited,omitempty"`
+	RemainingSupply string `protobuf:"bytes,11,opt,name=remaining_supply,json=remainingSupply,proto3" json:"remaining_supply,omitempty"`
+	Unlimited       bool   `protobuf:"varint,12,opt,name=unlimited,proto3" json:"unlimited,omitempty"`
+	MinimalDenom    string `protobuf:"bytes,13,opt,name=minimal_denom,json=minimalDenom,proto3" json:"minimal_denom,omitempty"`
 }
 
 func (x *Token) Reset() {
@@ -2144,6 +2274,13 @@ func (*Token) ProtoMessage() {}
 // Deprecated: Use Token.ProtoReflect.Descriptor instead.
 func (*Token) Descriptor() ([]byte, []int) {
 	return file_stoc_stoc_token_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Token) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
 }
 
 func (x *Token) GetName() string {
@@ -2221,6 +2358,13 @@ func (x *Token) GetUnlimited() bool {
 		return x.Unlimited
 	}
 	return false
+}
+
+func (x *Token) GetMinimalDenom() string {
+	if x != nil {
+		return x.MinimalDenom
+	}
+	return ""
 }
 
 // WalletDistribution defines how initial tokens are distributed
@@ -2320,60 +2464,63 @@ var file_stoc_stoc_token_proto_rawDesc = []byte{
 	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f,
 	0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x1e, 0x63, 0x6f, 0x73,
 	0x6d, 0x6f, 0x73, 0x2f, 0x62, 0x61, 0x73, 0x65, 0x2f, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31,
-	0x2f, 0x63, 0x6f, 0x69, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xfe, 0x03, 0x0a, 0x05,
-	0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20,
+	0x2f, 0x63, 0x6f, 0x69, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xb3, 0x04, 0x0a, 0x05,
+	0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x02, 0x69, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x02, 0x20,
 	0x01, 0x28, 0x09, 0x52, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x29, 0x0a, 0x06, 0x73, 0x79, 0x6d,
-	0x62, 0x6f, 0x6c, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x11, 0xf2, 0xde, 0x1f, 0x0d, 0x79,
+	0x62, 0x6f, 0x6c, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x42, 0x11, 0xf2, 0xde, 0x1f, 0x0d, 0x79,
 	0x61, 0x6d, 0x6c, 0x3a, 0x22, 0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x22, 0x52, 0x06, 0x73, 0x79,
 	0x6d, 0x62, 0x6f, 0x6c, 0x12, 0x44, 0x0a, 0x0e, 0x69, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x6c, 0x5f,
-	0x73, 0x75, 0x70, 0x70, 0x6c, 0x79, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1d, 0xc8, 0xde,
+	0x73, 0x75, 0x70, 0x70, 0x6c, 0x79, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1d, 0xc8, 0xde,
 	0x1f, 0x00, 0xda, 0xde, 0x1f, 0x15, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e,
 	0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x49, 0x6e, 0x74, 0x52, 0x0d, 0x69, 0x6e, 0x69,
 	0x74, 0x69, 0x61, 0x6c, 0x53, 0x75, 0x70, 0x70, 0x6c, 0x79, 0x12, 0x40, 0x0a, 0x0c, 0x74, 0x6f,
-	0x74, 0x61, 0x6c, 0x5f, 0x73, 0x75, 0x70, 0x70, 0x6c, 0x79, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09,
+	0x74, 0x61, 0x6c, 0x5f, 0x73, 0x75, 0x70, 0x70, 0x6c, 0x79, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09,
 	0x42, 0x1d, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x15, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73,
 	0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x49, 0x6e, 0x74, 0x52,
 	0x0b, 0x74, 0x6f, 0x74, 0x61, 0x6c, 0x53, 0x75, 0x70, 0x70, 0x6c, 0x79, 0x12, 0x1a, 0x0a, 0x08,
-	0x64, 0x65, 0x63, 0x69, 0x6d, 0x61, 0x6c, 0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x08,
+	0x64, 0x65, 0x63, 0x69, 0x6d, 0x61, 0x6c, 0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x08,
 	0x64, 0x65, 0x63, 0x69, 0x6d, 0x61, 0x6c, 0x73, 0x12, 0x12, 0x0a, 0x04, 0x6c, 0x6f, 0x67, 0x6f,
-	0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6c, 0x6f, 0x67, 0x6f, 0x12, 0x49, 0x0a, 0x0d,
-	0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x07, 0x20,
+	0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6c, 0x6f, 0x67, 0x6f, 0x12, 0x49, 0x0a, 0x0d,
+	0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x08, 0x20,
 	0x03, 0x28, 0x0b, 0x32, 0x1d, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e,
 	0x57, 0x61, 0x6c, 0x6c, 0x65, 0x74, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69,
 	0x6f, 0x6e, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0d, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69,
-	0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x12, 0x2b, 0x0a, 0x03, 0x74, 0x61, 0x78, 0x18, 0x08,
+	0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x12, 0x2b, 0x0a, 0x03, 0x74, 0x61, 0x78, 0x18, 0x09,
 	0x20, 0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63,
 	0x2e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x54, 0x61, 0x78, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52,
 	0x03, 0x74, 0x61, 0x78, 0x12, 0x18, 0x0a, 0x07, 0x63, 0x72, 0x65, 0x61, 0x74, 0x6f, 0x72, 0x18,
-	0x09, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x63, 0x72, 0x65, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x48,
+	0x0a, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x63, 0x72, 0x65, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x48,
 	0x0a, 0x10, 0x72, 0x65, 0x6d, 0x61, 0x69, 0x6e, 0x69, 0x6e, 0x67, 0x5f, 0x73, 0x75, 0x70, 0x70,
-	0x6c, 0x79, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1d, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde,
+	0x6c, 0x79, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1d, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde,
 	0x1f, 0x15, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d,
 	0x61, 0x74, 0x68, 0x2e, 0x49, 0x6e, 0x74, 0x52, 0x0f, 0x72, 0x65, 0x6d, 0x61, 0x69, 0x6e, 0x69,
 	0x6e, 0x67, 0x53, 0x75, 0x70, 0x70, 0x6c, 0x79, 0x12, 0x1c, 0x0a, 0x09, 0x75, 0x6e, 0x6c, 0x69,
-	0x6d, 0x69, 0x74, 0x65, 0x64, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x08, 0x52, 0x09, 0x75, 0x6e, 0x6c,
-	0x69, 0x6d, 0x69, 0x74, 0x65, 0x64, 0x3a, 0x04, 0xe8, 0xa0, 0x1f, 0x01, 0x22, 0x4e, 0x0a, 0x12,
-	0x57, 0x61, 0x6c, 0x6c, 0x65, 0x74, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69,
-	0x6f, 0x6e, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x18, 0x0a, 0x07,
-	0x70, 0x65, 0x72, 0x63, 0x65, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x07, 0x70,
-	0x65, 0x72, 0x63, 0x65, 0x6e, 0x74, 0x3a, 0x04, 0xe8, 0xa0, 0x1f, 0x01, 0x22, 0x7c, 0x0a, 0x08,
-	0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x54, 0x61, 0x78, 0x12, 0x3d, 0x0a, 0x07, 0x70, 0x65, 0x72, 0x63,
-	0x65, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x23, 0xc8, 0xde, 0x1f, 0x00, 0xda,
-	0xde, 0x1f, 0x1b, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f,
-	0x6d, 0x61, 0x74, 0x68, 0x2e, 0x4c, 0x65, 0x67, 0x61, 0x63, 0x79, 0x44, 0x65, 0x63, 0x52, 0x07,
-	0x70, 0x65, 0x72, 0x63, 0x65, 0x6e, 0x74, 0x12, 0x2b, 0x0a, 0x11, 0x72, 0x65, 0x63, 0x69, 0x70,
-	0x69, 0x65, 0x6e, 0x74, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x10, 0x72, 0x65, 0x63, 0x69, 0x70, 0x69, 0x65, 0x6e, 0x74, 0x41, 0x64, 0x64,
-	0x72, 0x65, 0x73, 0x73, 0x3a, 0x04, 0xe8, 0xa0, 0x1f, 0x01, 0x42, 0x74, 0x0a, 0x0d, 0x63, 0x6f,
-	0x6d, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x42, 0x0a, 0x54, 0x6f, 0x6b,
-	0x65, 0x6e, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x12, 0x73, 0x74, 0x6f, 0x63, 0x2f,
-	0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0xa2, 0x02, 0x03,
-	0x53, 0x53, 0x58, 0xaa, 0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x2e, 0x53, 0x74, 0x6f, 0x63, 0xca,
-	0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63, 0xe2, 0x02, 0x15, 0x53, 0x74,
-	0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64,
-	0x61, 0x74, 0x61, 0xea, 0x02, 0x0a, 0x53, 0x74, 0x6f, 0x63, 0x3a, 0x3a, 0x53, 0x74, 0x6f, 0x63,
-	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6d, 0x69, 0x74, 0x65, 0x64, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x08, 0x52, 0x09, 0x75, 0x6e, 0x6c,
+	0x69, 0x6d, 0x69, 0x74, 0x65, 0x64, 0x12, 0x23, 0x0a, 0x0d, 0x6d, 0x69, 0x6e, 0x69, 0x6d, 0x61,
+	0x6c, 0x5f, 0x64, 0x65, 0x6e, 0x6f, 0x6d, 0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x6d,
+	0x69, 0x6e, 0x69, 0x6d, 0x61, 0x6c, 0x44, 0x65, 0x6e, 0x6f, 0x6d, 0x3a, 0x04, 0xe8, 0xa0, 0x1f,
+	0x01, 0x22, 0x4e, 0x0a, 0x12, 0x57, 0x61, 0x6c, 0x6c, 0x65, 0x74, 0x44, 0x69, 0x73, 0x74, 0x72,
+	0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65,
+	0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x12, 0x18, 0x0a, 0x07, 0x70, 0x65, 0x72, 0x63, 0x65, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x0d, 0x52, 0x07, 0x70, 0x65, 0x72, 0x63, 0x65, 0x6e, 0x74, 0x3a, 0x04, 0xe8, 0xa0, 0x1f,
+	0x01, 0x22, 0x7c, 0x0a, 0x08, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x54, 0x61, 0x78, 0x12, 0x3d, 0x0a,
+	0x07, 0x70, 0x65, 0x72, 0x63, 0x65, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x23,
+	0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x1b, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64,
+	0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x4c, 0x65, 0x67, 0x61, 0x63, 0x79,
+	0x44, 0x65, 0x63, 0x52, 0x07, 0x70, 0x65, 0x72, 0x63, 0x65, 0x6e, 0x74, 0x12, 0x2b, 0x0a, 0x11,
+	0x72, 0x65, 0x63, 0x69, 0x70, 0x69, 0x65, 0x6e, 0x74, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x72, 0x65, 0x63, 0x69, 0x70, 0x69, 0x65,
+	0x6e, 0x74, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x3a, 0x04, 0xe8, 0xa0, 0x1f, 0x01, 0x42,
+	0x74, 0x0a, 0x0d, 0x63, 0x6f, 0x6d, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63,
+	0x42, 0x0a, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x12,
+	0x73, 0x74, 0x6f, 0x63, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74,
+	0x6f, 0x63, 0xa2, 0x02, 0x03, 0x53, 0x53, 0x58, 0xaa, 0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x2e,
+	0x53, 0x74, 0x6f, 0x63, 0xca, 0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63,
+	0xe2, 0x02, 0x15, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x47, 0x50, 0x42,
+	0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x0a, 0x53, 0x74, 0x6f, 0x63, 0x3a,
+	0x3a, 0x53, 0x74, 0x6f, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

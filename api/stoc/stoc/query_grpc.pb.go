@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_Params_FullMethodName = "/stoc.stoc.Query/Params"
-	Query_Token_FullMethodName  = "/stoc.stoc.Query/Token"
-	Query_Tokens_FullMethodName = "/stoc.stoc.Query/Tokens"
+	Query_Params_FullMethodName         = "/stoc.stoc.Query/Params"
+	Query_Token_FullMethodName          = "/stoc.stoc.Query/Token"
+	Query_Tokens_FullMethodName         = "/stoc.stoc.Query/Tokens"
+	Query_TokensBySymbol_FullMethodName = "/stoc.stoc.Query/TokensBySymbol"
 )
 
 // QueryClient is the client API for Query service.
@@ -30,10 +31,12 @@ const (
 type QueryClient interface {
 	// Parameters queries the parameters of the module.
 	Params(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error)
-	// Token returns information about a specific token
+	// Token returns information about a specific token by minimal_denom
 	Token(ctx context.Context, in *QueryTokenRequest, opts ...grpc.CallOption) (*QueryTokenResponse, error)
 	// Tokens returns all tokens
 	Tokens(ctx context.Context, in *QueryTokensRequest, opts ...grpc.CallOption) (*QueryTokensResponse, error)
+	// TokensBySymbol returns tokens with a specific symbol
+	TokensBySymbol(ctx context.Context, in *QueryTokensBySymbolRequest, opts ...grpc.CallOption) (*QueryTokensBySymbolResponse, error)
 }
 
 type queryClient struct {
@@ -71,16 +74,27 @@ func (c *queryClient) Tokens(ctx context.Context, in *QueryTokensRequest, opts .
 	return out, nil
 }
 
+func (c *queryClient) TokensBySymbol(ctx context.Context, in *QueryTokensBySymbolRequest, opts ...grpc.CallOption) (*QueryTokensBySymbolResponse, error) {
+	out := new(QueryTokensBySymbolResponse)
+	err := c.cc.Invoke(ctx, Query_TokensBySymbol_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
 type QueryServer interface {
 	// Parameters queries the parameters of the module.
 	Params(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error)
-	// Token returns information about a specific token
+	// Token returns information about a specific token by minimal_denom
 	Token(context.Context, *QueryTokenRequest) (*QueryTokenResponse, error)
 	// Tokens returns all tokens
 	Tokens(context.Context, *QueryTokensRequest) (*QueryTokensResponse, error)
+	// TokensBySymbol returns tokens with a specific symbol
+	TokensBySymbol(context.Context, *QueryTokensBySymbolRequest) (*QueryTokensBySymbolResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -96,6 +110,9 @@ func (UnimplementedQueryServer) Token(context.Context, *QueryTokenRequest) (*Que
 }
 func (UnimplementedQueryServer) Tokens(context.Context, *QueryTokensRequest) (*QueryTokensResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Tokens not implemented")
+}
+func (UnimplementedQueryServer) TokensBySymbol(context.Context, *QueryTokensBySymbolRequest) (*QueryTokensBySymbolResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TokensBySymbol not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -164,6 +181,24 @@ func _Query_Tokens_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_TokensBySymbol_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryTokensBySymbolRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).TokensBySymbol(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_TokensBySymbol_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).TokensBySymbol(ctx, req.(*QueryTokensBySymbolRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -182,6 +217,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Tokens",
 			Handler:    _Query_Tokens_Handler,
+		},
+		{
+			MethodName: "TokensBySymbol",
+			Handler:    _Query_TokensBySymbol_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

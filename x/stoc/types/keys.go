@@ -9,7 +9,8 @@ const (
 	MemStoreKey = "mem_stoc"
 
 	// TokenKey defines the key for the token store
-	TokenKey = "Token-"
+	TokenKey       = "Token-"
+	TokenSymbolKey = "TokenSymbol-"
 )
 
 // Event type and attribute keys
@@ -20,6 +21,7 @@ const (
 	AttributeKeyTokenName     = "token_name"
 	AttributeKeyTokenCreator  = "token_creator"
 	AttributeKeyInitialSupply = "initial_supply"
+	AttributeKeyMinimalDenom  = "minimal_denom"
 	AttributeKeyMintToken     = "mint_token"
 )
 

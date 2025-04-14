@@ -10,36 +10,38 @@ option go_package = "stoc/x/stoc/types";
 // Token represents a fungible token on the STOC blockchain
 message Token {
   option (gogoproto.equal) = true;
-  
-  string name = 1;
-  string symbol = 2 [(gogoproto.moretags) = "yaml:\"symbol\""];
-  string initial_supply = 3 [
+  string id = 1 ;
+  string name = 2;
+  string symbol = 3 [(gogoproto.moretags) = "yaml:\"symbol\""];
+  string initial_supply = 4 [
     (gogoproto.customtype) = "cosmossdk.io/math.Int", 
     (gogoproto.nullable) = false
   ];
-  string total_supply = 4 [
+  string total_supply = 5 [
     (gogoproto.customtype) = "cosmossdk.io/math.Int",
     (gogoproto.nullable) = false
   ];
-  uint32 decimals = 5;
-  string logo = 6;
+  uint32 decimals = 6;
+  string logo = 7;
   
   // Wallet distributions for initial supply
-  repeated WalletDistribution distributions = 7 [(gogoproto.nullable) = false];
+  repeated WalletDistribution distributions = 8 [(gogoproto.nullable) = false];
   
   // Tax configuration
-  TokenTax tax = 8 [(gogoproto.nullable) = false];
+  TokenTax tax = 9 [(gogoproto.nullable) = false];
   
   // Creator of the token
-  string creator = 9;
+  string creator = 10;
 
   // Remaining supply of the token
-  string remaining_supply = 10 [
+  string remaining_supply = 11 [
     (gogoproto.customtype) = "cosmossdk.io/math.Int",
     (gogoproto.nullable) = false
   ];
 
-  bool unlimited = 11;
+  bool unlimited = 12;
+
+  string minimal_denom = 13;
 }
 
 // WalletDistribution defines how initial tokens are distributed

@@ -10,6 +10,7 @@ import (
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/google/uuid"
 )
 
 func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken) (*types.MsgCreateTokenResponse, error) {
@@ -37,8 +38,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			RecipientAddress: "",
 		}
 	}
-
+	tokenId := uuid.New().String()
+	minimalDenom := fmt.Sprintf("%s-%s", msg.Symbol, tokenId)
 	token := types.Token{
+		Id:            tokenId,
 		Name:          msg.Name,
 		Symbol:        msg.Symbol,
 		InitialSupply: msg.InitialSupply,
@@ -49,6 +52,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		Tax:           taxToUse,
 		Creator:       msg.Creator,
 		Unlimited:     msg.Unlimited,
+		MinimalDenom:  minimalDenom,
 	}
 
 	// Validate token
@@ -58,10 +62,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	}
 
 	// Check if token symbol already exists
-	if k.HasToken(ctx, token.Symbol) {
-		k.Logger().Error("Token symbol already exists", "symbol", token.Symbol)
-		return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.Symbol)
-	}
+	// if k.HasToken(ctx, token.Symbol) {
+	// 	k.Logger().Error("Token symbol already exists", "symbol", token.Symbol)
+	// 	return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.Symbol)
+	// }
 
 	// Mint initial supply and distribute according to distribution list
 	creator, err := sdk.AccAddressFromBech32(msg.Creator)
@@ -94,7 +98,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			amount := initialSupply.MulRaw(int64(dist.Percent)).QuoRaw(100)
 
 			// Mint tokens to the recipient
-			coin := sdk.NewCoin(token.Symbol, amount)
+			coin := sdk.NewCoin(token.MinimalDenom, amount)
 			if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 				return nil, err
 			}
@@ -105,7 +109,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		}
 	} else {
 		// If no distribution specified, mint everything to creator
-		coin := sdk.NewCoin(token.Symbol, initialSupply)
+		coin := sdk.NewCoin(token.MinimalDenom, initialSupply)
 		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
@@ -118,7 +122,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	//If there are remaining tokens (totals > initial), mint them to module account
 
 	if remainingSupply.GT(math.ZeroInt()) {
-		coin := sdk.NewCoin(token.Symbol, remainingSupply)
+		coin := sdk.NewCoin(token.MinimalDenom, remainingSupply)
 		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
@@ -128,16 +132,17 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	}
 
 	// register metadata for token so that the wallet can display it correctly
+
 	denomMetadata := banktypes.Metadata{
 		Description: fmt.Sprintf("Token %s created on Stoc chain", token.Name),
 		DenomUnits: []*banktypes.DenomUnit{
 			{
-				Denom:    token.Symbol,
+				Denom:    minimalDenom,
 				Exponent: 0,
 				Aliases:  []string{token.Symbol},
 			},
 		},
-		Base:    token.Symbol,
+		Base:    minimalDenom,
 		Display: token.Symbol,
 		Name:    token.Name,
 		Symbol:  token.Symbol,
@@ -147,12 +152,12 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 	// if token has decimals, add DenomUnit with exponent = decimals
 	if token.Decimals > 0 {
-		smallestDenom := token.Symbol
+		// smallestDenom := token.Symbol
 		displayDenom := token.Symbol
 
 		denomMetadata.DenomUnits = []*banktypes.DenomUnit{
 			{
-				Denom:    smallestDenom,
+				Denom:    minimalDenom,
 				Exponent: 0,
 			},
 			{
@@ -173,6 +178,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			sdk.NewAttribute(types.AttributeKeyTokenName, token.Name),
 			sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
 			sdk.NewAttribute(types.AttributeKeyInitialSupply, token.InitialSupply.String()),
+			sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
 		),
 	)
 

@@ -36,7 +36,7 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 		return nil, sdkerrors.Wrap(err, "invalid recipient address")
 	}
 
-	coin := sdk.NewCoin(token.Symbol, msg.Amount)
+	coin := sdk.NewCoin(token.MinimalDenom, msg.Amount)
 	if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
 		return nil, err
 	}
