@@ -6,14 +6,30 @@ import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "stoc/stoc/params.proto";
-
+import "stoc/stoc/token.proto";
 option go_package = "stoc/x/stoc/types";
+
 
 // Query defines the gRPC querier service.
 service Query {
   // Parameters queries the parameters of the module.
   rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
     option (google.api.http).get = "/stoc/stoc/params";
+  }
+
+   // Token returns information about a specific token by minimal_denom
+   rpc Token(QueryTokenRequest) returns (QueryTokenResponse) {
+    option (google.api.http).get = "/stoc/stoc/tokens/{minimal_denom}";
+  }
+  
+  // Tokens returns all tokens
+  rpc Tokens(QueryTokensRequest) returns (QueryTokensResponse) {
+    option (google.api.http).get = "/stoc/stoc/tokens";
+  }
+
+  // TokensBySymbol returns tokens with a specific symbol
+  rpc TokensBySymbol(QueryTokensBySymbolRequest) returns (QueryTokensBySymbolResponse) {
+    option (google.api.http).get = "/stoc/stoc/tokens_by_symbol/{symbol}";
   }
 }
 
@@ -27,4 +43,34 @@ message QueryParamsResponse {
     (gogoproto.nullable) = false,
     (amino.dont_omitempty) = true
   ];
+}
+
+// QueryTokenRequest is the request type for the Query/Token RPC method
+message QueryTokenRequest {
+  string minimal_denom = 1;
+}
+
+// QueryTokenResponse is the response type for the Query/Token RPC method
+message QueryTokenResponse {
+  Token token = 1 [(gogoproto.nullable) = false];
+}
+
+// QueryTokensRequest is the request type for the Query/Tokens RPC method
+message QueryTokensRequest {
+  // pagination defines an optional pagination for the request.
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryTokensResponse is the response type for the Query/Tokens RPC method
+message QueryTokensResponse {
+  repeated Token tokens = 1 [(gogoproto.nullable) = false];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryTokensBySymbolRequest {
+  string symbol = 1;
+}
+
+message QueryTokensBySymbolResponse {
+  repeated Token tokens = 1 [(gogoproto.nullable) = false];
 }

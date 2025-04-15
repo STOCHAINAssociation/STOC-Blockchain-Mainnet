@@ -18,8 +18,8 @@ import (
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	// this line is used by starport scaffolding # 1
-
 	modulev1 "stoc/api/stoc/stoc/module"
 	"stoc/x/stoc/keeper"
 	"stoc/x/stoc/types"
@@ -97,14 +97,14 @@ type AppModule struct {
 
 	keeper        keeper.Keeper
 	accountKeeper types.AccountKeeper
-	bankKeeper    types.BankKeeper
+	bankKeeper    bankkeeper.Keeper
 }
 
 func NewAppModule(
 	cdc codec.Codec,
 	keeper keeper.Keeper,
 	accountKeeper types.AccountKeeper,
-	bankKeeper types.BankKeeper,
+	bankKeeper bankkeeper.Keeper,
 ) AppModule {
 	return AppModule{
 		AppModuleBasic: NewAppModuleBasic(cdc),
@@ -165,6 +165,7 @@ func (am AppModule) IsAppModule() {}
 // App Wiring Setup
 // ----------------------------------------------------------------------------
 
+
 func init() {
 	appmodule.Register(
 		&modulev1.Module{},
@@ -179,9 +180,8 @@ type ModuleInputs struct {
 	Cdc          codec.Codec
 	Config       *modulev1.Module
 	Logger       log.Logger
-
 	AccountKeeper types.AccountKeeper
-	BankKeeper    types.BankKeeper
+	BankKeeper    bankkeeper.Keeper
 }
 
 type ModuleOutputs struct {
@@ -193,6 +193,7 @@ type ModuleOutputs struct {
 
 func ProvideModule(in ModuleInputs) ModuleOutputs {
 	// default to governance authority if not provided
+	
 	authority := authtypes.NewModuleAddress(govtypes.ModuleName)
 	if in.Config.Authority != "" {
 		authority = authtypes.NewModuleAddressOrBech32Address(in.Config.Authority)
@@ -202,6 +203,8 @@ func ProvideModule(in ModuleInputs) ModuleOutputs {
 		in.StoreService,
 		in.Logger,
 		authority.String(),
+		in.BankKeeper,
+		in.AccountKeeper,
 	)
 	m := NewAppModule(
 		in.Cdc,
