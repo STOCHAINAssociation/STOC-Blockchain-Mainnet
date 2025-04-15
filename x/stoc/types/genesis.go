@@ -10,6 +10,7 @@ func DefaultGenesis() *GenesisState {
 	return &GenesisState{
 		// this line is used by starport scaffolding # genesis/types/default
 		Params: DefaultParams(),
+		Tokens: []Token{},
 	}
 }
 
@@ -17,6 +18,11 @@ func DefaultGenesis() *GenesisState {
 // failure.
 func (gs GenesisState) Validate() error {
 	// this line is used by starport scaffolding # genesis/types/validate
+	for _, token := range gs.Tokens {
+		if err := Validate(token); err != nil {
+			return err
+		}
+	}
 
 	return gs.Params.Validate()
 }
