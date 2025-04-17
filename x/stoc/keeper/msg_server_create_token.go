@@ -10,7 +10,6 @@ import (
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/google/uuid"
 )
 
 func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken) (*types.MsgCreateTokenResponse, error) {
@@ -38,7 +37,8 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			RecipientAddress: "",
 		}
 	}
-	tokenId := uuid.New().String()
+	// Tạo tokenId từ thông tin block và giao dịch để đảm bảo tính tất định
+	tokenId := fmt.Sprintf("%s-%d-%s", msg.Symbol, ctx.BlockHeight(), msg.Creator)
 	minimalDenom := fmt.Sprintf("%s-%s", msg.Symbol, tokenId)
 	token := types.Token{
 		Id:            tokenId,
