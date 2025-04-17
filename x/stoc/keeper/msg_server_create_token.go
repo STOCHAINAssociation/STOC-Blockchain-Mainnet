@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 
 	"stoc/x/stoc/types"
@@ -11,6 +12,25 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
+
+// Alphabet cho nanoid - 36 ký tự gồm chữ và số, loại bỏ các ký tự dễ nhầm lẫn
+const alphabet = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+// generateId tạo ID 16 ký tự dựa trên counter và block height
+func generateId(counter uint64, blockHeight int64) string {
+	// Dùng toàn bộ 8 bytes của counter và 8 bytes của block height
+	id := make([]byte, 16)
+	binary.BigEndian.PutUint64(id[:8], counter)
+	binary.BigEndian.PutUint64(id[8:], uint64(blockHeight))
+
+	// Chuyển bytes thành chuỗi ký tự trong alphabet
+	result := make([]byte, 16)
+	for i := 0; i < 16; i++ {
+		result[i] = alphabet[id[i]%byte(len(alphabet))]
+	}
+
+	return string(result)
+}
 
 func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken) (*types.MsgCreateTokenResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
@@ -37,11 +57,13 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			RecipientAddress: "",
 		}
 	}
-	// Tạo tokenId sử dụng counter từ state
+	// Tạo ID 16 ký tự unique dựa trên counter và block height
 	counter := k.GetTokenCounter(ctx)
-	tokenId := fmt.Sprintf("%s-%d", msg.Symbol, counter)
+	minimalDenom := generateId(counter, ctx.BlockHeight())
 	k.SetTokenCounter(ctx, counter+1)
-	minimalDenom := fmt.Sprintf("%s-%s", msg.Symbol, tokenId)
+
+	// Sử dụng minimalDenom làm tokenId luôn để đảm bảo unique
+	tokenId := minimalDenom
 	token := types.Token{
 		Id:            tokenId,
 		Name:          msg.Name,
