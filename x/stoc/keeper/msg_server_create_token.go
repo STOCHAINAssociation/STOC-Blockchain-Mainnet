@@ -37,8 +37,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			RecipientAddress: "",
 		}
 	}
-	// Tạo tokenId từ thông tin block và giao dịch để đảm bảo tính tất định
-	tokenId := fmt.Sprintf("%s-%s", msg.Symbol, msg.Creator)
+	// Tạo tokenId sử dụng counter từ state
+	counter := k.GetTokenCounter(ctx)
+	tokenId := fmt.Sprintf("%s-%d", msg.Symbol, counter)
+	k.SetTokenCounter(ctx, counter+1)
 	minimalDenom := fmt.Sprintf("%s-%s", msg.Symbol, tokenId)
 	token := types.Token{
 		Id:            tokenId,
@@ -62,10 +64,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	}
 
 	// Check if token symbol already exists
-	// if k.HasToken(ctx, token.Symbol) {
-	// 	k.Logger().Error("Token symbol already exists", "symbol", token.Symbol)
-	// 	return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.Symbol)
-	// }
+	if k.HasToken(ctx, token.MinimalDenom) {
+		k.Logger().Error("Token symbol already exists", "symbol", token.MinimalDenom)
+		return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.MinimalDenom)
+	}
 
 	// Mint initial supply and distribute according to distribution list
 	creator, err := sdk.AccAddressFromBech32(msg.Creator)

@@ -1,6 +1,8 @@
 package keeper
 
 import (
+	"encoding/binary"
+
 	"fmt"
 
 	"stoc/x/stoc/types"
@@ -57,4 +59,27 @@ func (k Keeper) GetAuthority() string {
 // Logger returns a module-specific logger.
 func (k Keeper) Logger() log.Logger {
 	return k.logger.With("module", fmt.Sprintf("x/%s", types.ModuleName))
+}
+
+// GetTokenCounter lấy giá trị counter hiện tại
+func (k Keeper) GetTokenCounter(ctx sdk.Context) uint64 {
+	store := k.storeService.OpenKVStore(ctx)
+	bz, err := store.Get([]byte(types.TokenCounterKey))
+	if err != nil {
+		panic(err)
+	}
+	if bz == nil {
+		return 0
+	}
+	return binary.BigEndian.Uint64(bz)
+}
+
+// SetTokenCounter cập nhật giá trị counter
+func (k Keeper) SetTokenCounter(ctx sdk.Context, counter uint64) {
+	store := k.storeService.OpenKVStore(ctx)
+	bz := make([]byte, 8)
+	binary.BigEndian.PutUint64(bz, counter)
+	if err := store.Set([]byte(types.TokenCounterKey), bz); err != nil {
+		panic(err)
+	}
 }
