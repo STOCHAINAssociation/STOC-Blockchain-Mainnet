@@ -38,7 +38,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		}
 	}
 	// Tạo tokenId từ thông tin block và giao dịch để đảm bảo tính tất định
-	tokenId := fmt.Sprintf("%s-%d-%s", msg.Symbol, ctx.BlockHeight(), msg.Creator)
+	tokenId := fmt.Sprintf("%s-%s", msg.Symbol, msg.Creator)
 	minimalDenom := fmt.Sprintf("%s-%s", msg.Symbol, tokenId)
 	token := types.Token{
 		Id:            tokenId,
