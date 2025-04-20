@@ -11,6 +11,9 @@ const (
 	// TokenKey defines the key for the token store
 	TokenKey       = "Token-"
 	TokenSymbolKey = "TokenSymbol-"
+
+	// TokenCounterKey là key để lưu counter cho token ID
+	TokenCounterKey = "TokenCounter-"
 )
 
 // Event type and attribute keys

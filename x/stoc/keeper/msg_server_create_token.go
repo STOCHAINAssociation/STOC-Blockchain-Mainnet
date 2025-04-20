@@ -10,7 +10,6 @@ import (
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/google/uuid"
 )
 
 func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken) (*types.MsgCreateTokenResponse, error) {
@@ -38,8 +37,13 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			RecipientAddress: "",
 		}
 	}
-	tokenId := uuid.New().String()
-	minimalDenom := fmt.Sprintf("%s-%s", msg.Symbol, tokenId)
+	// Tạo ID 16 ký tự unique dựa trên counter và block height
+	counter := k.GetTokenCounter(ctx)
+	minimalDenom := fmt.Sprintf("%s_%d", msg.Symbol, counter)
+	k.SetTokenCounter(ctx, counter+1)
+
+	// Sử dụng minimalDenom làm tokenId luôn để đảm bảo unique
+	tokenId := minimalDenom
 	token := types.Token{
 		Id:            tokenId,
 		Name:          msg.Name,
@@ -62,10 +66,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	}
 
 	// Check if token symbol already exists
-	// if k.HasToken(ctx, token.Symbol) {
-	// 	k.Logger().Error("Token symbol already exists", "symbol", token.Symbol)
-	// 	return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.Symbol)
-	// }
+	if k.HasToken(ctx, token.MinimalDenom) {
+		k.Logger().Error("Token symbol already exists", "symbol", token.MinimalDenom)
+		return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.MinimalDenom)
+	}
 
 	// Mint initial supply and distribute according to distribution list
 	creator, err := sdk.AccAddressFromBech32(msg.Creator)
