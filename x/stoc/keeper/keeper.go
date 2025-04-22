@@ -19,13 +19,13 @@ type (
 		cdc          codec.BinaryCodec
 		storeService store.KVStoreService
 		// tokenStoreKey storetypes.StoreKey
-		logger       log.Logger
+		logger log.Logger
 
 		// the address capable of executing a MsgUpdateParams message. Typically, this
 		// should be the x/gov module account.
-		authority string
+		authority     string
 		accountKeeper types.AccountKeeper
-		bankKeeper bankkeeper.Keeper
+		bankKeeper    bankkeeper.Keeper
 	}
 )
 
@@ -42,11 +42,11 @@ func NewKeeper(
 	}
 
 	return Keeper{
-		cdc:          cdc,
-		storeService: storeService,
-		logger:       logger,
-		authority:    authority,
-		bankKeeper:   bankKeeper,
+		cdc:           cdc,
+		storeService:  storeService,
+		logger:        logger,
+		authority:     authority,
+		bankKeeper:    bankKeeper,
 		accountKeeper: accountKeeper,
 	}
 }
@@ -82,4 +82,7 @@ func (k Keeper) SetTokenCounter(ctx sdk.Context, counter uint64) {
 	if err := store.Set([]byte(types.TokenCounterKey), bz); err != nil {
 		panic(err)
 	}
+}
+func (k Keeper) BankKeeper() bankkeeper.Keeper {
+	return k.bankKeeper
 }

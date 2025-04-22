@@ -34,14 +34,11 @@ func (k Keeper) GetToken(ctx sdk.Context, minimalDenom string) (val types.Token,
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
 
-	parts := strings.SplitN(minimalDenom, "-", 2)
-	if len(parts) != 2 {
-		return types.Token{}, false
-	}
-	tokenId := parts[1]
+	tokenId := minimalDenom
 
 	b := store.Get([]byte(tokenId))
 	if b == nil {
+		k.Logger().Info("Token not found", "minimalDenom", minimalDenom)
 		return types.Token{}, false
 	}
 
