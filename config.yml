@@ -27,6 +27,9 @@ genesis:
     staking:
       params:
         bond_denom: ustoc
+        min_commission_rate: "0.100000000000000000" # 10%
+        max_commission_rate: "0.100000000000000000" # 10%
+        max_commission_change_rate: "0.010000000000000000" # 1%
 validators:
 - name: validator1
   bonded: 10000000000ustoc
