@@ -54,7 +54,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	stocmodulev1 "stoc/api/stoc/stoc/module"
-	_ "stoc/x/stoc/module" // import for side-effects
+	_ "stoc/x/stoc/module"
 	stocmoduletypes "stoc/x/stoc/types"
 	// this line is used by starport scaffolding # stargate/app/moduleImport
 )
@@ -159,6 +159,7 @@ var (
 		{Account: ibcfeetypes.ModuleName},
 		{Account: icatypes.ModuleName},
 		// this line is used by starport scaffolding # stargate/app/maccPerms
+		{Account: stocmoduletypes.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
 	}
 
 	// blocked account addresses
@@ -296,6 +297,7 @@ var (
 			{
 				Name:   stocmoduletypes.ModuleName,
 				Config: appconfig.WrapAny(&stocmodulev1.Module{}),
+				
 			},
 			// this line is used by starport scaffolding # stargate/app/moduleConfig
 		},
