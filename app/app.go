@@ -32,6 +32,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/auth"
+	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	_ "github.com/cosmos/cosmos-sdk/x/auth/tx/config" // import for side-effects
@@ -79,6 +80,7 @@ import (
 	// this line is used by starport scaffolding # stargate/app/moduleImport
 
 	"stoc/docs"
+	stocante "stoc/x/stoc/ante"
 )
 
 const (
@@ -187,6 +189,35 @@ func AppConfig() depinject.Config {
 	)
 }
 
+func NewAnteHandler(
+	options ante.HandlerOptions,
+	stocKeeper stocmodulekeeper.Keeper,
+) (sdk.AnteHandler, error) {
+	anteDecorators := []sdk.AnteDecorator{
+		// stocante.NewTaxAnteDecorator(stocKeeper),
+		ante.NewSetUpContextDecorator(),                      // handle GasMeter
+		ante.NewExtensionOptionsDecorator(nil),               // handle extension options
+		ante.NewValidateBasicDecorator(),                     // handle validate basic
+		ante.NewTxTimeoutHeightDecorator(),                   // handle timeout height
+		ante.NewValidateMemoDecorator(options.AccountKeeper), // handle validate memo
+
+		ante.NewDeductFeeDecorator(
+			options.AccountKeeper,
+			options.BankKeeper,
+			options.FeegrantKeeper,
+			nil, // handle nil or default function here
+		),
+		ante.NewSetPubKeyDecorator(options.AccountKeeper),                                // handle set public key
+		ante.NewValidateSigCountDecorator(options.AccountKeeper),                         // handle validate sig count
+		ante.NewSigGasConsumeDecorator(options.AccountKeeper, options.SigGasConsumer),    // handle sig gas consume
+		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler), // handle sig verification
+
+		// other decorators
+	}
+
+	return sdk.ChainAnteDecorators(anteDecorators...), nil
+}
+
 // New returns a reference to an initialized App.
 func New(
 	logger log.Logger,
@@ -289,6 +320,25 @@ func New(
 		}
 		return app.App.InitChainer(ctx, req)
 	})
+
+	// create options for AnteHandler
+	anteOptions := ante.HandlerOptions{
+		AccountKeeper:   app.AccountKeeper,
+		BankKeeper:      app.BankKeeper,
+		SignModeHandler: app.txConfig.SignModeHandler(),
+		FeegrantKeeper:  app.FeeGrantKeeper,
+		SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
+	}
+
+	// set AnteHandler here, before adding modules
+	anteHandler, err := NewAnteHandler(anteOptions, app.StocKeeper)
+	if err != nil {
+		return nil, err
+	}
+	app.SetAnteHandler(anteHandler)
+
+	postHandler := stocante.NewTaxPostDecorator(app.StocKeeper, app.appCodec)
+	app.SetPostHandler(sdk.ChainPostDecorators(postHandler))
 
 	if err := app.Load(loadLatest); err != nil {
 		return nil, err
