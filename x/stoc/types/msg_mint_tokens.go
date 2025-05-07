@@ -5,7 +5,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-var _ sdk.Msg = &MsgUpdateParams{}
+// Verify that MsgMintTokens implements the sdk.Msg interface at compile time
+var _ sdk.Msg = &MsgMintTokens{}
 
 // ValidateBasic does a sanity check on the provided data.
 func (m *MsgMintTokens) ValidateBasic() error {
