@@ -14,6 +14,7 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgUpdateParams{},
 		&MsgCreateToken{},
 		&MsgReleaseTokens{},
+		&MsgMintTokens{},
 	)
 	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
 }
