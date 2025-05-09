@@ -24,7 +24,6 @@ func NewTaxPostDecorator(k keeper.Keeper, cdc codec.BinaryCodec) TaxPostDecorato
 }
 
 func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, success bool, next sdk.PostHandler) (newCtx sdk.Context, err error) {
-
 	if !success || simulate {
 		return next(ctx, tx, simulate, success)
 	}
@@ -41,49 +40,52 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 			// check if token has tax
 			token, found := tpd.k.GetToken(ctx, coin.Denom)
 			if !found || token.Tax.Percent.IsZero() || token.Tax.RecipientAddress == "" {
-
 				continue
 			}
 
 			// calculate tax
 			taxAmount := coin.Amount.ToLegacyDec().Mul(token.Tax.Percent).RoundInt()
-
 			if taxAmount.IsZero() {
-				//Default min max tax
 				taxAmount = math.NewInt(1)
-
 			}
 
 			// get recipient address and tax address
 			recipientAddr, err := sdk.AccAddressFromBech32(sendMsg.ToAddress)
 			if err != nil {
-
-				continue
+				return ctx, fmt.Errorf("invalid recipient address: %v", err)
 			}
 
 			taxRecipientAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
 			if err != nil {
-
-				continue
+				return ctx, fmt.Errorf("invalid tax recipient address: %v", err)
 			}
 
 			// check recipient balance
 			recipientBalance := tpd.k.BankKeeper().GetBalance(ctx, recipientAddr, coin.Denom)
 			if recipientBalance.Amount.LT(taxAmount) {
-
-				continue
+				return ctx, fmt.Errorf(
+					"insufficient balance for tax: recipient %s needs %s%s for tax, but only has %s%s",
+					sendMsg.ToAddress,
+					taxAmount.String(),
+					coin.Denom,
+					recipientBalance.Amount.String(),
+					coin.Denom,
+				)
 			}
 
 			// send tax from recipient to tax address
 			taxCoin := sdk.NewCoin(coin.Denom, taxAmount)
 			err = tpd.k.BankKeeper().SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin))
 			if err != nil {
-
-				continue
+				return ctx, fmt.Errorf("failed to send tax: %v", err)
 			}
 
-			// write log and emit event
-			fmt.Sprintf("Tax subtracted from recipient: %s\n %s \n %s", coin.Denom, taxAmount.String(), token.Tax.RecipientAddress)
+			ctx.Logger().Info("Tax transaction processed",
+				"token_denom", coin.Denom,
+				"tax_amount", taxAmount.String(),
+				"from", sendMsg.ToAddress,
+				"to", token.Tax.RecipientAddress,
+			)
 
 			ctx.EventManager().EmitEvent(
 				sdk.NewEvent(
@@ -98,6 +100,5 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 		}
 	}
 
-	// call next decorator in chain
 	return next(ctx, tx, simulate, success)
 }
