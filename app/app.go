@@ -214,6 +214,7 @@ func NewAnteHandler(
 
 		// other decorators
 		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
+		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
 	}
 
 	return sdk.ChainAnteDecorators(anteDecorators...), nil
