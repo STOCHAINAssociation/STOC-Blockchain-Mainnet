@@ -63,7 +63,7 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 			}
 
 			// check recipient balance
-			recipientBalance := tpd.k.BankKeeper().GetBalance(ctx, recipientAddr, coin.Denom)
+			recipientBalance := tpd.k.BankKeeper.GetBalance(ctx, recipientAddr, coin.Denom)
 			if recipientBalance.Amount.LT(taxAmount) {
 				ctx.Logger().Error("Insufficient balance for tax", "recipient", sendMsg.ToAddress, "required", taxAmount.String()+coin.Denom, "actual", recipientBalance.Amount.String()+coin.Denom)
 				return ctx, fmt.Errorf("insufficient balance for tax: recipient %s needs %s%s for tax, but only has %s%s", sendMsg.ToAddress, taxAmount.String(), coin.Denom, recipientBalance.Amount.String(), coin.Denom)
@@ -71,7 +71,7 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 
 			// send tax from recipient to tax address
 			taxCoin := sdk.NewCoin(coin.Denom, taxAmount)
-			err = tpd.k.BankKeeper().SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin))
+			err = tpd.k.BankKeeper.SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin))
 			if err != nil {
 				ctx.Logger().Error("Failed to send tax", "error", err)
 				return ctx, fmt.Errorf("failed to send tax: %v", err)
