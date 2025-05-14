@@ -1,0 +1,18 @@
+﻿STOC-1 Centralization risk
+●Issue Description:If the Unlimited setting is true for the tokens created by the CreateToken function, the Creator can call the MintToken function to mint tokens without limits. Additionally, if not all tokens have been initially allocated, the Creator can call ReleaseTokens at any time to immediately mint the remaining tokens for themselves, which poses a centralization risk.
+* Recommendations: It is recommended to inform users about this risk on the official website
+
+
+Special note: The issue of centralization risk is difficult to address at the chain code level. However, due to its risk, it must be reflected in the report.
+________________
+
+
+STOC-2 Security Risks of Exposing Full bankKeeper in stoc Module
+Lines：x\stoc\keeper\token.go
+●Issue Description: The approach of the stoc module directly returning bankKeeper bankkeeper.Keeper is problematic. This exposes the entire bankKeeper to other modules, allowing them to access and manipulate all its data and functions, including sensitive operations, which violates the Cosmos SDK's best practice of adhering to the Principle of Least Privilege. 
+  
+
+* Recommendations: It is recommended to define clear interfaces to restrict inter-module access. For example, a restricted interface for bankKeeper can be created, exposing only necessary query or operation methods while hiding functions that directly modify state.
+
+
+Special note: Currently, the stoc module has few sensitive operations, so the risk is low. However, from a code perspective, considering that the chain's functionality is still under development and potential feature updates may occur later, we raise this issue. In the report, the risk level of this issue will be significantly downgraded.
