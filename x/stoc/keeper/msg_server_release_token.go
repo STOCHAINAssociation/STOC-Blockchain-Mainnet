@@ -37,7 +37,7 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 	}
 
 	coin := sdk.NewCoin(token.MinimalDenom, msg.Amount)
-	if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
+	if err := k.BankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
 		return nil, err
 	}
 
