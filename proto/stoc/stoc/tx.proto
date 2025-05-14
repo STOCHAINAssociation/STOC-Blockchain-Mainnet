@@ -84,16 +84,26 @@ message MsgMintTokens {
   string amount = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Int", (gogoproto.nullable) = false];
 }
 message MsgReleaseTokensResponse{
-  
+  string symbol = 1;
+  string amount = 2;
+  string recipient = 3;
+  bool success = 4;
+  string message = 5;
 }
 
 message MsgCreateTokenResponse{
   string symbol = 1;
+  string creator = 2;
+  bool success = 3;
+  string message = 4;
 }
 
 message MsgMintTokensResponse{
   string symbol = 1;
   string amount = 2;
+  string recipient = 3;
+  bool success = 4;
+  string message = 5;
 }
 // MsgUpdateParamsResponse defines the response structure for executing a
 // MsgUpdateParams message.
