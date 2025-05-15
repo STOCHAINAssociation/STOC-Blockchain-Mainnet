@@ -1,0 +1,48 @@
+﻿Due to the need to set up a complete local environment and conduct extensive testing to ensure the project's correctness and safety, it took us quite a bit of time. We initially planned to send the project documentation for review and verify any questionable issues before submission. However, given the tight timeline for the project launch, we have some questions from our code audit that we hope you can clarify. This week, we may submit feedback multiple times regarding certain code concerns, and we look forward to working together to complete the audit quickly, ensuring the project launches smoothly on schedule.
+
+
+
+
+STOC-1 Issues with Error Handling in PostHandle
+Lines：x\stoc\ante\tax_post.go
+* Issue Description: PostHandle is a post-validation step for transactions, but there may be unreasonable aspects in its error handling. After a transfer, the system checks whether the recipient has enough tokens to cover the tax based on the token's tax rate. If the recipient's balance is insufficient, it does not roll back or log an error, but simply skips the check. Similarly, if there is an error parsing recipientAddr or taxRecipientAddr, there should be appropriate error handling, such as rolling back the transaction or logging an error.
+  
+
+* Recommendations: It is recommended to implement appropriate error handling.
+________________
+
+
+STOC-2 Issues with Error Handling in PostHandle
+Lines：x\stoc\types\msg_mint_tokens.go
+* Issue Description: In the msg_mint_tokens.go file, it should be verified that MsgUpdateParams implements the sdk.Msg interface, but it has been incorrectly written as just MsgUpdateParams.
+  
+
+* Recommendations: It is recommended to modify MsgUpdateParams.
+
+
+________________
+
+
+STOC-3 The RegisterInterfaces function is missing parameters
+Lines：codec.go
+* Issue Description: The MsgServer interface declares a total of four methods: UpdateParams, CreateToken, ReleaseTokens, and MintTokens. However, RegisterInterfaces only registers three of these interfaces, excluding MintTokens.
+  
+
+* Recommendations: It is recommended to add MintTokens.
+
+
+
+
+________________
+
+
+STOC-4 Unused formatting strings
+Lines：x\stoc\ante\tax_post.go
+* Issue Description: The formatted string from Sprintf appears to be unused.
+  
+
+* Recommendations: It is recommended to based on the business logic, can either delete it or capture the return value in a variable and output it.
+
+
+Pending Issues：
+In the code below, it seems that stocmodulekeeper.Keeper is not being used. Does this mean that the checks related to pre-transaction are still under development, or is this part of the code redundant?

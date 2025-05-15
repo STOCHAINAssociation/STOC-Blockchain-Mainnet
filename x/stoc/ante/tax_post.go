@@ -52,31 +52,28 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 			// get recipient address and tax address
 			recipientAddr, err := sdk.AccAddressFromBech32(sendMsg.ToAddress)
 			if err != nil {
+				ctx.Logger().Error("Invalid recipient address", "address", sendMsg.ToAddress, "error", err)
 				return ctx, fmt.Errorf("invalid recipient address: %v", err)
 			}
 
 			taxRecipientAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
 			if err != nil {
+				ctx.Logger().Error("Invalid tax recipient address", "address", token.Tax.RecipientAddress, "error", err)
 				return ctx, fmt.Errorf("invalid tax recipient address: %v", err)
 			}
 
 			// check recipient balance
-			recipientBalance := tpd.k.BankKeeper().GetBalance(ctx, recipientAddr, coin.Denom)
+			recipientBalance := tpd.k.BankKeeper.GetBalance(ctx, recipientAddr, coin.Denom)
 			if recipientBalance.Amount.LT(taxAmount) {
-				return ctx, fmt.Errorf(
-					"insufficient balance for tax: recipient %s needs %s%s for tax, but only has %s%s",
-					sendMsg.ToAddress,
-					taxAmount.String(),
-					coin.Denom,
-					recipientBalance.Amount.String(),
-					coin.Denom,
-				)
+				ctx.Logger().Error("Insufficient balance for tax", "recipient", sendMsg.ToAddress, "required", taxAmount.String()+coin.Denom, "actual", recipientBalance.Amount.String()+coin.Denom)
+				return ctx, fmt.Errorf("insufficient balance for tax: recipient %s needs %s%s for tax, but only has %s%s", sendMsg.ToAddress, taxAmount.String(), coin.Denom, recipientBalance.Amount.String(), coin.Denom)
 			}
 
 			// send tax from recipient to tax address
 			taxCoin := sdk.NewCoin(coin.Denom, taxAmount)
-			err = tpd.k.BankKeeper().SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin))
+			err = tpd.k.BankKeeper.SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin))
 			if err != nil {
+				ctx.Logger().Error("Failed to send tax", "error", err)
 				return ctx, fmt.Errorf("failed to send tax: %v", err)
 			}
 

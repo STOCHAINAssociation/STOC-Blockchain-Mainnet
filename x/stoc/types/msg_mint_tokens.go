@@ -8,6 +8,19 @@ import (
 // Verify that MsgMintTokens implements the sdk.Msg interface at compile time
 var _ sdk.Msg = &MsgMintTokens{}
 
+func (m *MsgMintTokens) Route() string { return "stoc" }
+func (m *MsgMintTokens) Type() string  { return "mint_tokens" }
+func (m *MsgMintTokens) GetSigners() []sdk.AccAddress {
+	creator, err := sdk.AccAddressFromBech32(m.Creator)
+	if err != nil {
+		return []sdk.AccAddress{}
+	}
+	return []sdk.AccAddress{creator}
+}
+func (m *MsgMintTokens) GetSignBytes() []byte {
+	return sdk.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+}
+
 // ValidateBasic does a sanity check on the provided data.
 func (m *MsgMintTokens) ValidateBasic() error {
 	_, err := sdk.AccAddressFromBech32(m.Creator)
