@@ -57,11 +57,19 @@ func (k Keeper) Token(goCtx context.Context, req *types.QueryTokenRequest) (*typ
 
 func (k Keeper) Tokens(goCtx context.Context, req *types.QueryTokensRequest) (*types.QueryTokensResponse, error) {
 	const MaxLimit = 100
-	if req != nil && req.Pagination != nil && req.Pagination.Limit > MaxLimit {
-		req.Pagination.Limit = MaxLimit
-	}
+	const DefaultLimit = 20
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
+	if req.Pagination == nil {
+		req.Pagination = &query.PageRequest{Limit: DefaultLimit}
+	} else {
+		if req.Pagination.Limit == 0 {
+			req.Pagination.Limit = DefaultLimit
+		}
+		if req.Pagination.Limit > MaxLimit {
+			req.Pagination.Limit = MaxLimit
+		}
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
