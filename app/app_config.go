@@ -143,6 +143,7 @@ var (
 
 	preBlockers = []string{
 		upgradetypes.ModuleName,
+		authtypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/preBlockers
 	}
 
@@ -297,7 +298,6 @@ var (
 			{
 				Name:   stocmoduletypes.ModuleName,
 				Config: appconfig.WrapAny(&stocmodulev1.Module{}),
-				
 			},
 			// this line is used by starport scaffolding # stargate/app/moduleConfig
 		},

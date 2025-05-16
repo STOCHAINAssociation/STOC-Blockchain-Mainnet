@@ -103,22 +103,22 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 			// Mint tokens to the recipient
 			coin := sdk.NewCoin(token.MinimalDenom, amount)
-			if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
+			if err := k.BankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 				return nil, err
 			}
 
-			if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
+			if err := k.BankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
 				return nil, err
 			}
 		}
 	} else {
 		// If no distribution specified, mint everything to creator
 		coin := sdk.NewCoin(token.MinimalDenom, initialSupply)
-		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
+		if err := k.BankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
 
-		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, creator, sdk.NewCoins(coin)); err != nil {
+		if err := k.BankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, creator, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
 	}
@@ -127,7 +127,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 	if remainingSupply.GT(math.ZeroInt()) {
 		coin := sdk.NewCoin(token.MinimalDenom, remainingSupply)
-		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
+		if err := k.BankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
 
@@ -172,7 +172,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		}
 	}
 
-	k.bankKeeper.SetDenomMetaData(ctx, denomMetadata)
+	k.BankKeeper.SetDenomMetaData(ctx, denomMetadata)
 
 	// Emit token creation event
 	ctx.EventManager().EmitEvent(

@@ -2735,12 +2735,22 @@ func (x *fastReflection_MsgMintTokens) ProtoMethods() *protoiface.Methods {
 }
 
 var (
-	md_MsgReleaseTokensResponse protoreflect.MessageDescriptor
+	md_MsgReleaseTokensResponse           protoreflect.MessageDescriptor
+	fd_MsgReleaseTokensResponse_symbol    protoreflect.FieldDescriptor
+	fd_MsgReleaseTokensResponse_amount    protoreflect.FieldDescriptor
+	fd_MsgReleaseTokensResponse_recipient protoreflect.FieldDescriptor
+	fd_MsgReleaseTokensResponse_success   protoreflect.FieldDescriptor
+	fd_MsgReleaseTokensResponse_message   protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_stoc_stoc_tx_proto_init()
 	md_MsgReleaseTokensResponse = File_stoc_stoc_tx_proto.Messages().ByName("MsgReleaseTokensResponse")
+	fd_MsgReleaseTokensResponse_symbol = md_MsgReleaseTokensResponse.Fields().ByName("symbol")
+	fd_MsgReleaseTokensResponse_amount = md_MsgReleaseTokensResponse.Fields().ByName("amount")
+	fd_MsgReleaseTokensResponse_recipient = md_MsgReleaseTokensResponse.Fields().ByName("recipient")
+	fd_MsgReleaseTokensResponse_success = md_MsgReleaseTokensResponse.Fields().ByName("success")
+	fd_MsgReleaseTokensResponse_message = md_MsgReleaseTokensResponse.Fields().ByName("message")
 }
 
 var _ protoreflect.Message = (*fastReflection_MsgReleaseTokensResponse)(nil)
@@ -2808,6 +2818,36 @@ func (x *fastReflection_MsgReleaseTokensResponse) Interface() protoreflect.Proto
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
 func (x *fastReflection_MsgReleaseTokensResponse) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Symbol != "" {
+		value := protoreflect.ValueOfString(x.Symbol)
+		if !f(fd_MsgReleaseTokensResponse_symbol, value) {
+			return
+		}
+	}
+	if x.Amount != "" {
+		value := protoreflect.ValueOfString(x.Amount)
+		if !f(fd_MsgReleaseTokensResponse_amount, value) {
+			return
+		}
+	}
+	if x.Recipient != "" {
+		value := protoreflect.ValueOfString(x.Recipient)
+		if !f(fd_MsgReleaseTokensResponse_recipient, value) {
+			return
+		}
+	}
+	if x.Success != false {
+		value := protoreflect.ValueOfBool(x.Success)
+		if !f(fd_MsgReleaseTokensResponse_success, value) {
+			return
+		}
+	}
+	if x.Message != "" {
+		value := protoreflect.ValueOfString(x.Message)
+		if !f(fd_MsgReleaseTokensResponse_message, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -2823,6 +2863,16 @@ func (x *fastReflection_MsgReleaseTokensResponse) Range(f func(protoreflect.Fiel
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_MsgReleaseTokensResponse) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
+	case "stoc.stoc.MsgReleaseTokensResponse.symbol":
+		return x.Symbol != ""
+	case "stoc.stoc.MsgReleaseTokensResponse.amount":
+		return x.Amount != ""
+	case "stoc.stoc.MsgReleaseTokensResponse.recipient":
+		return x.Recipient != ""
+	case "stoc.stoc.MsgReleaseTokensResponse.success":
+		return x.Success != false
+	case "stoc.stoc.MsgReleaseTokensResponse.message":
+		return x.Message != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgReleaseTokensResponse"))
@@ -2839,6 +2889,16 @@ func (x *fastReflection_MsgReleaseTokensResponse) Has(fd protoreflect.FieldDescr
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_MsgReleaseTokensResponse) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
+	case "stoc.stoc.MsgReleaseTokensResponse.symbol":
+		x.Symbol = ""
+	case "stoc.stoc.MsgReleaseTokensResponse.amount":
+		x.Amount = ""
+	case "stoc.stoc.MsgReleaseTokensResponse.recipient":
+		x.Recipient = ""
+	case "stoc.stoc.MsgReleaseTokensResponse.success":
+		x.Success = false
+	case "stoc.stoc.MsgReleaseTokensResponse.message":
+		x.Message = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgReleaseTokensResponse"))
@@ -2855,6 +2915,21 @@ func (x *fastReflection_MsgReleaseTokensResponse) Clear(fd protoreflect.FieldDes
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_MsgReleaseTokensResponse) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
+	case "stoc.stoc.MsgReleaseTokensResponse.symbol":
+		value := x.Symbol
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.MsgReleaseTokensResponse.amount":
+		value := x.Amount
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.MsgReleaseTokensResponse.recipient":
+		value := x.Recipient
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.MsgReleaseTokensResponse.success":
+		value := x.Success
+		return protoreflect.ValueOfBool(value)
+	case "stoc.stoc.MsgReleaseTokensResponse.message":
+		value := x.Message
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgReleaseTokensResponse"))
@@ -2875,6 +2950,16 @@ func (x *fastReflection_MsgReleaseTokensResponse) Get(descriptor protoreflect.Fi
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_MsgReleaseTokensResponse) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
+	case "stoc.stoc.MsgReleaseTokensResponse.symbol":
+		x.Symbol = value.Interface().(string)
+	case "stoc.stoc.MsgReleaseTokensResponse.amount":
+		x.Amount = value.Interface().(string)
+	case "stoc.stoc.MsgReleaseTokensResponse.recipient":
+		x.Recipient = value.Interface().(string)
+	case "stoc.stoc.MsgReleaseTokensResponse.success":
+		x.Success = value.Bool()
+	case "stoc.stoc.MsgReleaseTokensResponse.message":
+		x.Message = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgReleaseTokensResponse"))
@@ -2895,6 +2980,16 @@ func (x *fastReflection_MsgReleaseTokensResponse) Set(fd protoreflect.FieldDescr
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_MsgReleaseTokensResponse) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
+	case "stoc.stoc.MsgReleaseTokensResponse.symbol":
+		panic(fmt.Errorf("field symbol of message stoc.stoc.MsgReleaseTokensResponse is not mutable"))
+	case "stoc.stoc.MsgReleaseTokensResponse.amount":
+		panic(fmt.Errorf("field amount of message stoc.stoc.MsgReleaseTokensResponse is not mutable"))
+	case "stoc.stoc.MsgReleaseTokensResponse.recipient":
+		panic(fmt.Errorf("field recipient of message stoc.stoc.MsgReleaseTokensResponse is not mutable"))
+	case "stoc.stoc.MsgReleaseTokensResponse.success":
+		panic(fmt.Errorf("field success of message stoc.stoc.MsgReleaseTokensResponse is not mutable"))
+	case "stoc.stoc.MsgReleaseTokensResponse.message":
+		panic(fmt.Errorf("field message of message stoc.stoc.MsgReleaseTokensResponse is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgReleaseTokensResponse"))
@@ -2908,6 +3003,16 @@ func (x *fastReflection_MsgReleaseTokensResponse) Mutable(fd protoreflect.FieldD
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_MsgReleaseTokensResponse) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
+	case "stoc.stoc.MsgReleaseTokensResponse.symbol":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.MsgReleaseTokensResponse.amount":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.MsgReleaseTokensResponse.recipient":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.MsgReleaseTokensResponse.success":
+		return protoreflect.ValueOfBool(false)
+	case "stoc.stoc.MsgReleaseTokensResponse.message":
+		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgReleaseTokensResponse"))
@@ -2977,6 +3082,25 @@ func (x *fastReflection_MsgReleaseTokensResponse) ProtoMethods() *protoiface.Met
 		var n int
 		var l int
 		_ = l
+		l = len(x.Symbol)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.Amount)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.Recipient)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Success {
+			n += 2
+		}
+		l = len(x.Message)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -3005,6 +3129,44 @@ func (x *fastReflection_MsgReleaseTokensResponse) ProtoMethods() *protoiface.Met
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Message) > 0 {
+			i -= len(x.Message)
+			copy(dAtA[i:], x.Message)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Message)))
+			i--
+			dAtA[i] = 0x2a
+		}
+		if x.Success {
+			i--
+			if x.Success {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x20
+		}
+		if len(x.Recipient) > 0 {
+			i -= len(x.Recipient)
+			copy(dAtA[i:], x.Recipient)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Recipient)))
+			i--
+			dAtA[i] = 0x1a
+		}
+		if len(x.Amount) > 0 {
+			i -= len(x.Amount)
+			copy(dAtA[i:], x.Amount)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Amount)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.Symbol) > 0 {
+			i -= len(x.Symbol)
+			copy(dAtA[i:], x.Symbol)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Symbol)))
+			i--
+			dAtA[i] = 0xa
 		}
 		if input.Buf != nil {
 			input.Buf = append(input.Buf, dAtA...)
@@ -3055,6 +3217,154 @@ func (x *fastReflection_MsgReleaseTokensResponse) ProtoMethods() *protoiface.Met
 				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: MsgReleaseTokensResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 			}
 			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Symbol", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Symbol = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Amount", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Amount = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Recipient", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Recipient = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 4:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Success", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.Success = bool(v != 0)
+			case 5:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Message = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -3091,14 +3401,20 @@ func (x *fastReflection_MsgReleaseTokensResponse) ProtoMethods() *protoiface.Met
 }
 
 var (
-	md_MsgCreateTokenResponse        protoreflect.MessageDescriptor
-	fd_MsgCreateTokenResponse_symbol protoreflect.FieldDescriptor
+	md_MsgCreateTokenResponse         protoreflect.MessageDescriptor
+	fd_MsgCreateTokenResponse_symbol  protoreflect.FieldDescriptor
+	fd_MsgCreateTokenResponse_creator protoreflect.FieldDescriptor
+	fd_MsgCreateTokenResponse_success protoreflect.FieldDescriptor
+	fd_MsgCreateTokenResponse_message protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_stoc_stoc_tx_proto_init()
 	md_MsgCreateTokenResponse = File_stoc_stoc_tx_proto.Messages().ByName("MsgCreateTokenResponse")
 	fd_MsgCreateTokenResponse_symbol = md_MsgCreateTokenResponse.Fields().ByName("symbol")
+	fd_MsgCreateTokenResponse_creator = md_MsgCreateTokenResponse.Fields().ByName("creator")
+	fd_MsgCreateTokenResponse_success = md_MsgCreateTokenResponse.Fields().ByName("success")
+	fd_MsgCreateTokenResponse_message = md_MsgCreateTokenResponse.Fields().ByName("message")
 }
 
 var _ protoreflect.Message = (*fastReflection_MsgCreateTokenResponse)(nil)
@@ -3172,6 +3488,24 @@ func (x *fastReflection_MsgCreateTokenResponse) Range(f func(protoreflect.FieldD
 			return
 		}
 	}
+	if x.Creator != "" {
+		value := protoreflect.ValueOfString(x.Creator)
+		if !f(fd_MsgCreateTokenResponse_creator, value) {
+			return
+		}
+	}
+	if x.Success != false {
+		value := protoreflect.ValueOfBool(x.Success)
+		if !f(fd_MsgCreateTokenResponse_success, value) {
+			return
+		}
+	}
+	if x.Message != "" {
+		value := protoreflect.ValueOfString(x.Message)
+		if !f(fd_MsgCreateTokenResponse_message, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -3189,6 +3523,12 @@ func (x *fastReflection_MsgCreateTokenResponse) Has(fd protoreflect.FieldDescrip
 	switch fd.FullName() {
 	case "stoc.stoc.MsgCreateTokenResponse.symbol":
 		return x.Symbol != ""
+	case "stoc.stoc.MsgCreateTokenResponse.creator":
+		return x.Creator != ""
+	case "stoc.stoc.MsgCreateTokenResponse.success":
+		return x.Success != false
+	case "stoc.stoc.MsgCreateTokenResponse.message":
+		return x.Message != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgCreateTokenResponse"))
@@ -3207,6 +3547,12 @@ func (x *fastReflection_MsgCreateTokenResponse) Clear(fd protoreflect.FieldDescr
 	switch fd.FullName() {
 	case "stoc.stoc.MsgCreateTokenResponse.symbol":
 		x.Symbol = ""
+	case "stoc.stoc.MsgCreateTokenResponse.creator":
+		x.Creator = ""
+	case "stoc.stoc.MsgCreateTokenResponse.success":
+		x.Success = false
+	case "stoc.stoc.MsgCreateTokenResponse.message":
+		x.Message = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgCreateTokenResponse"))
@@ -3225,6 +3571,15 @@ func (x *fastReflection_MsgCreateTokenResponse) Get(descriptor protoreflect.Fiel
 	switch descriptor.FullName() {
 	case "stoc.stoc.MsgCreateTokenResponse.symbol":
 		value := x.Symbol
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.MsgCreateTokenResponse.creator":
+		value := x.Creator
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.MsgCreateTokenResponse.success":
+		value := x.Success
+		return protoreflect.ValueOfBool(value)
+	case "stoc.stoc.MsgCreateTokenResponse.message":
+		value := x.Message
 		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
@@ -3248,6 +3603,12 @@ func (x *fastReflection_MsgCreateTokenResponse) Set(fd protoreflect.FieldDescrip
 	switch fd.FullName() {
 	case "stoc.stoc.MsgCreateTokenResponse.symbol":
 		x.Symbol = value.Interface().(string)
+	case "stoc.stoc.MsgCreateTokenResponse.creator":
+		x.Creator = value.Interface().(string)
+	case "stoc.stoc.MsgCreateTokenResponse.success":
+		x.Success = value.Bool()
+	case "stoc.stoc.MsgCreateTokenResponse.message":
+		x.Message = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgCreateTokenResponse"))
@@ -3270,6 +3631,12 @@ func (x *fastReflection_MsgCreateTokenResponse) Mutable(fd protoreflect.FieldDes
 	switch fd.FullName() {
 	case "stoc.stoc.MsgCreateTokenResponse.symbol":
 		panic(fmt.Errorf("field symbol of message stoc.stoc.MsgCreateTokenResponse is not mutable"))
+	case "stoc.stoc.MsgCreateTokenResponse.creator":
+		panic(fmt.Errorf("field creator of message stoc.stoc.MsgCreateTokenResponse is not mutable"))
+	case "stoc.stoc.MsgCreateTokenResponse.success":
+		panic(fmt.Errorf("field success of message stoc.stoc.MsgCreateTokenResponse is not mutable"))
+	case "stoc.stoc.MsgCreateTokenResponse.message":
+		panic(fmt.Errorf("field message of message stoc.stoc.MsgCreateTokenResponse is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgCreateTokenResponse"))
@@ -3284,6 +3651,12 @@ func (x *fastReflection_MsgCreateTokenResponse) Mutable(fd protoreflect.FieldDes
 func (x *fastReflection_MsgCreateTokenResponse) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
 	case "stoc.stoc.MsgCreateTokenResponse.symbol":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.MsgCreateTokenResponse.creator":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.MsgCreateTokenResponse.success":
+		return protoreflect.ValueOfBool(false)
+	case "stoc.stoc.MsgCreateTokenResponse.message":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
@@ -3358,6 +3731,17 @@ func (x *fastReflection_MsgCreateTokenResponse) ProtoMethods() *protoiface.Metho
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.Creator)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Success {
+			n += 2
+		}
+		l = len(x.Message)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -3386,6 +3770,30 @@ func (x *fastReflection_MsgCreateTokenResponse) ProtoMethods() *protoiface.Metho
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Message) > 0 {
+			i -= len(x.Message)
+			copy(dAtA[i:], x.Message)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Message)))
+			i--
+			dAtA[i] = 0x22
+		}
+		if x.Success {
+			i--
+			if x.Success {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x18
+		}
+		if len(x.Creator) > 0 {
+			i -= len(x.Creator)
+			copy(dAtA[i:], x.Creator)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Creator)))
+			i--
+			dAtA[i] = 0x12
 		}
 		if len(x.Symbol) > 0 {
 			i -= len(x.Symbol)
@@ -3475,6 +3883,90 @@ func (x *fastReflection_MsgCreateTokenResponse) ProtoMethods() *protoiface.Metho
 				}
 				x.Symbol = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Creator", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Creator = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Success", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.Success = bool(v != 0)
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Message = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -3511,9 +4003,12 @@ func (x *fastReflection_MsgCreateTokenResponse) ProtoMethods() *protoiface.Metho
 }
 
 var (
-	md_MsgMintTokensResponse        protoreflect.MessageDescriptor
-	fd_MsgMintTokensResponse_symbol protoreflect.FieldDescriptor
-	fd_MsgMintTokensResponse_amount protoreflect.FieldDescriptor
+	md_MsgMintTokensResponse           protoreflect.MessageDescriptor
+	fd_MsgMintTokensResponse_symbol    protoreflect.FieldDescriptor
+	fd_MsgMintTokensResponse_amount    protoreflect.FieldDescriptor
+	fd_MsgMintTokensResponse_recipient protoreflect.FieldDescriptor
+	fd_MsgMintTokensResponse_success   protoreflect.FieldDescriptor
+	fd_MsgMintTokensResponse_message   protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -3521,6 +4016,9 @@ func init() {
 	md_MsgMintTokensResponse = File_stoc_stoc_tx_proto.Messages().ByName("MsgMintTokensResponse")
 	fd_MsgMintTokensResponse_symbol = md_MsgMintTokensResponse.Fields().ByName("symbol")
 	fd_MsgMintTokensResponse_amount = md_MsgMintTokensResponse.Fields().ByName("amount")
+	fd_MsgMintTokensResponse_recipient = md_MsgMintTokensResponse.Fields().ByName("recipient")
+	fd_MsgMintTokensResponse_success = md_MsgMintTokensResponse.Fields().ByName("success")
+	fd_MsgMintTokensResponse_message = md_MsgMintTokensResponse.Fields().ByName("message")
 }
 
 var _ protoreflect.Message = (*fastReflection_MsgMintTokensResponse)(nil)
@@ -3600,6 +4098,24 @@ func (x *fastReflection_MsgMintTokensResponse) Range(f func(protoreflect.FieldDe
 			return
 		}
 	}
+	if x.Recipient != "" {
+		value := protoreflect.ValueOfString(x.Recipient)
+		if !f(fd_MsgMintTokensResponse_recipient, value) {
+			return
+		}
+	}
+	if x.Success != false {
+		value := protoreflect.ValueOfBool(x.Success)
+		if !f(fd_MsgMintTokensResponse_success, value) {
+			return
+		}
+	}
+	if x.Message != "" {
+		value := protoreflect.ValueOfString(x.Message)
+		if !f(fd_MsgMintTokensResponse_message, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -3619,6 +4135,12 @@ func (x *fastReflection_MsgMintTokensResponse) Has(fd protoreflect.FieldDescript
 		return x.Symbol != ""
 	case "stoc.stoc.MsgMintTokensResponse.amount":
 		return x.Amount != ""
+	case "stoc.stoc.MsgMintTokensResponse.recipient":
+		return x.Recipient != ""
+	case "stoc.stoc.MsgMintTokensResponse.success":
+		return x.Success != false
+	case "stoc.stoc.MsgMintTokensResponse.message":
+		return x.Message != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgMintTokensResponse"))
@@ -3639,6 +4161,12 @@ func (x *fastReflection_MsgMintTokensResponse) Clear(fd protoreflect.FieldDescri
 		x.Symbol = ""
 	case "stoc.stoc.MsgMintTokensResponse.amount":
 		x.Amount = ""
+	case "stoc.stoc.MsgMintTokensResponse.recipient":
+		x.Recipient = ""
+	case "stoc.stoc.MsgMintTokensResponse.success":
+		x.Success = false
+	case "stoc.stoc.MsgMintTokensResponse.message":
+		x.Message = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgMintTokensResponse"))
@@ -3660,6 +4188,15 @@ func (x *fastReflection_MsgMintTokensResponse) Get(descriptor protoreflect.Field
 		return protoreflect.ValueOfString(value)
 	case "stoc.stoc.MsgMintTokensResponse.amount":
 		value := x.Amount
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.MsgMintTokensResponse.recipient":
+		value := x.Recipient
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.MsgMintTokensResponse.success":
+		value := x.Success
+		return protoreflect.ValueOfBool(value)
+	case "stoc.stoc.MsgMintTokensResponse.message":
+		value := x.Message
 		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
@@ -3685,6 +4222,12 @@ func (x *fastReflection_MsgMintTokensResponse) Set(fd protoreflect.FieldDescript
 		x.Symbol = value.Interface().(string)
 	case "stoc.stoc.MsgMintTokensResponse.amount":
 		x.Amount = value.Interface().(string)
+	case "stoc.stoc.MsgMintTokensResponse.recipient":
+		x.Recipient = value.Interface().(string)
+	case "stoc.stoc.MsgMintTokensResponse.success":
+		x.Success = value.Bool()
+	case "stoc.stoc.MsgMintTokensResponse.message":
+		x.Message = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgMintTokensResponse"))
@@ -3709,6 +4252,12 @@ func (x *fastReflection_MsgMintTokensResponse) Mutable(fd protoreflect.FieldDesc
 		panic(fmt.Errorf("field symbol of message stoc.stoc.MsgMintTokensResponse is not mutable"))
 	case "stoc.stoc.MsgMintTokensResponse.amount":
 		panic(fmt.Errorf("field amount of message stoc.stoc.MsgMintTokensResponse is not mutable"))
+	case "stoc.stoc.MsgMintTokensResponse.recipient":
+		panic(fmt.Errorf("field recipient of message stoc.stoc.MsgMintTokensResponse is not mutable"))
+	case "stoc.stoc.MsgMintTokensResponse.success":
+		panic(fmt.Errorf("field success of message stoc.stoc.MsgMintTokensResponse is not mutable"))
+	case "stoc.stoc.MsgMintTokensResponse.message":
+		panic(fmt.Errorf("field message of message stoc.stoc.MsgMintTokensResponse is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.MsgMintTokensResponse"))
@@ -3725,6 +4274,12 @@ func (x *fastReflection_MsgMintTokensResponse) NewField(fd protoreflect.FieldDes
 	case "stoc.stoc.MsgMintTokensResponse.symbol":
 		return protoreflect.ValueOfString("")
 	case "stoc.stoc.MsgMintTokensResponse.amount":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.MsgMintTokensResponse.recipient":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.MsgMintTokensResponse.success":
+		return protoreflect.ValueOfBool(false)
+	case "stoc.stoc.MsgMintTokensResponse.message":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
@@ -3803,6 +4358,17 @@ func (x *fastReflection_MsgMintTokensResponse) ProtoMethods() *protoiface.Method
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.Recipient)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Success {
+			n += 2
+		}
+		l = len(x.Message)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -3831,6 +4397,30 @@ func (x *fastReflection_MsgMintTokensResponse) ProtoMethods() *protoiface.Method
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Message) > 0 {
+			i -= len(x.Message)
+			copy(dAtA[i:], x.Message)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Message)))
+			i--
+			dAtA[i] = 0x2a
+		}
+		if x.Success {
+			i--
+			if x.Success {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x20
+		}
+		if len(x.Recipient) > 0 {
+			i -= len(x.Recipient)
+			copy(dAtA[i:], x.Recipient)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Recipient)))
+			i--
+			dAtA[i] = 0x1a
 		}
 		if len(x.Amount) > 0 {
 			i -= len(x.Amount)
@@ -3958,6 +4548,90 @@ func (x *fastReflection_MsgMintTokensResponse) ProtoMethods() *protoiface.Method
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
 				x.Amount = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Recipient", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Recipient = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 4:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Success", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.Success = bool(v != 0)
+			case 5:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Message = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -4633,6 +5307,12 @@ type MsgReleaseTokensResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
+
+	Symbol    string `protobuf:"bytes,1,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	Amount    string `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	Recipient string `protobuf:"bytes,3,opt,name=recipient,proto3" json:"recipient,omitempty"`
+	Success   bool   `protobuf:"varint,4,opt,name=success,proto3" json:"success,omitempty"`
+	Message   string `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
 }
 
 func (x *MsgReleaseTokensResponse) Reset() {
@@ -4655,12 +5335,50 @@ func (*MsgReleaseTokensResponse) Descriptor() ([]byte, []int) {
 	return file_stoc_stoc_tx_proto_rawDescGZIP(), []int{4}
 }
 
+func (x *MsgReleaseTokensResponse) GetSymbol() string {
+	if x != nil {
+		return x.Symbol
+	}
+	return ""
+}
+
+func (x *MsgReleaseTokensResponse) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
+func (x *MsgReleaseTokensResponse) GetRecipient() string {
+	if x != nil {
+		return x.Recipient
+	}
+	return ""
+}
+
+func (x *MsgReleaseTokensResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *MsgReleaseTokensResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 type MsgCreateTokenResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Symbol string `protobuf:"bytes,1,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	Symbol  string `protobuf:"bytes,1,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	Creator string `protobuf:"bytes,2,opt,name=creator,proto3" json:"creator,omitempty"`
+	Success bool   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
+	Message string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
 }
 
 func (x *MsgCreateTokenResponse) Reset() {
@@ -4690,13 +5408,37 @@ func (x *MsgCreateTokenResponse) GetSymbol() string {
 	return ""
 }
 
+func (x *MsgCreateTokenResponse) GetCreator() string {
+	if x != nil {
+		return x.Creator
+	}
+	return ""
+}
+
+func (x *MsgCreateTokenResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *MsgCreateTokenResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 type MsgMintTokensResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Symbol string `protobuf:"bytes,1,opt,name=symbol,proto3" json:"symbol,omitempty"`
-	Amount string `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	Symbol    string `protobuf:"bytes,1,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	Amount    string `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	Recipient string `protobuf:"bytes,3,opt,name=recipient,proto3" json:"recipient,omitempty"`
+	Success   bool   `protobuf:"varint,4,opt,name=success,proto3" json:"success,omitempty"`
+	Message   string `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
 }
 
 func (x *MsgMintTokensResponse) Reset() {
@@ -4729,6 +5471,27 @@ func (x *MsgMintTokensResponse) GetSymbol() string {
 func (x *MsgMintTokensResponse) GetAmount() string {
 	if x != nil {
 		return x.Amount
+	}
+	return ""
+}
+
+func (x *MsgMintTokensResponse) GetRecipient() string {
+	if x != nil {
+		return x.Recipient
+	}
+	return ""
+}
+
+func (x *MsgMintTokensResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *MsgMintTokensResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
 	}
 	return ""
 }
@@ -4832,46 +5595,64 @@ var file_stoc_stoc_tx_proto_rawDesc = []byte{
 	0x42, 0x1d, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x15, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73,
 	0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x49, 0x6e, 0x74, 0x52,
 	0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x3a, 0x0c, 0x82, 0xe7, 0xb0, 0x2a, 0x07, 0x63, 0x72,
-	0x65, 0x61, 0x74, 0x6f, 0x72, 0x22, 0x1a, 0x0a, 0x18, 0x4d, 0x73, 0x67, 0x52, 0x65, 0x6c, 0x65,
-	0x61, 0x73, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
-	0x65, 0x22, 0x30, 0x0a, 0x16, 0x4d, 0x73, 0x67, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x54, 0x6f,
-	0x6b, 0x65, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x73,
-	0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x79, 0x6d,
-	0x62, 0x6f, 0x6c, 0x22, 0x47, 0x0a, 0x15, 0x4d, 0x73, 0x67, 0x4d, 0x69, 0x6e, 0x74, 0x54, 0x6f,
-	0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x16, 0x0a, 0x06,
-	0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x79,
-	0x6d, 0x62, 0x6f, 0x6c, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x02,
-	0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x22, 0x19, 0x0a, 0x17,
-	0x4d, 0x73, 0x67, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52,
-	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x32, 0xc6, 0x02, 0x0a, 0x03, 0x4d, 0x73, 0x67, 0x12,
-	0x4e, 0x0a, 0x0c, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12,
-	0x1a, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x55,
-	0x70, 0x64, 0x61, 0x74, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x1a, 0x22, 0x2e, 0x73, 0x74,
-	0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x55, 0x70, 0x64, 0x61, 0x74,
-	0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12,
-	0x4b, 0x0a, 0x0b, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x12, 0x19,
-	0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x43, 0x72,
-	0x65, 0x61, 0x74, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x1a, 0x21, 0x2e, 0x73, 0x74, 0x6f, 0x63,
-	0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x54,
-	0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x51, 0x0a, 0x0d,
-	0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x12, 0x1b, 0x2e,
-	0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x52, 0x65, 0x6c,
-	0x65, 0x61, 0x73, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x1a, 0x23, 0x2e, 0x73, 0x74, 0x6f,
-	0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73,
-	0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12,
-	0x48, 0x0a, 0x0a, 0x4d, 0x69, 0x6e, 0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x12, 0x18, 0x2e,
-	0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x4d, 0x69, 0x6e,
-	0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x1a, 0x20, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73,
-	0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x4d, 0x69, 0x6e, 0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e,
-	0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x1a, 0x05, 0x80, 0xe7, 0xb0, 0x2a, 0x01,
-	0x42, 0x71, 0x0a, 0x0d, 0x63, 0x6f, 0x6d, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f,
-	0x63, 0x42, 0x07, 0x54, 0x78, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x12, 0x73, 0x74,
-	0x6f, 0x63, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63,
-	0xa2, 0x02, 0x03, 0x53, 0x53, 0x58, 0xaa, 0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x2e, 0x53, 0x74,
-	0x6f, 0x63, 0xca, 0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63, 0xe2, 0x02,
-	0x15, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65,
-	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x0a, 0x53, 0x74, 0x6f, 0x63, 0x3a, 0x3a, 0x53,
-	0x74, 0x6f, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x65, 0x61, 0x74, 0x6f, 0x72, 0x22, 0x9c, 0x01, 0x0a, 0x18, 0x4d, 0x73, 0x67, 0x52, 0x65, 0x6c,
+	0x65, 0x61, 0x73, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
+	0x73, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x06, 0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x6d,
+	0x6f, 0x75, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75,
+	0x6e, 0x74, 0x12, 0x1c, 0x0a, 0x09, 0x72, 0x65, 0x63, 0x69, 0x70, 0x69, 0x65, 0x6e, 0x74, 0x18,
+	0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x72, 0x65, 0x63, 0x69, 0x70, 0x69, 0x65, 0x6e, 0x74,
+	0x12, 0x18, 0x0a, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28,
+	0x08, 0x52, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x18, 0x0a, 0x07, 0x6d, 0x65,
+	0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6d, 0x65, 0x73,
+	0x73, 0x61, 0x67, 0x65, 0x22, 0x7e, 0x0a, 0x16, 0x4d, 0x73, 0x67, 0x43, 0x72, 0x65, 0x61, 0x74,
+	0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x16,
+	0x0a, 0x06, 0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06,
+	0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x12, 0x18, 0x0a, 0x07, 0x63, 0x72, 0x65, 0x61, 0x74, 0x6f,
+	0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x63, 0x72, 0x65, 0x61, 0x74, 0x6f, 0x72,
+	0x12, 0x18, 0x0a, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28,
+	0x08, 0x52, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x18, 0x0a, 0x07, 0x6d, 0x65,
+	0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6d, 0x65, 0x73,
+	0x73, 0x61, 0x67, 0x65, 0x22, 0x99, 0x01, 0x0a, 0x15, 0x4d, 0x73, 0x67, 0x4d, 0x69, 0x6e, 0x74,
+	0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x16,
+	0x0a, 0x06, 0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06,
+	0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x1c,
+	0x0a, 0x09, 0x72, 0x65, 0x63, 0x69, 0x70, 0x69, 0x65, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x09, 0x72, 0x65, 0x63, 0x69, 0x70, 0x69, 0x65, 0x6e, 0x74, 0x12, 0x18, 0x0a, 0x07,
+	0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x73,
+	0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x18, 0x0a, 0x07, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67,
+	0x65, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65,
+	0x22, 0x19, 0x0a, 0x17, 0x4d, 0x73, 0x67, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x50, 0x61, 0x72,
+	0x61, 0x6d, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x32, 0xc6, 0x02, 0x0a, 0x03,
+	0x4d, 0x73, 0x67, 0x12, 0x4e, 0x0a, 0x0c, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x50, 0x61, 0x72,
+	0x61, 0x6d, 0x73, 0x12, 0x1a, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e,
+	0x4d, 0x73, 0x67, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x1a,
+	0x22, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x55,
+	0x70, 0x64, 0x61, 0x74, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x12, 0x4b, 0x0a, 0x0b, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x54, 0x6f, 0x6b,
+	0x65, 0x6e, 0x12, 0x19, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d,
+	0x73, 0x67, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x1a, 0x21, 0x2e,
+	0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x43, 0x72, 0x65,
+	0x61, 0x74, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x12, 0x51, 0x0a, 0x0d, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e,
+	0x73, 0x12, 0x1b, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73,
+	0x67, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x1a, 0x23,
+	0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x52, 0x65,
+	0x6c, 0x65, 0x61, 0x73, 0x65, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x12, 0x48, 0x0a, 0x0a, 0x4d, 0x69, 0x6e, 0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e,
+	0x73, 0x12, 0x18, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73,
+	0x67, 0x4d, 0x69, 0x6e, 0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x1a, 0x20, 0x2e, 0x73, 0x74,
+	0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x4d, 0x73, 0x67, 0x4d, 0x69, 0x6e, 0x74, 0x54,
+	0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x1a, 0x05, 0x80,
+	0xe7, 0xb0, 0x2a, 0x01, 0x42, 0x71, 0x0a, 0x0d, 0x63, 0x6f, 0x6d, 0x2e, 0x73, 0x74, 0x6f, 0x63,
+	0x2e, 0x73, 0x74, 0x6f, 0x63, 0x42, 0x07, 0x54, 0x78, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01,
+	0x5a, 0x12, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f,
+	0x73, 0x74, 0x6f, 0x63, 0xa2, 0x02, 0x03, 0x53, 0x53, 0x58, 0xaa, 0x02, 0x09, 0x53, 0x74, 0x6f,
+	0x63, 0x2e, 0x53, 0x74, 0x6f, 0x63, 0xca, 0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74,
+	0x6f, 0x63, 0xe2, 0x02, 0x15, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x47,
+	0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x0a, 0x53, 0x74, 0x6f,
+	0x63, 0x3a, 0x3a, 0x53, 0x74, 0x6f, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

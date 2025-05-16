@@ -11,7 +11,7 @@ import (
 	"cosmossdk.io/log"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	
 )
 
 type (
@@ -25,7 +25,7 @@ type (
 		// should be the x/gov module account.
 		authority     string
 		accountKeeper types.AccountKeeper
-		bankKeeper    bankkeeper.Keeper
+		BankKeeper    types.BankKeeper
 	}
 )
 
@@ -34,7 +34,7 @@ func NewKeeper(
 	storeService store.KVStoreService,
 	logger log.Logger,
 	authority string,
-	bankKeeper bankkeeper.Keeper,
+	bankKeeper types.BankKeeper,
 	accountKeeper types.AccountKeeper,
 ) Keeper {
 	if _, err := sdk.AccAddressFromBech32(authority); err != nil {
@@ -46,7 +46,7 @@ func NewKeeper(
 		storeService:  storeService,
 		logger:        logger,
 		authority:     authority,
-		bankKeeper:    bankKeeper,
+		BankKeeper:    bankKeeper,
 		accountKeeper: accountKeeper,
 	}
 }
@@ -83,6 +83,4 @@ func (k Keeper) SetTokenCounter(ctx sdk.Context, counter uint64) {
 		panic(err)
 	}
 }
-func (k Keeper) BankKeeper() bankkeeper.Keeper {
-	return k.bankKeeper
-}
+
