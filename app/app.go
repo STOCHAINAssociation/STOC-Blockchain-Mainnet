@@ -213,6 +213,8 @@ func NewAnteHandler(
 		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler), // handle sig verification
 
 		// other decorators
+		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
+		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
 	}
 
 	return sdk.ChainAnteDecorators(anteDecorators...), nil

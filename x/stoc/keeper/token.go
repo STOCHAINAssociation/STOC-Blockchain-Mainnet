@@ -10,7 +10,7 @@ import (
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/google/uuid"
+	
 )
 
 // SetToken sets a token in the store
@@ -18,8 +18,8 @@ func (k Keeper) SetToken(ctx sdk.Context, token types.Token) {
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	if token.Id == "" {
-		token.Id = uuid.New().String()
-	}
+		token.Id = token.MinimalDenom
+	} // Đảm bảo Id luôn là minimalDenom, không tự sinh uuid
 
 	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
 	mainStore.Set([]byte(token.Id), k.cdc.MustMarshal(&token))
@@ -86,22 +86,22 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, symbol string, 
 	}
 
 	if token.Creator != owner.String() {
-		return sdkerrors.Wrapf(types.ErrUnauthorized, "only token owner can mint", symbol)
+		return sdkerrors.Wrapf(types.ErrUnauthorized, "only token owner can mint token %s", symbol)
 	}
 
 	if !token.Unlimited {
-		return sdkerrors.Wrapf(types.ErrCannotMint, "token is not configured for unlimited minting", symbol)
+		return sdkerrors.Wrapf(types.ErrCannotMint, "token %s is not configured for unlimited minting", symbol)
 	}
 
-	//logic mint token
-	coins := sdk.NewCoins(sdk.NewCoin(symbol, amount))
-	err := k.bankKeeper.MintCoins(ctx, types.ModuleName, coins)
+	// Sử dụng đúng minimalDenom khi tạo coin
+	coins := sdk.NewCoins(sdk.NewCoin(token.MinimalDenom, amount))
+	err := k.BankKeeper.MintCoins(ctx, types.ModuleName, coins)
 	if err != nil {
 		return err
 	}
 
 	//send coins to the owner
-	err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, owner, coins)
+	err = k.BankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, owner, coins)
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, symbol string, 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeMintToken,
-			sdk.NewAttribute(types.AttributeKeyTokenSymbol, symbol),
+			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.MinimalDenom),
 			sdk.NewAttribute(types.AttributeKeyTokenCreator, owner.String()),
 			sdk.NewAttribute(types.AttributeKeyMintToken, amount.String()),
 		),
