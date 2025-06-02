@@ -27,16 +27,6 @@ Welcome to the comprehensive documentation for STOC Blockchain. This repository 
   - Client libraries (JavaScript, Python, Go)
   - Error handling and rate limiting
 
-### 🚀 Deployment and Operations
-- **[Deployment Guide](./deployment/readme.md)** - Production deployment documentation
-  - Bare metal deployment
-  - Docker containerization
-  - Kubernetes orchestration
-  - Cloud provider setup (AWS, GCP, Azure)
-  - Security configuration
-  - Monitoring and logging
-  - Backup and recovery
-
 ## 🏗️ STOC Blockchain Overview
 
 STOC Blockchain is a high-performance blockchain built using the Cosmos SDK and Ignite CLI. It provides:
