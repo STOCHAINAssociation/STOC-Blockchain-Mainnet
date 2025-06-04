@@ -5,6 +5,7 @@ This guide provides step-by-step instructions for setting up and running a STOC 
 ## Prerequisites
 
 - Go 1.23.2 or higher (toolchain go1.24.3)
+- Ignite CLI v29 (including Cosmos SDK)
 - Git
 - Minimum 16GB RAM
 - 500GB+ available disk space
@@ -21,7 +22,7 @@ This guide provides step-by-step instructions for setting up and running a STOC 
 
 ### 1. Build Chain
 
-Clone the repository and build the binary:
+Clone the repository and build the binary (by using Ignite CLI):
 
 ```bash
 # Clone the repository
@@ -29,10 +30,7 @@ git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
 cd STOC-Blockchain-Mainnet
 
 # Build the binary
-make build
-
-# Or install globally
-make install
+ignite chain build
 ```
 
 Check if stocd is installed:
