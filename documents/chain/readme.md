@@ -38,6 +38,11 @@ Check if stocd is installed:
 stocd version
 ```
 
+### Alternative: Download Pre-built Binary
+
+If you encounter issues building the chain, you can download the pre-built binary: [Here](https://drive.google.com/file/d/14XYPWSUPqs-JX5-wPMN7FtEA6B4_zv9a/view?usp=sharing)
+
+
 ### 2. Initialize Node
 
 Initialize your node with a custom moniker name:
