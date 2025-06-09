@@ -15,7 +15,7 @@ This guide provides step-by-step instructions for setting up and running a STOC 
 ## Important Links
 
 - **Snapshot Download**: https://api-sync-stoc-mainnet.stochainscan.io/snapshots/download-latest
-- **Genesis JSON**: https://api-stoc-mainnet.stochainscan.io/rpc/genesis
+- **Genesis JSON**: https://rpc-stoc-mainnet.stochainscan.io//genesis
 - **Addrbook API (for peers)**: https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook
 - **Source Code**: https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet
 
@@ -103,7 +103,7 @@ Download and update the genesis file:
 
 ```bash
 # Download genesis file
-curl -s https://api-stoc-mainnet.stochainscan.io/rpc/genesis | jq '.result.genesis' > ~/.stoc/config/genesis.json
+curl -s https://rpc-stoc-mainnet.stochainscan.io//genesis | jq '.result.genesis' > ~/.stoc/config/genesis.json
 
 # Verify genesis file
 stocd validate-genesis ~/.stoc/config/genesis.json

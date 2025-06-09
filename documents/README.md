@@ -51,8 +51,8 @@ STOC Blockchain is a high-performance blockchain built using the Cosmos SDK and 
 - **Chain ID**: `stoc`
 - **Minimum Gas Price**: `0.001ustoc`
 - **REST API**: `https://api-stoc-mainnet.stochainscan.io`
-- **RPC**: `https://api-stoc-mainnet.stochainscan.io/rpc`
-- **Genesis**: `https://api-stoc-mainnet.stochainscan.io/rpc/genesis`
+- **RPC**: `https://rpc-stoc-mainnet.stochainscan.io/`
+- **Genesis**: `https://rpc-stoc-mainnet.stochainscan.io//genesis`
 - **Snapshot**: `https://api-sync-stoc-mainnet.stochainscan.io/snapshots/download-latest`
 
 ### Development
