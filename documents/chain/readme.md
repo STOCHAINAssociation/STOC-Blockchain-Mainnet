@@ -4,8 +4,9 @@ This guide provides step-by-step instructions for setting up and running a STOC 
 
 ## Prerequisites
 
-- Go 1.23.2 or higher (toolchain go1.24.3)
+- Go 1.24.3 or higher (toolchain go1.24.3)
 - Ignite CLI v29 (including Cosmos SDK)
+- Buf CLI (for protobuf generation)
 - Git
 - Minimum 16GB RAM
 - 500GB+ available disk space
@@ -20,7 +21,30 @@ This guide provides step-by-step instructions for setting up and running a STOC 
 
 ## Setup Instructions
 
-### 1. Build Chain
+### 1. Install Required Tools
+
+First, install the necessary tools:
+
+```bash
+# Install go version 1.24.3
+sudo apt update
+sudo wget https://go.dev/dl/go1.24.3.linux-amd64.tar.gz
+#unpack it
+sudo tar -C /usr/local -xzf go1.24.3.linux-amd64.tar.gz
+
+echo 'export GOROOT=/usr/local/go' >> ~/.bashrc
+echo 'export GOPATH=$HOME/go' >> ~/.bashrc
+echo 'export PATH=$PATH:$GOROOT/bin:$GOPATH/bin:/usr/local/bin' >> ~/.bashrc
+source ~/.bashrc
+
+# Install Buf CLI for protobuf generation
+go install github.com/bufbuild/buf/cmd/buf@latest
+
+# Verify buf installation
+buf --version
+```
+
+### 2. Build Chain
 
 Clone the repository and build the binary (by using Ignite CLI):
 
@@ -40,10 +64,10 @@ stocd version
 
 ### Alternative: Download Pre-built Binary
 
-If you encounter issues building the chain, you can download the pre-built binary: [Here](https://drive.google.com/file/d/14XYPWSUPqs-JX5-wPMN7FtEA6B4_zv9a/view?usp=sharing)
+If you encounter issues building the chain, you can download the pre-built binary: [Here](https://drive.google.com/file/d/1FWjVfsqQ7Y6qR1U2aAIzk0pm08spMiq-/view?usp=sharing)
 
 
-### 2. Initialize Node
+### 3. Initialize Node
 
 Initialize your node with a custom moniker name:
 
@@ -61,7 +85,7 @@ Update the minimum gas price in your configuration:
 sed -i 's/minimum-gas-prices = ""/minimum-gas-prices = "0.001ustoc"/' ~/.stoc/config/app.toml
 ```
 
-### 3. Configure Peers
+### 4. Configure Peers
 
 Get the current peer list from the addrbook API and configure your node:
 
@@ -73,7 +97,7 @@ curl -s https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook | jq -r
 persistent_peers = "4ed01c03afcca1399467c644efbb7f076cb406d0@157.66.100.146:26656,41f8094cd1da001a7a4416246c3ea5ab62196bd9@157.66.101.49:26656,5f0cd810689cc8907aa3520a75705b20f9f179bb@103.161.180.115:26656"
 ```
 
-### 4. Update Genesis
+### 5. Update Genesis
 
 Download and update the genesis file:
 
@@ -85,7 +109,7 @@ curl -s https://api-stoc-mainnet.stochainscan.io/rpc/genesis | jq '.result.genes
 stocd validate-genesis ~/.stoc/config/genesis.json
 ```
 
-### 5. Download Chain Data (Snapshot)
+### 6. Download Chain Data (Snapshot)
 
 To speed up synchronization, download the latest snapshot:
 
@@ -106,7 +130,7 @@ rm snapshot.tar.gz
 chown -R $(whoami):$(whoami) ~/.stoc/data
 ```
 
-### 6. Start Node and Begin Sync
+### 7. Start Node and Begin Sync
 
 Start the STOC daemon to begin synchronization:
 
