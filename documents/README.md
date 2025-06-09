@@ -19,14 +19,6 @@ Welcome to the comprehensive documentation for STOC Blockchain. This repository 
   - Code standards and best practices
   - Frontend integration
 
-### 🌐 API Documentation
-- **[API Reference](./api/readme.md)** - Complete API documentation
-  - REST API endpoints
-  - gRPC services
-  - WebSocket connections
-  - Client libraries (JavaScript, Python, Go)
-  - Error handling and rate limiting
-
 ## 🏗️ STOC Blockchain Overview
 
 STOC Blockchain is a high-performance blockchain built using the Cosmos SDK and Ignite CLI. It provides:
@@ -36,20 +28,6 @@ STOC Blockchain is a high-performance blockchain built using the Cosmos SDK and 
 - **Interoperability**: IBC-enabled for cross-chain communication
 - **Developer Friendly**: Comprehensive tooling and documentation
 - **Secure**: Built on proven Tendermint consensus
-
-## 🚀 Quick Start
-
-### For Node Operators
-1. Follow the [Chain Setup Guide](./chain/readme.md) to run a node
-2. Use the [Deployment Guide](./deployment/readme.md) for production setup
-
-### For Developers
-1. Check the [Development Guide](./development/readme.md) for environment setup
-2. Explore the [API Documentation](./api/readme.md) for integration
-
-### For Users
-1. Use the [API Reference](./api/readme.md) to interact with the blockchain
-2. Check client libraries for your preferred programming language
 
 ## 🔧 System Requirements
 
@@ -85,13 +63,11 @@ STOC Blockchain is a high-performance blockchain built using the Cosmos SDK and 
 ## 📋 Prerequisites
 
 ### For All Users
-- Go 1.23.2+ (toolchain go1.24.3)
+- Go 1.24.3+ (toolchain go1.24.3)
 - Git
 - Basic command line knowledge
 
 ### For Developers
-- Node.js 18+ (for frontend development)
-- Docker & Docker Compose
 - Ignite CLI
 - Protocol Buffers compiler (protoc)
 
