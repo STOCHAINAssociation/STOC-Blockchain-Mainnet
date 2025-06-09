@@ -342,9 +342,6 @@ ignite chain serve --reset-once
 # Build without starting
 ignite chain build
 
-# Generate documentation
-make docs
-
 # Update dependencies
 go mod tidy
 
