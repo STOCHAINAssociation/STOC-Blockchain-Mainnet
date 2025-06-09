@@ -4,7 +4,7 @@ This guide provides step-by-step instructions for setting up and running a STOC 
 
 ## Prerequisites
 
-- Go 1.23.2 or higher (toolchain go1.24.3)
+- Go 1.24.3 or higher (toolchain go1.24.3)
 - Ignite CLI v29 (including Cosmos SDK)
 - Buf CLI (for protobuf generation)
 - Git
@@ -26,6 +26,17 @@ This guide provides step-by-step instructions for setting up and running a STOC 
 First, install the necessary tools:
 
 ```bash
+# Install go version 1.24.3
+sudo apt update
+sudo wget https://go.dev/dl/go1.24.3.linux-amd64.tar.gz
+#unpack it
+sudo tar -C /usr/local -xzf go1.24.3.linux-amd64.tar.gz
+
+echo 'export GOROOT=/usr/local/go' >> ~/.bashrc
+echo 'export GOPATH=$HOME/go' >> ~/.bashrc
+echo 'export PATH=$PATH:$GOROOT/bin:$GOPATH/bin:/usr/local/bin' >> ~/.bashrc
+source ~/.bashrc
+
 # Install Buf CLI for protobuf generation
 go install github.com/bufbuild/buf/cmd/buf@latest
 
