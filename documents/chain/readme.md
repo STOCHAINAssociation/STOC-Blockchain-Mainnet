@@ -106,7 +106,7 @@ Download and update the genesis file:
 curl -s https://rpc-stoc-mainnet.stochainscan.io/genesis | jq '.result.genesis' > ~/.stoc/config/genesis.json
 
 # Verify genesis file
-stocd validate-genesis ~/.stoc/config/genesis.json
+stocd genesis validate ~/.stoc/config/genesis.json
 ```
 
 ### 6. Download Chain Data (Snapshot)
