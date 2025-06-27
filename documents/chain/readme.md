@@ -87,14 +87,14 @@ sed -i 's/minimum-gas-prices = ""/minimum-gas-prices = "0.001ustoc"/' ~/.stoc/co
 
 ### 4. Configure Peers
 
-Get the current peer list from the addrbook API and configure your node:
+Get the current peer list from the addrbook API and configure your node (`vi ~/.stoc/config/config.toml`):
 
 ```bash
 # Fetch peers from addrbook API
 curl -s https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook | jq -r '.data.addrs[] | "\(.addr.id)@\(.addr.ip):\(.addr.port)"' | head -10
 
 # Current active peers for STOC mainnet:
-persistent_peers = "4ed01c03afcca1399467c644efbb7f076cb406d0@157.66.100.146:26656,41f8094cd1da001a7a4416246c3ea5ab62196bd9@157.66.101.49:26656,5f0cd810689cc8907aa3520a75705b20f9f179bb@103.161.180.115:26656"
+persistent_peers = "4ed01c03afcca1399467c644efbb7f076cb406d0@202.182.110.150:26656,41f8094cd1da001a7a4416246c3ea5ab62196bd9@45.32.180.48:26656,5f0cd810689cc8907aa3520a75705b20f9f179bb@64.176.4.207:26656"
 ```
 
 ### 5. Update Genesis
