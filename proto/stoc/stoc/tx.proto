@@ -75,7 +75,10 @@ message MsgReleaseTokens {
   
   string creator = 1;
   string symbol = 2;
-  string amount = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Int", (gogoproto.nullable) = false];
+  string amount = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int", 
+    (gogoproto.nullable) = false
+  ];
   string recipient = 4;
 }
 
@@ -84,7 +87,10 @@ message MsgMintTokens {
 
   string creator = 1;
   string symbol = 2;
-  string amount = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Int", (gogoproto.nullable) = false];
+  string amount = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int", 
+    (gogoproto.nullable) = false
+  ];
 }
 message MsgReleaseTokensResponse{
   string symbol = 1;
@@ -113,7 +119,10 @@ message MsgBurnToken {
   option (cosmos.msg.v1.signer) = "creator";
 
   string creator = 1;
-  string amount = 2 [(gogoproto.customtype) = "cosmossdk.io/math.Int", (gogoproto.nullable) = false];
+  string amount = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int", 
+    (gogoproto.nullable) = false
+  ];
   string denom = 3;
   bool burn_all = 4;
 }
