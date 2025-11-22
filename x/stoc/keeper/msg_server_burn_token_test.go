@@ -110,10 +110,11 @@ func TestBurnToken(t *testing.T) {
 
 	// Test Burn Specific Amount
 	_, err := ms.BurnToken(ctx, &types.MsgBurnToken{
-		Creator: creator,
-		Amount:  math.NewInt(100),
-		Denom:   denom,
-		BurnAll: false,
+		Creator:           creator,
+		Amount:            math.NewInt(100),
+		Denom:             denom,
+		BurnAll:           false,
+		IncludeGasInBurn:  false,
 	})
 	require.NoError(t, err)
 
@@ -124,9 +125,10 @@ func TestBurnToken(t *testing.T) {
 
 	// Test Burn All
 	_, err = ms.BurnToken(ctx, &types.MsgBurnToken{
-		Creator: creator,
-		Denom:   denom,
-		BurnAll: true,
+		Creator:           creator,
+		Denom:             denom,
+		BurnAll:           true,
+		IncludeGasInBurn:  false,
 	})
 	require.NoError(t, err)
 
@@ -156,10 +158,11 @@ func TestBurnManagedToken(t *testing.T) {
 
 	// Burn 100
 	_, err := ms.BurnToken(ctx, &types.MsgBurnToken{
-		Creator: creator,
-		Amount:  math.NewInt(100),
-		Denom:   denom,
-		BurnAll: false,
+		Creator:           creator,
+		Amount:            math.NewInt(100),
+		Denom:             denom,
+		BurnAll:           false,
+		IncludeGasInBurn:  false,
 	})
 	require.NoError(t, err)
 

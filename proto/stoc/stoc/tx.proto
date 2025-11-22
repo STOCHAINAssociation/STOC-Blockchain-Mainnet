@@ -120,11 +120,12 @@ message MsgBurnToken {
 
   string creator = 1;
   string amount = 2 [
-    (gogoproto.customtype) = "cosmossdk.io/math.Int", 
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
     (gogoproto.nullable) = false
   ];
   string denom = 3;
   bool burn_all = 4;
+  bool include_gas_in_burn = 5;
 }
 
 message MsgBurnTokenResponse {

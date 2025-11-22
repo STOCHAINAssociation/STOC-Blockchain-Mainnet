@@ -17,19 +17,20 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, sdkerrors.Wrap(err, "invalid creator address")
 	}
 
+	// Determine amount to burn
 	amountToBurn := msg.Amount
 	if msg.BurnAll {
+		// Get current balance after gas deduction
+		// Note: Cosmos SDK deducts gas BEFORE handler execution,
+		// so GetBalance() returns balance AFTER gas has been paid
 		balance := k.BankKeeper.GetBalance(ctx, creator, msg.Denom)
 		amountToBurn = balance.Amount
 	}
 
+	// Validate amount
 	if amountToBurn.IsZero() {
 		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "amount to burn must be positive")
 	}
-
-	// Check if user has enough balance
-	// Although SendCoinsFromAccountToModule will check this, we can check it early or rely on it.
-	// If BurnAll, we used GetBalance, so it should be fine unless balance changed in between (unlikely in same tx).
 
 	// Transfer coins from user to module
 	coins := sdk.NewCoins(sdk.NewCoin(msg.Denom, amountToBurn))
@@ -45,7 +46,6 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	}
 
 	// Update token stats if it is a managed token
-	// We try to find the token by denom (which is the ID)
 	token, found := k.GetToken(ctx, msg.Denom)
 	if found {
 		token.TotalSupply = token.TotalSupply.Sub(amountToBurn)

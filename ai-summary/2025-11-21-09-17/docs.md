@@ -1,105 +1,90 @@
-# Hướng dẫn tích hợp Frontend: Tính năng Burn Token
+# Frontend Guide: Burn Token Feature
 
-Tài liệu này hướng dẫn FE xây dựng form và kết nối với blockchain để thực hiện tính năng Burn Token (Đốt token).
-
-## 1. Tổng quan
-
-Tính năng cho phép người dùng đốt (xóa bỏ vĩnh viễn) một lượng token nhất định hoặc toàn bộ số dư token của họ.
-Hỗ trợ:
-
-- Token native của chain (`stoc`).
-- Token được tạo ra từ module `stoc` (ví dụ: `token_abc`).
-
-## 2. Yêu cầu UI/UX (Form Burn Token)
-
-Form cần có các trường sau:
-
-1.  **Chọn Token (Dropdown/Select)**:
-
-    - Hiển thị danh sách token người dùng đang sở hữu.
-    - Giá trị cần lấy: `denom` (ví dụ: `ustoc`, `token_abc`).
-    - Hiển thị số dư hiện tại (Balance) để người dùng biết.
-
-2.  **Tùy chọn Burn All (Checkbox/Switch)**:
-
-    - Label: "Burn tất cả token" (Burn All).
-    - Logic: Khi bật, disable trường "Số lượng" (Amount).
-
-3.  **Số lượng (Input Number)**:
-
-    - Label: "Số lượng muốn burn".
-    - Validation:
-      - Phải > 0.
-      - Phải <= Số dư hiện tại.
-    - Disabled nếu chọn "Burn All".
-
-4.  **Hiển thị Fee (Estimated)**:
-
-    - Hiển thị phí giao dịch dự kiến (Gas fee).
-
-5.  **Nút Submit**:
-    - Label: "Burn Token".
-
-## 3. Kết nối Blockchain
-
-### Message Proto
-
-Message cần gửi lên chain là `MsgBurnToken`.
+## Message Structure
 
 **Type URL**: `/stoc.stoc.MsgBurnToken`
 
-**Cấu trúc Message**:
-
 ```json
 {
-  "creator": "stoc1...", // Địa chỉ ví người dùng (lấy từ wallet đang connect)
-  "amount": "1000000", // Số lượng muốn burn (tính theo đơn vị nhỏ nhất, ví dụ 1 STOC = 10^6 ustoc)
-  "denom": "ustoc", // Mã token (denom)
-  "burn_all": false // true nếu chọn Burn All, false nếu nhập số lượng
+  "creator": "stoc1...",
+  "amount": "1000000",
+  "denom": "ustoc",
+  "burn_all": false,
+  "include_gas_in_burn": false
 }
 ```
 
-### Logic xử lý
+## UI Fields
 
-#### Trường hợp 1: Burn một lượng cụ thể (Burn Specific Amount)
+### 1. Token Dropdown
+- Show user's token list with balance
+- Value: `denom` (native) or `minimal_denom` (custom token)
 
-- **Input**: Người dùng nhập số lượng `X`.
-- **Payload**:
-  - `amount`: `X` (đã quy đổi ra đơn vị nhỏ nhất).
-  - `burn_all`: `false`.
-- **Fee**: Người dùng trả phí giao dịch `Fee` riêng. Tổng tài sản bị trừ: `X + Fee`.
+### 2. Amount Input
+- Disabled if `burn_all = true`
+- Validate: > 0 and <= balance
 
-#### Trường hợp 2: Burn tất cả (Burn All)
+### 3. Burn All Checkbox
+- When checked: disable amount input
 
-- **Input**: Người dùng chọn "Burn All".
-- **Payload**:
-  - `amount`: Có thể gửi `0` hoặc bất kỳ số nào (Backend sẽ tự lấy số dư thực tế).
-  - `burn_all`: `true`.
-- **Lưu ý về Fee**:
-  - Backend sẽ tự động lấy toàn bộ số dư của `denom` đó để burn.
-  - Nếu burn token native (`stoc`) dùng để trả fee: Backend sẽ burn (Số dư - Fee).
-  - Nếu burn token khác: Backend burn toàn bộ số dư token đó, Fee trừ vào token native (`stoc`).
+### 4. Include Gas in Burn Checkbox (NEW)
+- **Only show for native token (`ustoc`)**
+- **Disable for custom tokens**
+- Label: "Use gas from burn amount"
 
-### Ví dụ Code (Sử dụng CosmJS/Keplr)
+## Logic
+
+### Scenario 1: Burn Specific Amount
+```javascript
+{
+  burn_all: false,
+  amount: "100000000", // user input converted
+  include_gas_in_burn: false // not important
+}
+```
+
+### Scenario 2: Burn All Native Token
+```javascript
+{
+  burn_all: true,
+  amount: "0", // backend ignores this
+  denom: "ustoc",
+  include_gas_in_burn: true // show option for ustoc only
+}
+```
+- If `include_gas_in_burn = true`: User needs extra ustoc for gas
+- If `include_gas_in_burn = false`: Gas taken from burned amount
+
+### Scenario 3: Burn All Custom Token
+```javascript
+{
+  burn_all: true,
+  amount: "0",
+  denom: "mytoken", // minimal_denom
+  include_gas_in_burn: false // always false, option disabled
+}
+```
+- Burns all `mytoken`
+- Gas paid in `ustoc` (separate)
+
+## Code Example
 
 ```javascript
 import { Decimal } from "@cosmjs/math";
 
-// 1. Chuẩn bị thông tin
-const userAddress = "stoc1..."; // Lấy từ wallet
-const denom = "ustoc"; // Token được chọn
-const isBurnAll = false; // Giá trị từ checkbox
-const amountInput = "100"; // Giá trị từ input (ví dụ 100 STOC)
+const denom = "ustoc"; // or minimal_denom for custom token
+const isBurnAll = false;
+const includeGasInBurn = false;
+const amountInput = "100";
 
-// 2. Quy đổi amount (nếu không phải burn all)
-// Giả sử decimals = 6
+// Convert amount
 let amountStr = "0";
 if (!isBurnAll) {
   const amount = Decimal.fromUserInput(amountInput, 6);
-  amountStr = amount.atomics; // "100000000"
+  amountStr = amount.atomics;
 }
 
-// 3. Tạo Message
+// Create message
 const msg = {
   typeUrl: "/stoc.stoc.MsgBurnToken",
   value: {
@@ -107,25 +92,51 @@ const msg = {
     amount: amountStr,
     denom: denom,
     burn_all: isBurnAll,
+    include_gas_in_burn: includeGasInBurn,
   },
 };
 
-// 4. Gửi Transaction
-const fee = {
-  amount: [{ denom: "ustoc", amount: "500" }],
-  gas: "200000",
-};
-
-const result = await signingClient.signAndBroadcast(userAddress, [msg], fee);
-console.log("Tx Hash:", result.transactionHash);
+// Send transaction
+const result = await signingClient.signAndBroadcast(
+  userAddress,
+  [msg],
+  fee
+);
 ```
 
-## 4. Phản hồi (Response)
+## UI/UX Rules
 
-Sau khi transaction thành công, Backend sẽ trả về event `burn_token` với các thuộc tính:
+| Token Type | burn_all | include_gas_in_burn Option |
+|-----------|----------|---------------------------|
+| `ustoc` (native) | false | Hidden (not used) |
+| `ustoc` (native) | true | **Enabled** - Show checkbox |
+| Custom token | false | Hidden (not used) |
+| Custom token | true | **Disabled** - Gas always from ustoc |
 
-- `token_creator`: Địa chỉ người burn.
-- `minimal_denom`: Token bị burn.
-- `burn_amount`: Số lượng thực tế đã burn.
+## Backend Behavior
 
-FE có thể dựa vào Tx Hash để query lại kết quả hoặc lắng nghe event để cập nhật lại số dư cho người dùng.
+**Important**: Cosmos SDK deducts gas BEFORE message execution.
+
+- `GetBalance()` returns balance AFTER gas paid
+- When `burn_all = true`: burns entire remaining balance
+- Field `include_gas_in_burn` is for **UI display only**
+- Backend doesn't need complex gas calculation
+
+## Response Event
+
+Event: `burn_token`
+- `token_creator`: Burner address
+- `minimal_denom`: Token burned
+- `burn_amount`: Actual amount burned
+
+## Implementation Checklist
+
+- [ ] Token dropdown with balance
+- [ ] Amount input (disabled on burn_all)
+- [ ] Burn All checkbox
+- [ ] Include Gas checkbox (show only for ustoc + burn_all)
+- [ ] Validate amount <= balance
+- [ ] Convert amount to atomic units
+- [ ] Send transaction with all 5 fields
+- [ ] Listen for burn_token event
+- [ ] Update balance after success
