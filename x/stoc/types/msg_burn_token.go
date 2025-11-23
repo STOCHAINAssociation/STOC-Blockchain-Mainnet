@@ -32,6 +32,7 @@ func (m *MsgBurnToken) ValidateBasic() error {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "denom cannot be empty")
 	}
 
+	// Validate amount when not burning all
 	if !m.BurnAll {
 		if m.Amount.IsNil() || m.Amount.IsNegative() {
 			return errorsmod.Wrap(ErrInvalidAmount, "burn amount must be positive")

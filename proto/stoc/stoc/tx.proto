@@ -125,7 +125,6 @@ message MsgBurnToken {
   ];
   string denom = 3;
   bool burn_all = 4;
-  bool include_gas_in_burn = 5;
 }
 
 message MsgBurnTokenResponse {
