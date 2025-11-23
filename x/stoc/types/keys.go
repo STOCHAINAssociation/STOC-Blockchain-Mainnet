@@ -20,12 +20,14 @@ const (
 const (
 	EventTypeCreateToken      = "create_token"
 	EventTypeMintToken        = "mint_token"
+	EventTypeBurnToken        = "burn_token"
 	AttributeKeyTokenSymbol   = "token_symbol"
 	AttributeKeyTokenName     = "token_name"
 	AttributeKeyTokenCreator  = "token_creator"
 	AttributeKeyInitialSupply = "initial_supply"
 	AttributeKeyMinimalDenom  = "minimal_denom"
 	AttributeKeyMintToken     = "mint_token"
+	AttributeKeyBurnAmount    = "burn_amount"
 )
 
 var (

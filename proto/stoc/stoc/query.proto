@@ -5,6 +5,7 @@ import "amino/amino.proto";
 import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
+import "cosmos/base/v1beta1/coin.proto";
 import "stoc/stoc/params.proto";
 import "stoc/stoc/token.proto";
 option go_package = "stoc/x/stoc/types";
@@ -30,6 +31,11 @@ service Query {
   // TokensBySymbol returns tokens with a specific symbol
   rpc TokensBySymbol(QueryTokensBySymbolRequest) returns (QueryTokensBySymbolResponse) {
     option (google.api.http).get = "/stoc/stoc/tokens_by_symbol/{symbol}";
+  }
+
+  // BalancesWithMetadata returns balances with token metadata for an address
+  rpc BalancesWithMetadata(QueryBalancesWithMetadataRequest) returns (QueryBalancesWithMetadataResponse) {
+    option (google.api.http).get = "/stoc/stoc/balances/{address}";
   }
 }
 
@@ -73,4 +79,23 @@ message QueryTokensBySymbolRequest {
 
 message QueryTokensBySymbolResponse {
   repeated Token tokens = 1 [(gogoproto.nullable) = false];
+}
+
+// BalanceWithMetadata represents a balance with its token metadata
+message BalanceWithMetadata {
+  string denom = 1;
+  string amount = 2;
+  Token metadata = 3;
+}
+
+// QueryBalancesWithMetadataRequest is the request type for the Query/BalancesWithMetadata RPC method
+message QueryBalancesWithMetadataRequest {
+  string address = 1;
+  cosmos.base.query.v1beta1.PageRequest pagination = 2;
+}
+
+// QueryBalancesWithMetadataResponse is the response type for the Query/BalancesWithMetadata RPC method
+message QueryBalancesWithMetadataResponse {
+  repeated BalanceWithMetadata balances = 1 [(gogoproto.nullable) = false];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
