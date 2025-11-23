@@ -26,6 +26,9 @@ service Msg {
 
   //MintTokens mints tokens to a recipient
   rpc MintTokens(MsgMintTokens) returns (MsgMintTokensResponse);
+
+  //BurnToken burns tokens
+  rpc BurnToken(MsgBurnToken) returns (MsgBurnTokenResponse);
 }
 
 // MsgUpdateParams is the Msg/UpdateParams request type.
@@ -72,7 +75,10 @@ message MsgReleaseTokens {
   
   string creator = 1;
   string symbol = 2;
-  string amount = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Int", (gogoproto.nullable) = false];
+  string amount = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int", 
+    (gogoproto.nullable) = false
+  ];
   string recipient = 4;
 }
 
@@ -81,7 +87,10 @@ message MsgMintTokens {
 
   string creator = 1;
   string symbol = 2;
-  string amount = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Int", (gogoproto.nullable) = false];
+  string amount = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int", 
+    (gogoproto.nullable) = false
+  ];
 }
 message MsgReleaseTokensResponse{
   string symbol = 1;
@@ -104,6 +113,24 @@ message MsgMintTokensResponse{
   string recipient = 3;
   bool success = 4;
   string message = 5;
+}
+
+message MsgBurnToken {
+  option (cosmos.msg.v1.signer) = "creator";
+
+  string creator = 1;
+  string amount = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false
+  ];
+  string denom = 3;
+  bool burn_all = 4;
+  bool include_gas_in_burn = 5;
+}
+
+message MsgBurnTokenResponse {
+  bool success = 1;
+  string message = 2;
 }
 // MsgUpdateParamsResponse defines the response structure for executing a
 // MsgUpdateParams message.
