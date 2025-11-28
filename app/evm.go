@@ -41,6 +41,10 @@ import (
 	evmtypes "github.com/cosmos/evm/x/vm/types"
 	"github.com/ethereum/go-ethereum/common"
 	gethvm "github.com/ethereum/go-ethereum/core/vm"
+
+	evmutil "stoc/x/evmutil"
+	evmutilkeeper "stoc/x/evmutil/keeper"
+	evmutiltypes "stoc/x/evmutil/types"
 )
 
 // registerEVMModules register EVM keepers and non dependency inject modules.
@@ -67,6 +71,7 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 
 	// set up non depinject support modules store keys
 	if err := app.RegisterStores(
+		storetypes.NewKVStoreKey(evmutiltypes.StoreKey),
 		storetypes.NewKVStoreKey(evmtypes.StoreKey),
 		storetypes.NewKVStoreKey(feemarkettypes.StoreKey),
 		storetypes.NewKVStoreKey(erc20types.StoreKey),
@@ -86,6 +91,17 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 		app.UnsafeFindStoreKey(feemarkettypes.TransientKey),
 	)
 
+	// Initialize EvmutilKeeper for dual token support (ustoc 6 decimals <-> astoc 18 decimals)
+	app.EvmutilKeeper = evmutilkeeper.NewKeeper(
+		app.appCodec,
+		app.GetKey(evmutiltypes.StoreKey),
+		app.BankKeeper,
+		nil, // EVMKeeper will be set after initialization
+	)
+
+	// Get EvmBankKeeper that wraps BankKeeper with conversion logic
+	evmBankKeeper := app.EvmutilKeeper.GetEvmBankKeeper()
+
 	// NOTE: it's required to set up the EVM keeper before the ERC-20 keeper, because it is used in its instantiation.
 	app.EVMKeeper = evmkeeper.NewKeeper(
 		app.appCodec,
@@ -94,7 +110,7 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 		app.GetStoreKeysMap(),
 		authtypes.NewModuleAddress(govtypes.ModuleName),
 		app.AccountKeeper,
-		app.BankKeeper,
+		evmBankKeeper, // Use EvmBankKeeper instead of regular BankKeeper
 		app.StakingKeeper,
 		app.FeeMarketKeeper,
 		&app.ConsensusParamsKeeper,
@@ -107,7 +123,7 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 		app.appCodec,
 		authtypes.NewModuleAddress(govtypes.ModuleName),
 		app.AccountKeeper,
-		app.BankKeeper,
+		evmBankKeeper, // Use EvmBankKeeper instead of regular BankKeeper
 		app.EVMKeeper,
 		app.StakingKeeper,
 		&app.TransferKeeper,
@@ -115,6 +131,7 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 
 	// register evm modules
 	if err := app.RegisterModules(
+		evmutil.NewAppModule(app.EvmutilKeeper),
 		vm.NewAppModule(app.EVMKeeper, app.AccountKeeper, app.AccountKeeper.AddressCodec()),
 		feemarket.NewAppModule(app.FeeMarketKeeper),
 		erc20.NewAppModule(app.Erc20Keeper, app.AccountKeeper),

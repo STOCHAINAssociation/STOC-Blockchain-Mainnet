@@ -100,6 +100,7 @@ import (
 	feemarketkeeper "github.com/cosmos/evm/x/feemarket/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	stocappante "stoc/app/ante"
+	evmutilkeeper "stoc/x/evmutil/keeper"
 )
 
 const (
@@ -157,6 +158,7 @@ type App struct {
 	EVMKeeper         *evmkeeper.Keeper
 	FeeMarketKeeper   feemarketkeeper.Keeper
 	Erc20Keeper       erc20keeper.Keeper
+	EvmutilKeeper     evmutilkeeper.Keeper
 
 	// EVM mempool and client context
 	EVMMempool         sdkmempool.ExtMempool

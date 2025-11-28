@@ -58,6 +58,7 @@ import (
 	stocmodulev1 "stoc/api/stoc/stoc/module"
 	_ "stoc/x/stoc/module"
 	stocmoduletypes "stoc/x/stoc/types"
+	evmutiltypes "stoc/x/evmutil/types"
 	// this line is used by starport scaffolding # stargate/app/moduleImport
 )
 
@@ -95,6 +96,7 @@ var (
 		// chain modules
 		stocmoduletypes.ModuleName,
 		// cosmos evm modules
+		evmutiltypes.ModuleName,
 		erc20types.ModuleName,
 		feemarkettypes.ModuleName,
 		evmtypes.ModuleName,
@@ -120,6 +122,7 @@ var (
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
 		// cosmos evm modules
+		evmutiltypes.ModuleName,
 		erc20types.ModuleName,
 		feemarkettypes.ModuleName,
 		evmtypes.ModuleName,
@@ -141,6 +144,7 @@ var (
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
 		// cosmos evm modules
+		evmutiltypes.ModuleName,
 		erc20types.ModuleName,
 		feemarkettypes.ModuleName,
 		evmtypes.ModuleName,
