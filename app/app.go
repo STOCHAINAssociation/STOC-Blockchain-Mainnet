@@ -35,9 +35,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/spf13/cast"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/auth"
-	"github.com/cosmos/cosmos-sdk/x/auth/ante"
+	sdkante "github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	_ "github.com/cosmos/cosmos-sdk/x/auth/tx/config" // import for side-effects
@@ -76,25 +77,29 @@ import (
 	_ "github.com/cosmos/cosmos-sdk/x/staking" // import for side-effects
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	_ "github.com/cosmos/ibc-go/modules/capability" // import for side-effects
-	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
-	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
-	_ "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts" // import for side-effects
-	icacontrollerkeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/controller/keeper"
-	icahostkeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host/keeper"
-	icatypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/types"
-	_ "github.com/cosmos/ibc-go/v8/modules/apps/29-fee" // import for side-effects
-	ibcfeekeeper "github.com/cosmos/ibc-go/v8/modules/apps/29-fee/keeper"
-	ibctransferkeeper "github.com/cosmos/ibc-go/v8/modules/apps/transfer/keeper"
-	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
-	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
-	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
+	_ "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts" // import for side-effects
+	icacontrollerkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller/keeper"
+	icahostkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/host/keeper"
+	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
+	ibctransferkeeper "github.com/cosmos/evm/x/ibc/transfer/keeper"
+	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 
 	stocmodulekeeper "stoc/x/stoc/keeper"
 	// this line is used by starport scaffolding # stargate/app/moduleImport
 
 	"stoc/docs"
 	stocante "stoc/x/stoc/ante"
+
+	// EVM imports
+	sdkmempool "github.com/cosmos/cosmos-sdk/types/mempool"
+	evmante "github.com/cosmos/evm/ante"
+	erc20keeper "github.com/cosmos/evm/x/erc20/keeper"
+	evmkeeper "github.com/cosmos/evm/x/vm/keeper"
+	feemarketkeeper "github.com/cosmos/evm/x/feemarket/keeper"
+	"github.com/ethereum/go-ethereum/common"
+	stocappante "stoc/app/ante"
 )
 
 const (
@@ -144,18 +149,19 @@ type App struct {
 
 	// IBC
 	IBCKeeper           *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
-	CapabilityKeeper    *capabilitykeeper.Keeper
-	IBCFeeKeeper        ibcfeekeeper.Keeper
 	ICAControllerKeeper icacontrollerkeeper.Keeper
 	ICAHostKeeper       icahostkeeper.Keeper
 	TransferKeeper      ibctransferkeeper.Keeper
 
-	// Scoped IBC
-	ScopedIBCKeeper           capabilitykeeper.ScopedKeeper
-	ScopedIBCTransferKeeper   capabilitykeeper.ScopedKeeper
-	ScopedICAControllerKeeper capabilitykeeper.ScopedKeeper
-	ScopedICAHostKeeper       capabilitykeeper.ScopedKeeper
-	ScopedKeepers             map[string]capabilitykeeper.ScopedKeeper
+	// EVM Keepers
+	EVMKeeper         *evmkeeper.Keeper
+	FeeMarketKeeper   feemarketkeeper.Keeper
+	Erc20Keeper       erc20keeper.Keeper
+
+	// EVM mempool and client context
+	EVMMempool         sdkmempool.ExtMempool
+	clientCtx          client.Context
+	pendingTxListeners []func(common.Hash)
 
 	StocKeeper stocmodulekeeper.Keeper
 	// this line is used by starport scaffolding # stargate/app/keeperDeclaration
@@ -204,37 +210,6 @@ func AppConfig() depinject.Config {
 	)
 }
 
-func NewAnteHandler(
-	options ante.HandlerOptions,
-	stocKeeper stocmodulekeeper.Keeper,
-) (sdk.AnteHandler, error) {
-	anteDecorators := []sdk.AnteDecorator{
-		// stocante.NewTaxAnteDecorator(stocKeeper),
-		ante.NewSetUpContextDecorator(),                      // handle GasMeter
-		ante.NewExtensionOptionsDecorator(nil),               // handle extension options
-		ante.NewValidateBasicDecorator(),                     // handle validate basic
-		ante.NewTxTimeoutHeightDecorator(),                   // handle timeout height
-		ante.NewValidateMemoDecorator(options.AccountKeeper), // handle validate memo
-
-		ante.NewDeductFeeDecorator(
-			options.AccountKeeper,
-			options.BankKeeper,
-			options.FeegrantKeeper,
-			nil, // handle nil or default function here
-		),
-		ante.NewSetPubKeyDecorator(options.AccountKeeper),                                // handle set public key
-		ante.NewValidateSigCountDecorator(options.AccountKeeper),                         // handle validate sig count
-		ante.NewSigGasConsumeDecorator(options.AccountKeeper, options.SigGasConsumer),    // handle sig gas consume
-		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler), // handle sig verification
-
-		// other decorators
-		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
-		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
-	}
-
-	return sdk.ChainAnteDecorators(anteDecorators...), nil
-}
-
 // New returns a reference to an initialized App.
 func New(
 	logger log.Logger,
@@ -245,7 +220,7 @@ func New(
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) (*App, error) {
 	var (
-		app        = &App{ScopedKeepers: make(map[string]capabilitykeeper.ScopedKeeper)}
+		app        = &App{}
 		appBuilder *runtime.AppBuilder
 
 		// merge the AppConfig and other configuration in one config
@@ -259,7 +234,6 @@ func New(
 				// Passing the getter, the app IBC Keeper will always be accessible.
 				// This needs to be removed after IBC supports App Wiring.
 				app.GetIBCKeeper,
-				app.GetCapabilityScopedKeeper,
 				module.NewManager(
 					auth.NewAppModule(app.appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName)),
 				),
@@ -276,13 +250,12 @@ func New(
 					evidencetypes.ModuleName,
 					ibctransfertypes.ModuleName,
 					icatypes.ModuleName,
-					capabilitytypes.ModuleName,
 					group.ModuleName,
 					feegrant.ModuleName,
 					nft.ModuleName,
 					circuittypes.ModuleName,
 				},
-			),
+			), depinject.Provide(ProvideMsgEthereumTxCustomGetSigner),
 		)
 	)
 
@@ -327,6 +300,16 @@ func New(
 		return nil, err
 	}
 
+	// Register EVM modules
+	if err := app.registerEVMModules(appOpts); err != nil {
+		return nil, err
+	}
+
+	// Post-register EVM modules (precompiles)
+	if err := app.postRegisterEVMModules(); err != nil {
+		return nil, err
+	}
+
 	// register streaming services
 	if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {
 		return nil, err
@@ -355,23 +338,38 @@ func New(
 	})
 
 	// create options for AnteHandler
-	anteOptions := ante.HandlerOptions{
-		AccountKeeper:   app.AccountKeeper,
-		BankKeeper:      app.BankKeeper,
-		SignModeHandler: app.txConfig.SignModeHandler(),
-		FeegrantKeeper:  app.FeeGrantKeeper,
-		SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
+	maxGasWanted := cast.ToUint64(appOpts.Get("gas-wanted"))
+	if maxGasWanted == 0 {
+		maxGasWanted = 0 // 0 means no limit
+	}
+
+	anteOptions := evmante.HandlerOptions{
+		AccountKeeper:          app.AccountKeeper,
+		BankKeeper:             app.BankKeeper,
+		SignModeHandler:        app.txConfig.SignModeHandler(),
+		FeegrantKeeper:         app.FeeGrantKeeper,
+		SigGasConsumer:         sdkante.DefaultSigVerificationGasConsumer,
+		ExtensionOptionChecker: nil,
+		TxFeeChecker:           nil,
+		EvmKeeper:              app.EVMKeeper,
+		FeeMarketKeeper:        &app.FeeMarketKeeper,
+		MaxTxGasWanted:         maxGasWanted,
+		PendingTxListener:      func(hash common.Hash) { app.RegisterPendingTxListener(func(h common.Hash) {}) },
+		IBCKeeper:              app.IBCKeeper,
 	}
 
 	// set AnteHandler here, before adding modules
-	anteHandler, err := NewAnteHandler(anteOptions, app.StocKeeper)
-	if err != nil {
-		return nil, err
-	}
+	anteHandler := stocappante.NewAnteHandler(anteOptions)
 	app.SetAnteHandler(anteHandler)
+
+	// Setup EVM mempool
+	app.setEVMMempool()
 
 	postHandler := stocante.NewTaxPostDecorator(app.StocKeeper, app.appCodec)
 	app.SetPostHandler(sdk.ChainPostDecorators(postHandler))
+
+	// Register upgrade handlers for EVM migration
+	app.RegisterUpgradeHandlers()
 
 	if err := app.Load(loadLatest); err != nil {
 		return nil, err
@@ -437,6 +435,18 @@ func (app *App) kvStoreKeys() map[string]*storetypes.KVStoreKey {
 	return keys
 }
 
+// GetStoreKeysMap returns all the kv store keys registered inside App as a map.
+func (app *App) GetStoreKeysMap() map[string]*storetypes.KVStoreKey {
+	storeKeysMap := make(map[string]*storetypes.KVStoreKey)
+	for _, storeKey := range app.GetStoreKeys() {
+		kvStoreKey, ok := app.UnsafeFindStoreKey(storeKey.Name()).(*storetypes.KVStoreKey)
+		if ok {
+			storeKeysMap[storeKey.Name()] = kvStoreKey
+		}
+	}
+	return storeKeysMap
+}
+
 // GetSubspace returns a param subspace for a given module name.
 func (app *App) GetSubspace(moduleName string) paramstypes.Subspace {
 	subspace, _ := app.ParamsKeeper.GetSubspace(moduleName)
@@ -448,15 +458,6 @@ func (app *App) GetIBCKeeper() *ibckeeper.Keeper {
 	return app.IBCKeeper
 }
 
-// GetCapabilityScopedKeeper returns the capability scoped keeper.
-func (app *App) GetCapabilityScopedKeeper(moduleName string) capabilitykeeper.ScopedKeeper {
-	sk, ok := app.ScopedKeepers[moduleName]
-	if !ok {
-		sk = app.CapabilityKeeper.ScopeToModule(moduleName)
-		app.ScopedKeepers[moduleName] = sk
-	}
-	return sk
-}
 
 // SimulationManager implements the SimulationApp interface.
 func (app *App) SimulationManager() *module.SimulationManager {
