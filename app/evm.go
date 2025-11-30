@@ -160,7 +160,10 @@ func (app *App) postRegisterEVMModules() error {
 
 	// add more stateful precompiles here, if needed.
 
-	_ = app.EVMKeeper.WithStaticPrecompiles(precompiles)
+	// FIXED: Handle error instead of ignoring it
+	if err := app.EVMKeeper.WithStaticPrecompiles(precompiles); err != nil {
+		return fmt.Errorf("failed to register precompiles: %w", err)
+	}
 	return nil
 }
 
@@ -168,6 +171,9 @@ func (app *App) postRegisterEVMModules() error {
 // it is required for the ethereum json rpc server to work
 func (app *App) setEVMMempool() {
 	if evmtypes.GetChainConfig() != nil {
+		// NOTE: MaxTx limit is not available in EVMMempoolConfig for this EVM version
+		// Consider implementing custom mempool wrapper or upgrading EVM module for DoS protection
+		// Current mitigation: Rely on minimum gas price and ante handler validation
 		mempoolConfig := &evmmempool.EVMMempoolConfig{
 			AnteHandler:   app.BaseApp.AnteHandler(),
 			BlockGasLimit: 100_000_000,

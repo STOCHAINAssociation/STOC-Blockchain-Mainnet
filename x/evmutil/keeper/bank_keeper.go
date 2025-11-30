@@ -26,6 +26,7 @@ func NewEvmBankKeeper(bankKeeper types.BankKeeper) EvmBankKeeper {
 
 // GetBalance returns the balance of the given account for the given denom.
 // For EVM denom (astoc), it converts from Cosmos denom (ustoc) balance.
+// Custom tokens (created via STOC module) are NOT accessible from EVM.
 func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin {
 	if denom == types.EvmDenom {
 		// Get ustoc balance and convert to astoc
@@ -33,11 +34,20 @@ func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, deno
 		evmAmount := ConvertCosmosCoinToEvmCoin(cosmosBalance)
 		return sdk.NewCoin(types.EvmDenom, evmAmount.Amount)
 	}
+
+	// RESTRICTION: Only allow native tokens (ustoc) from EVM
+	// Custom tokens (MYTOKEN_0, etc.) are Cosmos-only
+	if denom != types.CosmosDenom {
+		// Return zero balance for custom tokens from EVM context
+		return sdk.NewCoin(denom, math.ZeroInt())
+	}
+
 	return k.bankKeeper.GetBalance(ctx, addr, denom)
 }
 
 // SendCoins transfers coins from one account to another.
 // For EVM denom, it converts and uses Cosmos denom under the hood.
+// Custom tokens (created via STOC module) are NOT transferable from EVM.
 func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, amt sdk.Coins) error {
 	// Convert any EVM denoms to Cosmos denoms
 	convertedAmt := sdk.NewCoins()
@@ -45,8 +55,12 @@ func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, a
 		if coin.Denom == types.EvmDenom {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else {
+		} else if coin.Denom == types.CosmosDenom {
+			// Allow native Cosmos denom
 			convertedAmt = convertedAmt.Add(coin)
+		} else {
+			// RESTRICTION: Block custom tokens (MYTOKEN_0, etc.) from EVM
+			return fmt.Errorf("custom token %s is not accessible from EVM. Please use Cosmos SDK transactions for custom tokens", coin.Denom)
 		}
 	}
 	return k.bankKeeper.SendCoins(ctx, from, to, convertedAmt)
@@ -54,14 +68,18 @@ func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, a
 
 // MintCoins mints coins to the module account.
 // For EVM denom, it converts to Cosmos denom.
+// Custom tokens cannot be minted from EVM context.
 func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
 		if coin.Denom == types.EvmDenom {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else {
+		} else if coin.Denom == types.CosmosDenom {
 			convertedAmt = convertedAmt.Add(coin)
+		} else {
+			// RESTRICTION: Block custom tokens from EVM
+			return fmt.Errorf("custom token %s cannot be minted from EVM context", coin.Denom)
 		}
 	}
 	return k.bankKeeper.MintCoins(ctx, moduleName, convertedAmt)
@@ -69,60 +87,82 @@ func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk
 
 // BurnCoins burns coins from the module account.
 // For EVM denom, it converts to Cosmos denom.
+// Custom tokens cannot be burned from EVM context.
 func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
 		if coin.Denom == types.EvmDenom {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else {
+		} else if coin.Denom == types.CosmosDenom {
 			convertedAmt = convertedAmt.Add(coin)
+		} else {
+			// RESTRICTION: Block custom tokens from EVM
+			return fmt.Errorf("custom token %s cannot be burned from EVM context", coin.Denom)
 		}
 	}
 	return k.bankKeeper.BurnCoins(ctx, moduleName, convertedAmt)
 }
 
 // SendCoinsFromModuleToAccount transfers coins from module to account.
+// Custom tokens cannot be transferred from EVM context.
 func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
 		if coin.Denom == types.EvmDenom {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else {
+		} else if coin.Denom == types.CosmosDenom {
 			convertedAmt = convertedAmt.Add(coin)
+		} else {
+			// RESTRICTION: Block custom tokens from EVM
+			return fmt.Errorf("custom token %s cannot be transferred from EVM context", coin.Denom)
 		}
 	}
 	return k.bankKeeper.SendCoinsFromModuleToAccount(ctx, senderModule, recipientAddr, convertedAmt)
 }
 
 // SendCoinsFromAccountToModule transfers coins from account to module.
+// Custom tokens cannot be transferred from EVM context.
 func (k EvmBankKeeper) SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
 		if coin.Denom == types.EvmDenom {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else {
+		} else if coin.Denom == types.CosmosDenom {
 			convertedAmt = convertedAmt.Add(coin)
+		} else {
+			// RESTRICTION: Block custom tokens from EVM
+			return fmt.Errorf("custom token %s cannot be transferred from EVM context", coin.Denom)
 		}
 	}
 	return k.bankKeeper.SendCoinsFromAccountToModule(ctx, senderAddr, recipientModule, convertedAmt)
 }
 
 // SpendableCoins returns the spendable balance for the given account.
+// Custom tokens are filtered out from EVM context (only native ustoc/astoc visible).
 func (k EvmBankKeeper) SpendableCoins(ctx context.Context, addr sdk.AccAddress) sdk.Coins {
 	spendable := k.bankKeeper.SpendableCoins(ctx, addr)
 
+	// RESTRICTION: Filter out custom tokens - only allow native denoms from EVM
+	filteredCoins := sdk.NewCoins()
+	for _, coin := range spendable {
+		if coin.Denom == types.CosmosDenom {
+			filteredCoins = filteredCoins.Add(coin)
+		}
+		// Skip custom tokens (MYTOKEN_0, etc.)
+	}
+
 	// If there's ustoc balance, also report it as astoc
-	cosmosBalance := spendable.AmountOf(types.CosmosDenom)
+	cosmosBalance := filteredCoins.AmountOf(types.CosmosDenom)
 	if cosmosBalance.IsPositive() {
 		evmAmount := cosmosBalance.Mul(types.ConversionMultiplier)
 		evmCoin := sdk.NewCoin(types.EvmDenom, evmAmount)
-		spendable = spendable.Add(evmCoin)
+		filteredCoins = filteredCoins.Add(evmCoin)
 	}
 
-	return spendable
+	return filteredCoins
 }
 
 // BlockedAddr checks if a given address is blocked from receiving funds.
@@ -303,16 +343,22 @@ func ConvertCosmosCoinToEvmCoin(coin sdk.Coin) sdk.Coin {
 
 // ConvertEvmCoinToCosmosCoin converts astoc (18 decimals) to ustoc (6 decimals)
 // 10^12 astoc = 1 ustoc
+// If the amount has dust (not divisible by 10^12), it truncates (rounds down) instead of panicking
 func ConvertEvmCoinToCosmosCoin(coin sdk.Coin) sdk.Coin {
 	if coin.Denom != types.EvmDenom {
 		panic(fmt.Sprintf("invalid denom for conversion to Cosmos coin: %s", coin.Denom))
 	}
 
-	// Check if amount is divisible by conversion multiplier
-	if !coin.Amount.Mod(types.ConversionMultiplier).IsZero() {
-		panic(fmt.Sprintf("EVM amount not divisible by conversion multiplier: %s", coin.Amount))
+	// Check if amount has dust (not divisible by conversion multiplier)
+	remainder := coin.Amount.Mod(types.ConversionMultiplier)
+	if !remainder.IsZero() {
+		// FIXED: Truncate instead of panic - handles dust amounts gracefully
+		// This prevents DoS attacks from contracts sending small wei amounts
+		// The dust amount is effectively lost (rounded down to 0)
+		// Example: 1 wei (0.000000000001 ustoc) rounds down to 0 ustoc
 	}
 
+	// Truncate by dividing (automatically rounds down)
 	cosmosAmount := coin.Amount.Quo(types.ConversionMultiplier)
 	return sdk.NewCoin(types.CosmosDenom, cosmosAmount)
 }
