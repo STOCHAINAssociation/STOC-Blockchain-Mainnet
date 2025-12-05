@@ -92,7 +92,34 @@ func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
 		if coin.Denom == types.EvmDenom {
+			// VALIDATION: Check amount is divisible by conversion multiplier
+			// to prevent dust loss when converting astoc (18 decimals) to ustoc (6 decimals)
+			remainder := coin.Amount.Mod(types.ConversionMultiplier)
+			if !remainder.IsZero() {
+				return fmt.Errorf(
+					"invalid burn amount: %s astoc is not divisible by conversion multiplier %s. "+
+						"Dust amount of %s wei would be lost. "+
+						"Please burn in multiples of %s wei (equivalent to 1 ustoc)",
+					coin.Amount.String(),
+					types.ConversionMultiplier.String(),
+					remainder.String(),
+					types.ConversionMultiplier.String(),
+				)
+			}
+
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
+
+			// VALIDATION: Ensure converted amount is not zero
+			// Minimum burn amount is 1 ustoc (10^12 astoc wei)
+			if cosmosCoin.Amount.IsZero() {
+				return fmt.Errorf(
+					"burn amount too small: %s astoc converts to 0 ustoc. "+
+						"Minimum burn amount is %s astoc wei (1 ustoc equivalent)",
+					coin.Amount.String(),
+					types.ConversionMultiplier.String(),
+				)
+			}
+
 			convertedAmt = convertedAmt.Add(cosmosCoin)
 		} else if coin.Denom == types.CosmosDenom {
 			convertedAmt = convertedAmt.Add(coin)
