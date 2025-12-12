@@ -12,7 +12,8 @@ import (
 )
 
 // EvmBankKeeper wraps the BankKeeper to provide EVM-compatible denomination conversion
-// between ustoc (6 decimals) and astoc (18 decimals)
+// between ustoc (6 decimals) and astoc (18 decimals) for mainnet
+// or utstoc (6 decimals) and atstoc (18 decimals) for testnet
 type EvmBankKeeper struct {
 	bankKeeper types.BankKeeper
 }
@@ -24,20 +25,33 @@ func NewEvmBankKeeper(bankKeeper types.BankKeeper) EvmBankKeeper {
 	}
 }
 
+// getEvmDenom returns the current EVM denom (dynamic based on chain config)
+func getEvmDenom() string {
+	return types.GetEvmDenom()
+}
+
+// getCosmosDenom returns the current Cosmos denom (dynamic based on chain config)
+func getCosmosDenom() string {
+	return types.GetCosmosDenom()
+}
+
 // GetBalance returns the balance of the given account for the given denom.
-// For EVM denom (astoc), it converts from Cosmos denom (ustoc) balance.
+// For EVM denom (astoc/atstoc), it converts from Cosmos denom (ustoc/utstoc) balance.
 // Custom tokens (created via STOC module) are NOT accessible from EVM.
 func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin {
-	if denom == types.EvmDenom {
-		// Get ustoc balance and convert to astoc
-		cosmosBalance := k.bankKeeper.GetBalance(ctx, addr, types.CosmosDenom)
+	evmDenom := types.GetEvmDenom()
+	cosmosDenom := types.GetCosmosDenom()
+
+	if denom == evmDenom {
+		// Get ustoc/utstoc balance and convert to astoc/atstoc
+		cosmosBalance := k.bankKeeper.GetBalance(ctx, addr, cosmosDenom)
 		evmAmount := ConvertCosmosCoinToEvmCoin(cosmosBalance)
-		return sdk.NewCoin(types.EvmDenom, evmAmount.Amount)
+		return sdk.NewCoin(evmDenom, evmAmount.Amount)
 	}
 
-	// RESTRICTION: Only allow native tokens (ustoc) from EVM
+	// RESTRICTION: Only allow native tokens (ustoc/utstoc) from EVM
 	// Custom tokens (MYTOKEN_0, etc.) are Cosmos-only
-	if denom != types.CosmosDenom {
+	if denom != cosmosDenom {
 		// Return zero balance for custom tokens from EVM context
 		return sdk.NewCoin(denom, math.ZeroInt())
 	}
@@ -49,13 +63,16 @@ func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, deno
 // For EVM denom, it converts and uses Cosmos denom under the hood.
 // Custom tokens (created via STOC module) are NOT transferable from EVM.
 func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, amt sdk.Coins) error {
+	evmDenom := types.GetEvmDenom()
+	cosmosDenom := types.GetCosmosDenom()
+
 	// Convert any EVM denoms to Cosmos denoms
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
-		if coin.Denom == types.EvmDenom {
+		if coin.Denom == evmDenom {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else if coin.Denom == types.CosmosDenom {
+		} else if coin.Denom == cosmosDenom {
 			// Allow native Cosmos denom
 			convertedAmt = convertedAmt.Add(coin)
 		} else {
@@ -72,10 +89,10 @@ func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, a
 func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
-		if coin.Denom == types.EvmDenom {
+		if coin.Denom == getEvmDenom() {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else if coin.Denom == types.CosmosDenom {
+		} else if coin.Denom == getCosmosDenom() {
 			convertedAmt = convertedAmt.Add(coin)
 		} else {
 			// RESTRICTION: Block custom tokens from EVM
@@ -91,7 +108,7 @@ func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk
 func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
-		if coin.Denom == types.EvmDenom {
+		if coin.Denom == getEvmDenom() {
 			// VALIDATION: Check amount is divisible by conversion multiplier
 			// to prevent dust loss when converting astoc (18 decimals) to ustoc (6 decimals)
 			remainder := coin.Amount.Mod(types.ConversionMultiplier)
@@ -121,7 +138,7 @@ func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk
 			}
 
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else if coin.Denom == types.CosmosDenom {
+		} else if coin.Denom == getCosmosDenom() {
 			convertedAmt = convertedAmt.Add(coin)
 		} else {
 			// RESTRICTION: Block custom tokens from EVM
@@ -136,10 +153,10 @@ func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk
 func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
-		if coin.Denom == types.EvmDenom {
+		if coin.Denom == getEvmDenom() {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else if coin.Denom == types.CosmosDenom {
+		} else if coin.Denom == getCosmosDenom() {
 			convertedAmt = convertedAmt.Add(coin)
 		} else {
 			// RESTRICTION: Block custom tokens from EVM
@@ -154,10 +171,10 @@ func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderM
 func (k EvmBankKeeper) SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
-		if coin.Denom == types.EvmDenom {
+		if coin.Denom == getEvmDenom() {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else if coin.Denom == types.CosmosDenom {
+		} else if coin.Denom == getCosmosDenom() {
 			convertedAmt = convertedAmt.Add(coin)
 		} else {
 			// RESTRICTION: Block custom tokens from EVM
@@ -175,17 +192,17 @@ func (k EvmBankKeeper) SpendableCoins(ctx context.Context, addr sdk.AccAddress) 
 	// RESTRICTION: Filter out custom tokens - only allow native denoms from EVM
 	filteredCoins := sdk.NewCoins()
 	for _, coin := range spendable {
-		if coin.Denom == types.CosmosDenom {
+		if coin.Denom == getCosmosDenom() {
 			filteredCoins = filteredCoins.Add(coin)
 		}
 		// Skip custom tokens (MYTOKEN_0, etc.)
 	}
 
 	// If there's ustoc balance, also report it as astoc
-	cosmosBalance := filteredCoins.AmountOf(types.CosmosDenom)
+	cosmosBalance := filteredCoins.AmountOf(getCosmosDenom())
 	if cosmosBalance.IsPositive() {
 		evmAmount := cosmosBalance.Mul(types.ConversionMultiplier)
-		evmCoin := sdk.NewCoin(types.EvmDenom, evmAmount)
+		evmCoin := sdk.NewCoin(getEvmDenom(), evmAmount)
 		filteredCoins = filteredCoins.Add(evmCoin)
 	}
 
@@ -200,13 +217,13 @@ func (k EvmBankKeeper) BlockedAddr(addr sdk.AccAddress) bool {
 // GetDenomMetaData returns the metadata for a given denom.
 // For EVM denom (astoc), it returns custom metadata with 18 decimals.
 func (k EvmBankKeeper) GetDenomMetaData(ctx context.Context, denom string) (banktypes.Metadata, bool) {
-	if denom == types.EvmDenom {
+	if denom == getEvmDenom() {
 		// Return custom metadata for astoc (18 decimals)
 		metadata := banktypes.Metadata{
 			Description: "STOC token in EVM format (18 decimals)",
 			DenomUnits: []*banktypes.DenomUnit{
 				{
-					Denom:    types.EvmDenom,
+					Denom:    getEvmDenom(),
 					Exponent: 0,
 					Aliases:  []string{"astoc"},
 				},
@@ -216,7 +233,7 @@ func (k EvmBankKeeper) GetDenomMetaData(ctx context.Context, denom string) (bank
 					Aliases:  []string{},
 				},
 			},
-			Base:    types.EvmDenom,
+			Base:    getEvmDenom(),
 			Display: "stoc",
 			Name:    "STOC",
 			Symbol:  "STOC",
@@ -229,11 +246,11 @@ func (k EvmBankKeeper) GetDenomMetaData(ctx context.Context, denom string) (bank
 // GetSupply returns the total supply of a given denom.
 // For EVM denom (astoc), it converts from Cosmos denom (ustoc) supply.
 func (k EvmBankKeeper) GetSupply(ctx context.Context, denom string) sdk.Coin {
-	if denom == types.EvmDenom {
+	if denom == getEvmDenom() {
 		// Get ustoc supply and convert to astoc
-		cosmosSupply := k.bankKeeper.GetSupply(ctx, types.CosmosDenom)
+		cosmosSupply := k.bankKeeper.GetSupply(ctx, getCosmosDenom())
 		evmAmount := ConvertCosmosCoinToEvmCoin(cosmosSupply)
-		return sdk.NewCoin(types.EvmDenom, evmAmount.Amount)
+		return sdk.NewCoin(getEvmDenom(), evmAmount.Amount)
 	}
 	return k.bankKeeper.GetSupply(ctx, denom)
 }
@@ -241,9 +258,9 @@ func (k EvmBankKeeper) GetSupply(ctx context.Context, denom string) sdk.Coin {
 // IsSendEnabledCoin checks if a coin's denom is enabled for sending.
 // For EVM denom (astoc), it checks the Cosmos denom (ustoc) instead.
 func (k EvmBankKeeper) IsSendEnabledCoin(ctx context.Context, coin sdk.Coin) bool {
-	if coin.Denom == types.EvmDenom {
+	if coin.Denom == getEvmDenom() {
 		// Check if ustoc is send enabled
-		cosmosCoin := sdk.NewCoin(types.CosmosDenom, coin.Amount)
+		cosmosCoin := sdk.NewCoin(getCosmosDenom(), coin.Amount)
 		return k.bankKeeper.IsSendEnabledCoin(ctx, cosmosCoin)
 	}
 	return k.bankKeeper.IsSendEnabledCoin(ctx, coin)
@@ -254,7 +271,7 @@ func (k EvmBankKeeper) IsSendEnabledCoin(ctx context.Context, coin sdk.Coin) boo
 func (k EvmBankKeeper) IsSendEnabledCoins(ctx context.Context, coins ...sdk.Coin) error {
 	convertedCoins := make([]sdk.Coin, 0, len(coins))
 	for _, coin := range coins {
-		if coin.Denom == types.EvmDenom {
+		if coin.Denom == getEvmDenom() {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedCoins = append(convertedCoins, cosmosCoin)
 		} else {
@@ -268,10 +285,10 @@ func (k EvmBankKeeper) IsSendEnabledCoins(ctx context.Context, coins ...sdk.Coin
 func (k EvmBankKeeper) GetAllBalances(ctx context.Context, addr sdk.AccAddress) sdk.Coins {
 	balances := k.bankKeeper.GetAllBalances(ctx, addr)
 	// Also add astoc representation if ustoc exists
-	cosmosBalance := balances.AmountOf(types.CosmosDenom)
+	cosmosBalance := balances.AmountOf(getCosmosDenom())
 	if cosmosBalance.IsPositive() {
 		evmAmount := cosmosBalance.Mul(types.ConversionMultiplier)
-		evmCoin := sdk.NewCoin(types.EvmDenom, evmAmount)
+		evmCoin := sdk.NewCoin(getEvmDenom(), evmAmount)
 		balances = balances.Add(evmCoin)
 	}
 	return balances
@@ -279,10 +296,10 @@ func (k EvmBankKeeper) GetAllBalances(ctx context.Context, addr sdk.AccAddress) 
 
 // SpendableCoin returns the spendable balance for a specific denom.
 func (k EvmBankKeeper) SpendableCoin(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin {
-	if denom == types.EvmDenom {
-		cosmosBalance := k.bankKeeper.SpendableCoin(ctx, addr, types.CosmosDenom)
+	if denom == getEvmDenom() {
+		cosmosBalance := k.bankKeeper.SpendableCoin(ctx, addr, getCosmosDenom())
 		evmAmount := ConvertCosmosCoinToEvmCoin(cosmosBalance)
-		return sdk.NewCoin(types.EvmDenom, evmAmount.Amount)
+		return sdk.NewCoin(getEvmDenom(), evmAmount.Amount)
 	}
 	return k.bankKeeper.SpendableCoin(ctx, addr, denom)
 }
@@ -291,7 +308,7 @@ func (k EvmBankKeeper) SpendableCoin(ctx context.Context, addr sdk.AccAddress, d
 func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderModule string, recipientModule string, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
-		if coin.Denom == types.EvmDenom {
+		if coin.Denom == getEvmDenom() {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
 		} else {
@@ -304,7 +321,7 @@ func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderMo
 // SetDenomMetaData sets the metadata for a denom.
 func (k EvmBankKeeper) SetDenomMetaData(ctx context.Context, denomMetaData banktypes.Metadata) {
 	// For astoc, we don't actually store it - it's computed from ustoc
-	if denomMetaData.Base != types.EvmDenom {
+	if denomMetaData.Base != getEvmDenom() {
 		k.bankKeeper.SetDenomMetaData(ctx, denomMetaData)
 	}
 }
@@ -317,7 +334,7 @@ func (k EvmBankKeeper) IterateAccountBalances(ctx context.Context, account sdk.A
 			return true
 		}
 		// If it's ustoc, also call callback for astoc representation
-		if coin.Denom == types.CosmosDenom {
+		if coin.Denom == getCosmosDenom() {
 			evmCoin := ConvertCosmosCoinToEvmCoin(coin)
 			return cb(evmCoin)
 		}
@@ -333,7 +350,7 @@ func (k EvmBankKeeper) IterateAllBalances(ctx context.Context, cb func(address s
 			return true
 		}
 		// If it's ustoc, also call callback for astoc representation
-		if coin.Denom == types.CosmosDenom {
+		if coin.Denom == getCosmosDenom() {
 			evmCoin := ConvertCosmosCoinToEvmCoin(coin)
 			return cb(address, evmCoin)
 		}
@@ -349,7 +366,7 @@ func (k EvmBankKeeper) IterateTotalSupply(ctx context.Context, cb func(coin sdk.
 			return true
 		}
 		// If it's ustoc, also call callback for astoc representation
-		if coin.Denom == types.CosmosDenom {
+		if coin.Denom == getCosmosDenom() {
 			evmCoin := ConvertCosmosCoinToEvmCoin(coin)
 			return cb(evmCoin)
 		}
@@ -360,19 +377,19 @@ func (k EvmBankKeeper) IterateTotalSupply(ctx context.Context, cb func(coin sdk.
 // ConvertCosmosCoinToEvmCoin converts ustoc (6 decimals) to astoc (18 decimals)
 // 1 ustoc = 10^12 astoc
 func ConvertCosmosCoinToEvmCoin(coin sdk.Coin) sdk.Coin {
-	if coin.Denom != types.CosmosDenom {
+	if coin.Denom != getCosmosDenom() {
 		panic(fmt.Sprintf("invalid denom for conversion to EVM coin: %s", coin.Denom))
 	}
 
 	evmAmount := coin.Amount.Mul(types.ConversionMultiplier)
-	return sdk.NewCoin(types.EvmDenom, evmAmount)
+	return sdk.NewCoin(getEvmDenom(), evmAmount)
 }
 
 // ConvertEvmCoinToCosmosCoin converts astoc (18 decimals) to ustoc (6 decimals)
 // 10^12 astoc = 1 ustoc
 // If the amount has dust (not divisible by 10^12), it truncates (rounds down) instead of panicking
 func ConvertEvmCoinToCosmosCoin(coin sdk.Coin) sdk.Coin {
-	if coin.Denom != types.EvmDenom {
+	if coin.Denom != getEvmDenom() {
 		panic(fmt.Sprintf("invalid denom for conversion to Cosmos coin: %s", coin.Denom))
 	}
 
@@ -387,7 +404,7 @@ func ConvertEvmCoinToCosmosCoin(coin sdk.Coin) sdk.Coin {
 
 	// Truncate by dividing (automatically rounds down)
 	cosmosAmount := coin.Amount.Quo(types.ConversionMultiplier)
-	return sdk.NewCoin(types.CosmosDenom, cosmosAmount)
+	return sdk.NewCoin(getCosmosDenom(), cosmosAmount)
 }
 
 // ConvertCosmosAmountToEvmAmount converts a raw amount from Cosmos decimals to EVM decimals
