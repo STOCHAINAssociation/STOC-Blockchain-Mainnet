@@ -60,6 +60,37 @@ go test -mod=readonly -v -timeout 30m ./path/to/package -run TestFunctionName
 - **Mainnet REST**: https://api-stoc-mainnet.stochainscan.io
 - **Minimum Gas Price**: 0.001ustoc (mainnet), 0.0001ustoc (development)
 
+## Governance History
+
+| Proposal Hash | Mô tả | Status |
+|---------------|-------|--------|
+| `725329CCB4525FD972E29B5F991F63055AA4C675218581472D0F86C3BC238EDE` | Giảm inflation rate | ✅ Approved |
+
+### Chi tiết Proposal: Giảm Inflation Rate
+
+**Thay đổi Mint Params:**
+
+| Parameter | Genesis (trước) | Sau proposal |
+|-----------|-----------------|--------------|
+| Inflation Max | 20% | 0.0003% |
+| Inflation Min | 7% | 0.00003% |
+
+**Tác động (với Total Supply ~10,000,030 STOC):**
+
+| | Trước | Sau |
+|---|-------|-----|
+| Max STOC/năm | ~2,000,000 | ~30 |
+| Min STOC/năm | ~700,000 | ~3 |
+
+→ Giảm **~99.99%** lượng token mới được mint mỗi năm.
+
+## Custom Modules
+
+### x/stoc Module
+Module chính cho STOC blockchain:
+- **Token Management**: Quản lý token securities
+- **Burn**: Cho phép burn token - module burn đã được implement
+
 ## Code Generation Workflow
 This project uses protobuf-first development. When modifying `.proto` files:
 1. Update protobuf definitions in `proto/stoc/`
