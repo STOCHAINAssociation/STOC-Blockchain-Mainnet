@@ -38,7 +38,6 @@ import (
 	"github.com/spf13/cast"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/auth"
-	sdkante "github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	_ "github.com/cosmos/cosmos-sdk/x/auth/tx/config" // import for side-effects
@@ -95,6 +94,8 @@ import (
 	// EVM imports
 	sdkmempool "github.com/cosmos/cosmos-sdk/types/mempool"
 	evmante "github.com/cosmos/evm/ante"
+	cosmosevmante "github.com/cosmos/evm/ante/evm"
+	cosmosevmtypes "github.com/cosmos/evm/types"
 	erc20keeper "github.com/cosmos/evm/x/erc20/keeper"
 	evmkeeper "github.com/cosmos/evm/x/vm/keeper"
 	feemarketkeeper "github.com/cosmos/evm/x/feemarket/keeper"
@@ -176,6 +177,10 @@ type App struct {
 }
 
 func init() {
+	// Set default bond denom to ustoc (must be set before EVM modules use it)
+	// This is used by evm.go coinInfoMap and evmutil GetCosmosDenom()/GetEvmDenom()
+	sdk.DefaultBondDenom = "ustoc"
+
 	var err error
 	clienthelpers.EnvPrefix = Name
 	DefaultNodeHome, err = clienthelpers.GetNodeHomeDirectory("." + Name)
@@ -349,21 +354,28 @@ func New(
 	}
 
 	anteOptions := evmante.HandlerOptions{
+		Cdc:                    app.appCodec,
 		AccountKeeper:          app.AccountKeeper,
 		BankKeeper:             app.BankKeeper,
 		SignModeHandler:        app.txConfig.SignModeHandler(),
 		FeegrantKeeper:         app.FeeGrantKeeper,
-		SigGasConsumer:         sdkante.DefaultSigVerificationGasConsumer,
-		ExtensionOptionChecker: nil,
-		TxFeeChecker:           nil,
+		SigGasConsumer:         evmante.SigVerificationGasConsumer,
+		ExtensionOptionChecker: cosmosevmtypes.HasDynamicFeeExtensionOption,
+		TxFeeChecker:           cosmosevmante.NewDynamicFeeChecker(app.FeeMarketKeeper),
 		EvmKeeper:              app.EVMKeeper,
 		FeeMarketKeeper:        &app.FeeMarketKeeper,
 		MaxTxGasWanted:         maxGasWanted,
-		PendingTxListener:      func(hash common.Hash) { app.RegisterPendingTxListener(func(h common.Hash) {}) },
-		IBCKeeper:              app.IBCKeeper,
+		PendingTxListener: func(hash common.Hash) {
+			for _, listener := range app.pendingTxListeners {
+				listener(hash)
+			}
+		},
+		IBCKeeper: app.IBCKeeper,
+	}
+	if err := anteOptions.Validate(); err != nil {
+		panic(err)
 	}
 
-	// set AnteHandler here, before adding modules
 	anteHandler := stocappante.NewAnteHandler(anteOptions)
 	app.SetAnteHandler(anteHandler)
 

@@ -80,7 +80,6 @@ var (
 		minttypes.ModuleName,
 		crisistypes.ModuleName,
 		ibcexported.ModuleName,
-		genutiltypes.ModuleName,
 		evidencetypes.ModuleName,
 		authz.ModuleName,
 		ibctransfertypes.ModuleName,
@@ -100,6 +99,8 @@ var (
 		erc20types.ModuleName,
 		feemarkettypes.ModuleName,
 		evmtypes.ModuleName,
+		// NOTE: genutil must be after evm modules so EVM state is ready for genesis transactions
+		genutiltypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/initGenesis
 	}
 
@@ -176,6 +177,7 @@ var (
 		{Account: evmtypes.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
 		{Account: erc20types.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
 		{Account: feemarkettypes.ModuleName},
+		{Account: evmutiltypes.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
 	}
 
 	// blocked account addresses
@@ -235,7 +237,7 @@ var (
 			{
 				Name: banktypes.ModuleName,
 				Config: appconfig.WrapAny(&bankmodulev1.Module{
-					BlockedModuleAccountsOverride: blockAccAddrs,
+					BlockedModuleAccountsOverride: getBlockAccAddrs(),
 				}),
 			},
 			{
@@ -320,12 +322,15 @@ var (
 )
 
 // getBlockAccAddrs returns all the app's module account addresses that are blocked from receiving funds.
-// EVM precompile addresses are added to this list.
+// EVM precompile addresses are added to prevent them from receiving native tokens.
 func getBlockAccAddrs() []string {
-	var addrs []string
-	addrs = append(addrs, blockAccAddrs...)
+	addrs := make([]string, len(blockAccAddrs))
+	copy(addrs, blockAccAddrs)
 
-	// Add EVM precompile addresses (bech32, p256)
-	// These are added dynamically because they depend on EVM configuration
+	// Block EVM static precompile addresses from receiving funds
+	for _, precompile := range evmtypes.AvailableStaticPrecompiles {
+		addrs = append(addrs, precompile)
+	}
+
 	return addrs
 }
