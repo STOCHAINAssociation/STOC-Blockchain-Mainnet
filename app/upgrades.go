@@ -10,6 +10,7 @@ import (
 	erc20types "github.com/cosmos/evm/x/erc20/types"
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
+	evmutiltypes "stoc/x/evmutil/types"
 )
 
 const (
@@ -37,6 +38,7 @@ func (app *App) RegisterUpgradeHandlers() {
 				evmtypes.ModuleName,
 				feemarkettypes.ModuleName,
 				erc20types.ModuleName,
+				evmutiltypes.StoreKey,
 			},
 		}
 

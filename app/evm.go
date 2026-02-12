@@ -160,10 +160,9 @@ func (app *App) postRegisterEVMModules() error {
 
 	// add more stateful precompiles here, if needed.
 
-	// NOTE: WithStaticPrecompiles returns an error but it's safe to ignore
-	// The method registers precompiles and may return the keeper itself as error in some cases
-	// This is the expected behavior as per the reference implementation
-	_ = app.EVMKeeper.WithStaticPrecompiles(precompiles)
+	if err := app.EVMKeeper.WithStaticPrecompiles(precompiles); err != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: failed to register static precompiles: %v\n", err)
+	}
 	return nil
 }
 
