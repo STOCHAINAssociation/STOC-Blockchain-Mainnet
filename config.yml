@@ -5,15 +5,15 @@ build:
   proto:
     path: ""
 accounts:
-- name: admin
-  coins:
-  - 10000000000000000ustoc
-- name: validator1
-  coins:
-  - 10000000000ustoc
-- name: validator2
-  coins:
-  - 10000000000ustoc
+  - name: admin
+    coins:
+      - 10000000000000000ustoc
+  - name: validator1
+    coins:
+      - 10000000000ustoc
+  - name: validator2
+    coins:
+      - 10000000000ustoc
 faucet:
   name: validator1
   coins: []
@@ -28,9 +28,9 @@ genesis:
       params:
         bond_denom: ustoc
 validators:
-- name: validator1
-  bonded: 10000000000ustoc
-- name: validator2
-  bonded: 10000000000ustoc
-  app:
-    minimum-gas-prices: 0.0001ustoc
+  - name: validator1
+    bonded: 10000000000ustoc
+  - name: validator2
+    bonded: 10000000000ustoc
+    app:
+      minimum-gas-prices: 0.0001ustoc
