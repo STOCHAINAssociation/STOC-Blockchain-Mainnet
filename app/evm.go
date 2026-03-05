@@ -6,6 +6,8 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"
@@ -160,9 +162,7 @@ func (app *App) postRegisterEVMModules() error {
 
 	// add more stateful precompiles here, if needed.
 
-	if err := app.EVMKeeper.WithStaticPrecompiles(precompiles); err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: failed to register static precompiles: %v\n", err)
-	}
+	app.EVMKeeper.WithStaticPrecompiles(precompiles)
 	return nil
 }
 
@@ -240,7 +240,18 @@ func getCustomEVMActivators() map[int]func(*gethvm.JumpTable) {
 }
 
 // getEVMChainID returns the EVM chain ID from the app options.
+//
+// Priority:
+//  1. Explicit "evm.chain-id" in app.toml (for existing chains that can't change their cosmos chain-id)
+//  2. Parsed from cosmos chain-id format "name_EVMID-version" (e.g. stoc_1306-1)
+//  3. FNV-1a hash of cosmos chain-id string (fallback)
 func getEVMChainID(appOpts servertypes.AppOptions) uint64 {
+	// Priority 1: explicit EVM chain ID from app.toml [evm] section
+	// Key matches cosmos/evm config mapstructure tag: evm-chain-id under [evm] section
+	if evmChainID := cast.ToUint64(appOpts.Get("evm.evm-chain-id")); evmChainID > 0 {
+		return evmChainID
+	}
+
 	chainID := cast.ToString(appOpts.Get(flags.FlagChainID))
 	if chainID == "" {
 		// fallback to genesis chain-id
@@ -265,9 +276,24 @@ func getEVMChainID(appOpts servertypes.AppOptions) uint64 {
 }
 
 // cosmosChainIDToEVMChainID converts a Cosmos chain ID to an EVM chain ID.
-// This is an opinionated function to simplify chain id management.
-// In theory, cosmos chain id and evm chain id are independent and can be managed separately.
+//
+// Supports two formats:
+//   - "name_EVMID-version" (e.g. stoc_1306-1) → extracts 1306
+//   - Any other string → FNV-1a hash (backward compatible)
 func cosmosChainIDToEVMChainID(chainID string) uint64 {
+	// Try to parse "name_EVMID-version" format (e.g. stoc_1306-1, stoc_1999-1)
+	if idx := strings.LastIndex(chainID, "_"); idx != -1 {
+		suffix := chainID[idx+1:] // "1306-1"
+		evmPart := suffix
+		if dashIdx := strings.Index(suffix, "-"); dashIdx != -1 {
+			evmPart = suffix[:dashIdx] // "1306"
+		}
+		if evmID, err := strconv.ParseUint(evmPart, 10, 64); err == nil && evmID > 0 {
+			return evmID
+		}
+	}
+
+	// Fallback: FNV-1a hash of the full chain-id string
 	hasher := fnv.New32a()
 	hasher.Write([]byte(chainID))
 	return uint64(hasher.Sum32())

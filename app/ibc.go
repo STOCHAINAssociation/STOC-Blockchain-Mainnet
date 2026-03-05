@@ -74,7 +74,7 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 		app.MsgServiceRouter(),
 		app.AccountKeeper,
 		app.BankKeeper,
-		app.Erc20Keeper,
+		&app.Erc20Keeper,
 		govModuleAddr,
 	)
 
@@ -109,7 +109,7 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 	)
 
 	// add evm capabilities
-	transferStack = erc20.NewIBCMiddleware(app.Erc20Keeper, transferStack)
+	transferStack = erc20.NewIBCMiddleware(&app.Erc20Keeper, transferStack)
 
 	// create static IBC router, add transfer route, then set it on the keeper
 	ibcRouter := porttypes.NewRouter().

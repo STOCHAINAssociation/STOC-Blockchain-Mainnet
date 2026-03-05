@@ -114,7 +114,6 @@ func TestBurnToken(t *testing.T) {
 		Amount:            math.NewInt(100),
 		Denom:             denom,
 		BurnAll:           false,
-		IncludeGasInBurn:  false,
 	})
 	require.NoError(t, err)
 
@@ -128,7 +127,6 @@ func TestBurnToken(t *testing.T) {
 		Creator:           creator,
 		Denom:             denom,
 		BurnAll:           true,
-		IncludeGasInBurn:  false,
 	})
 	require.NoError(t, err)
 
@@ -162,7 +160,6 @@ func TestBurnManagedToken(t *testing.T) {
 		Amount:            math.NewInt(100),
 		Denom:             denom,
 		BurnAll:           false,
-		IncludeGasInBurn:  false,
 	})
 	require.NoError(t, err)
 
