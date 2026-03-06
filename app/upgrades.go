@@ -38,7 +38,7 @@ func (app *App) RegisterUpgradeHandlers() {
 				evmtypes.ModuleName,
 				feemarkettypes.ModuleName,
 				erc20types.ModuleName,
-				evmutiltypes.StoreKey,
+				evmutiltypes.ModuleName,
 			},
 		}
 

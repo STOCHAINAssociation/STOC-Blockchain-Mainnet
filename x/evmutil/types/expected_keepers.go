@@ -30,7 +30,3 @@ type BankKeeper interface {
 	IterateTotalSupply(ctx context.Context, cb func(coin sdk.Coin) bool)
 }
 
-// EvmKeeper defines the expected EVM keeper interface
-type EvmKeeper interface {
-	// Add any EVM keeper methods needed here in the future
-}

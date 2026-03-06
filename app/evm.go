@@ -52,13 +52,16 @@ import (
 // registerEVMModules register EVM keepers and non dependency inject modules.
 func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 	// chain config
-	chainID := getEVMChainID(appOpts)
+	chainID, err := getEVMChainID(appOpts)
+	if err != nil {
+		return fmt.Errorf("failed to get EVM chain ID: %w", err)
+	}
 	coinInfoMap := map[uint64]evmtypes.EvmCoinInfo{
 		chainID: evmtypes.EvmCoinInfo{
-			Denom:         sdk.DefaultBondDenom,
-			ExtendedDenom: sdk.DefaultBondDenom,
-			DisplayDenom:  sdk.DefaultBondDenom,
-			Decimals:      evmtypes.SixDecimals, // KEEP 6 decimals - in line with Cosmos SDK default decimals
+			Denom:         sdk.DefaultBondDenom,                       // "ustoc" — base cosmos denom for fee payment
+			ExtendedDenom: evmutiltypes.GetEvmDenom(),                 // "astoc" — 18-decimal EVM representation
+			DisplayDenom:  strings.TrimPrefix(sdk.DefaultBondDenom, "u"), // "stoc" — human-readable display name
+			Decimals:      evmtypes.SixDecimals,                       // 6 decimals — cosmos/evm applies ConversionFactor(10^12) internally
 		},
 	}
 
@@ -98,7 +101,6 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 		app.appCodec,
 		app.GetKey(evmutiltypes.StoreKey),
 		app.BankKeeper,
-		nil, // EVMKeeper will be set after initialization
 	)
 
 	// Get EvmBankKeeper that wraps BankKeeper with conversion logic
@@ -207,8 +209,15 @@ func (app *App) GetMempool() sdkmempool.ExtMempool {
 	return app.EVMMempool
 }
 
+// Custom EVM activator IDs for gas multiplier overrides.
+const (
+	activatorCreateGasMultiplier = 0 // Multiplies CREATE/CREATE2 constant gas by 10x
+	activatorCallGasMultiplier   = 1 // Multiplies CALL constant gas by 10x
+	activatorSstoreFixedGas      = 2 // Sets SSTORE constant gas to fixed 500
+)
+
 // getCustomEVMActivators defines a map of opcode modifiers associated
-// with a key defining the corresponding EIP.
+// with a key defining the corresponding activator ID.
 func getCustomEVMActivators() map[int]func(*gethvm.JumpTable) {
 	var (
 		multiplier        = uint64(10)
@@ -216,24 +225,18 @@ func getCustomEVMActivators() map[int]func(*gethvm.JumpTable) {
 	)
 
 	return map[int]func(*gethvm.JumpTable){
-		0o000: func(jt *gethvm.JumpTable) {
-			// enable0000 contains the logic to modify the CREATE and CREATE2 opcodes
-			// constant gas value.
+		activatorCreateGasMultiplier: func(jt *gethvm.JumpTable) {
 			currentValCreate := jt[gethvm.CREATE].GetConstantGas()
 			jt[gethvm.CREATE].SetConstantGas(currentValCreate * multiplier)
 
 			currentValCreate2 := jt[gethvm.CREATE2].GetConstantGas()
 			jt[gethvm.CREATE2].SetConstantGas(currentValCreate2 * multiplier)
 		},
-		0o001: func(jt *gethvm.JumpTable) {
-			// enable0001 contains the logic to modify the CALL opcode
-			// constant gas value.
+		activatorCallGasMultiplier: func(jt *gethvm.JumpTable) {
 			currentVal := jt[gethvm.CALL].GetConstantGas()
 			jt[gethvm.CALL].SetConstantGas(currentVal * multiplier)
 		},
-		0o002: func(jt *gethvm.JumpTable) {
-			// enable0002 contains the logic to modify the SSTORE opcode
-			// constant gas value.
+		activatorSstoreFixedGas: func(jt *gethvm.JumpTable) {
 			jt[gethvm.SSTORE].SetConstantGas(sstoreConstantGas)
 		},
 	}
@@ -242,14 +245,14 @@ func getCustomEVMActivators() map[int]func(*gethvm.JumpTable) {
 // getEVMChainID returns the EVM chain ID from the app options.
 //
 // Priority:
-//  1. Explicit "evm.chain-id" in app.toml (for existing chains that can't change their cosmos chain-id)
+//  1. Explicit "evm.evm-chain-id" in app.toml (for existing chains that can't change their cosmos chain-id)
 //  2. Parsed from cosmos chain-id format "name_EVMID-version" (e.g. stoc_1306-1)
 //  3. FNV-1a hash of cosmos chain-id string (fallback)
-func getEVMChainID(appOpts servertypes.AppOptions) uint64 {
+func getEVMChainID(appOpts servertypes.AppOptions) (uint64, error) {
 	// Priority 1: explicit EVM chain ID from app.toml [evm] section
 	// Key matches cosmos/evm config mapstructure tag: evm-chain-id under [evm] section
 	if evmChainID := cast.ToUint64(appOpts.Get("evm.evm-chain-id")); evmChainID > 0 {
-		return evmChainID
+		return evmChainID, nil
 	}
 
 	chainID := cast.ToString(appOpts.Get(flags.FlagChainID))
@@ -262,17 +265,17 @@ func getEVMChainID(appOpts servertypes.AppOptions) uint64 {
 
 		reader, err := os.Open(filepath.Join(DefaultNodeHome, genesisPathCfg))
 		if err != nil {
-			panic(err)
+			return 0, fmt.Errorf("failed to open genesis file: %w", err)
 		}
 		defer reader.Close()
 
 		chainID, err = genutiltypes.ParseChainIDFromGenesis(reader)
 		if err != nil {
-			panic(fmt.Errorf("failed to parse chain-id from genesis file: %w", err))
+			return 0, fmt.Errorf("failed to parse chain-id from genesis file: %w", err)
 		}
 	}
 
-	return cosmosChainIDToEVMChainID(chainID)
+	return cosmosChainIDToEVMChainID(chainID), nil
 }
 
 // cosmosChainIDToEVMChainID converts a Cosmos chain ID to an EVM chain ID.

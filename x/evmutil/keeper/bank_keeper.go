@@ -225,7 +225,7 @@ func (k EvmBankKeeper) GetDenomMetaData(ctx context.Context, denom string) (bank
 				{
 					Denom:    getEvmDenom(),
 					Exponent: 0,
-					Aliases:  []string{"astoc"},
+					Aliases:  []string{getEvmDenom()},
 				},
 				{
 					Denom:    "stoc",
@@ -282,16 +282,26 @@ func (k EvmBankKeeper) IsSendEnabledCoins(ctx context.Context, coins ...sdk.Coin
 }
 
 // GetAllBalances returns all balances for an account.
+// RESTRICTION: Filters out custom tokens — only native denoms visible from EVM context.
 func (k EvmBankKeeper) GetAllBalances(ctx context.Context, addr sdk.AccAddress) sdk.Coins {
 	balances := k.bankKeeper.GetAllBalances(ctx, addr)
+
+	// Filter: only keep native cosmos denom, same as SpendableCoins
+	filteredBalances := sdk.NewCoins()
+	for _, coin := range balances {
+		if coin.Denom == getCosmosDenom() {
+			filteredBalances = filteredBalances.Add(coin)
+		}
+	}
+
 	// Also add astoc representation if ustoc exists
-	cosmosBalance := balances.AmountOf(getCosmosDenom())
+	cosmosBalance := filteredBalances.AmountOf(getCosmosDenom())
 	if cosmosBalance.IsPositive() {
 		evmAmount := cosmosBalance.Mul(types.ConversionMultiplier)
 		evmCoin := sdk.NewCoin(getEvmDenom(), evmAmount)
-		balances = balances.Add(evmCoin)
+		filteredBalances = filteredBalances.Add(evmCoin)
 	}
-	return balances
+	return filteredBalances
 }
 
 // SpendableCoin returns the spendable balance for a specific denom.
@@ -305,14 +315,18 @@ func (k EvmBankKeeper) SpendableCoin(ctx context.Context, addr sdk.AccAddress, d
 }
 
 // SendCoinsFromModuleToModule transfers coins between modules.
+// Custom tokens cannot be transferred from EVM context.
 func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderModule string, recipientModule string, amt sdk.Coins) error {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
 		if coin.Denom == getEvmDenom() {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else {
+		} else if coin.Denom == getCosmosDenom() {
 			convertedAmt = convertedAmt.Add(coin)
+		} else {
+			// RESTRICTION: Block custom tokens from EVM
+			return fmt.Errorf("custom token %s cannot be transferred from EVM context", coin.Denom)
 		}
 	}
 	return k.bankKeeper.SendCoinsFromModuleToModule(ctx, senderModule, recipientModule, convertedAmt)
@@ -327,34 +341,36 @@ func (k EvmBankKeeper) SetDenomMetaData(ctx context.Context, denomMetaData bankt
 }
 
 // IterateAccountBalances iterates over all balances of an account.
+// RESTRICTION: Skips custom tokens — only native denoms visible from EVM context.
 func (k EvmBankKeeper) IterateAccountBalances(ctx context.Context, account sdk.AccAddress, cb func(coin sdk.Coin) bool) {
 	k.bankKeeper.IterateAccountBalances(ctx, account, func(coin sdk.Coin) bool {
-		// Call callback for actual coin
+		// Skip custom tokens — only allow native cosmos denom
+		if coin.Denom != getCosmosDenom() {
+			return false
+		}
 		if cb(coin) {
 			return true
 		}
-		// If it's ustoc, also call callback for astoc representation
-		if coin.Denom == getCosmosDenom() {
-			evmCoin := ConvertCosmosCoinToEvmCoin(coin)
-			return cb(evmCoin)
-		}
-		return false
+		// Also call callback for astoc representation
+		evmCoin := ConvertCosmosCoinToEvmCoin(coin)
+		return cb(evmCoin)
 	})
 }
 
 // IterateAllBalances iterates over all balances of all accounts.
+// RESTRICTION: Skips custom tokens — only native denoms visible from EVM context.
 func (k EvmBankKeeper) IterateAllBalances(ctx context.Context, cb func(address sdk.AccAddress, coin sdk.Coin) (stop bool)) {
 	k.bankKeeper.IterateAllBalances(ctx, func(address sdk.AccAddress, coin sdk.Coin) (stop bool) {
-		// Call callback for actual coin
+		// Skip custom tokens — only allow native cosmos denom
+		if coin.Denom != getCosmosDenom() {
+			return false
+		}
 		if cb(address, coin) {
 			return true
 		}
-		// If it's ustoc, also call callback for astoc representation
-		if coin.Denom == getCosmosDenom() {
-			evmCoin := ConvertCosmosCoinToEvmCoin(coin)
-			return cb(address, evmCoin)
-		}
-		return false
+		// Also call callback for astoc representation
+		evmCoin := ConvertCosmosCoinToEvmCoin(coin)
+		return cb(address, evmCoin)
 	})
 }
 

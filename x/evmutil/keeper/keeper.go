@@ -14,7 +14,6 @@ type Keeper struct {
 	cdc        codec.BinaryCodec
 	storeKey   storetypes.StoreKey
 	bankKeeper types.BankKeeper
-	evmKeeper  types.EvmKeeper
 }
 
 // NewKeeper creates an evmutil keeper
@@ -22,13 +21,11 @@ func NewKeeper(
 	cdc codec.BinaryCodec,
 	storeKey storetypes.StoreKey,
 	bankKeeper types.BankKeeper,
-	evmKeeper types.EvmKeeper,
 ) Keeper {
 	return Keeper{
 		cdc:        cdc,
 		storeKey:   storeKey,
 		bankKeeper: bankKeeper,
-		evmKeeper:  evmKeeper,
 	}
 }
 

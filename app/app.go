@@ -348,10 +348,8 @@ func New(
 	})
 
 	// create options for AnteHandler
+	// MaxTxGasWanted caps per-tx gas; 0 = no cap (mitigated by min gas price + block gas limit)
 	maxGasWanted := cast.ToUint64(appOpts.Get("gas-wanted"))
-	if maxGasWanted == 0 {
-		maxGasWanted = 0 // 0 means no limit
-	}
 
 	anteOptions := evmante.HandlerOptions{
 		Cdc:                    app.appCodec,

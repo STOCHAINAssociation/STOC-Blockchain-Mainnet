@@ -50,9 +50,11 @@ import (
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	erc20types "github.com/cosmos/evm/x/erc20/types"
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
+	"github.com/ethereum/go-ethereum/common"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	stocmodulev1 "stoc/api/stoc/stoc/module"
@@ -322,14 +324,18 @@ var (
 )
 
 // getBlockAccAddrs returns all the app's module account addresses that are blocked from receiving funds.
-// EVM precompile addresses are added to prevent them from receiving native tokens.
+// EVM precompile addresses are converted from hex to bech32 format for bank module compatibility.
 func getBlockAccAddrs() []string {
 	addrs := make([]string, len(blockAccAddrs))
 	copy(addrs, blockAccAddrs)
 
-	// Block EVM static precompile addresses from receiving funds
+	// Block EVM static precompile addresses from receiving funds.
+	// AvailableStaticPrecompiles contains hex addresses (e.g. "0x000...0100"),
+	// but the bank module checks against bech32 addresses. Convert hex → bech32.
 	for _, precompile := range evmtypes.AvailableStaticPrecompiles {
-		addrs = append(addrs, precompile)
+		ethAddr := common.HexToAddress(precompile)
+		bech32Addr := sdk.AccAddress(ethAddr.Bytes()).String()
+		addrs = append(addrs, bech32Addr)
 	}
 
 	return addrs
