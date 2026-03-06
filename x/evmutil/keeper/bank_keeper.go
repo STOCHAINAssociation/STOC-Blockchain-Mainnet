@@ -263,14 +263,18 @@ func (k EvmBankKeeper) IsSendEnabledCoin(ctx context.Context, coin sdk.Coin) boo
 
 // IsSendEnabledCoins checks if all coins are enabled for sending.
 // For EVM denoms, it converts to Cosmos denoms first.
+// RESTRICTION: Custom tokens return error from EVM context.
 func (k EvmBankKeeper) IsSendEnabledCoins(ctx context.Context, coins ...sdk.Coin) error {
 	convertedCoins := make([]sdk.Coin, 0, len(coins))
 	for _, coin := range coins {
 		if coin.Denom == getEvmDenom() {
 			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
 			convertedCoins = append(convertedCoins, cosmosCoin)
-		} else {
+		} else if coin.Denom == getCosmosDenom() {
 			convertedCoins = append(convertedCoins, coin)
+		} else {
+			// RESTRICTION: Custom tokens are not send-enabled from EVM context
+			return fmt.Errorf("custom token %s is not send-enabled from EVM context", coin.Denom)
 		}
 	}
 	return k.bankKeeper.IsSendEnabledCoins(ctx, convertedCoins...)
