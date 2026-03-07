@@ -19,7 +19,7 @@ func (k Keeper) SetToken(ctx sdk.Context, token types.Token) {
 
 	if token.Id == "" {
 		token.Id = token.MinimalDenom
-	} // Đảm bảo Id luôn là minimalDenom, không tự sinh uuid
+	} // Ensure Id is always minimalDenom, never auto-generated uuid
 
 	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
 	mainStore.Set([]byte(token.Id), k.cdc.MustMarshal(&token))
@@ -38,7 +38,7 @@ func (k Keeper) GetToken(ctx sdk.Context, minimalDenom string) (val types.Token,
 
 	b := store.Get([]byte(tokenId))
 	if b == nil {
-		k.Logger().Info("Token not found", "minimalDenom", minimalDenom)
+		k.Logger().Debug("Token not found", "minimalDenom", minimalDenom)
 		return types.Token{}, false
 	}
 
@@ -106,7 +106,12 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, symbol string, 
 		return sdkerrors.Wrapf(types.ErrCannotMint, "token %s is not configured for unlimited minting", symbol)
 	}
 
-	// Sử dụng đúng minimalDenom khi tạo coin
+	// Check supply cap even for unlimited tokens
+	newTotal := token.TotalSupply.Add(amount)
+	if newTotal.GT(types.MaxTokenSupply) {
+		return sdkerrors.Wrapf(types.ErrInvalidTokenAmount, "minting would exceed max supply (%s)", types.MaxTokenSupply.String())
+	}
+
 	coins := sdk.NewCoins(sdk.NewCoin(token.MinimalDenom, amount))
 	err := k.bankKeeper.MintCoins(ctx, types.ModuleName, coins)
 	if err != nil {

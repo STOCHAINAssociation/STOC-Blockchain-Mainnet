@@ -18,6 +18,12 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, sdkerrors.Wrap(err, "invalid creator address")
 	}
 
+	// Only allow burning stoc-managed tokens (not native ustoc/astoc)
+	token, found := k.GetToken(ctx, msg.Denom)
+	if !found {
+		return nil, sdkerrors.Wrapf(types.ErrTokenNotFound, "can only burn stoc-managed tokens, denom %s not found", msg.Denom)
+	}
+
 	// Determine amount to burn
 	amountToBurn := msg.Amount
 	if msg.BurnAll {
@@ -30,6 +36,9 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 
 	// Validate amount
 	if amountToBurn.IsZero() {
+		if msg.BurnAll {
+			return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "no tokens remaining after gas deduction")
+		}
 		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "amount to burn must be positive")
 	}
 
@@ -46,17 +55,13 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, err
 	}
 
-	// Update token stats if it is a managed token
-	token, found := k.GetToken(ctx, msg.Denom)
-	if found {
-		// Prevent TotalSupply from going negative
-		if token.TotalSupply.GTE(amountToBurn) {
-			token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
-		} else {
-			token.TotalSupply = math.ZeroInt()
-		}
-		k.SetToken(ctx, token)
+	// Update token supply tracking
+	if token.TotalSupply.GTE(amountToBurn) {
+		token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
+	} else {
+		token.TotalSupply = math.ZeroInt()
 	}
+	k.SetToken(ctx, token)
 
 	// Emit event
 	ctx.EventManager().EmitEvent(

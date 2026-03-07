@@ -14,7 +14,7 @@ const (
 	TokenKey       = "Token-"
 	TokenSymbolKey = "TokenSymbol-"
 
-	// TokenCounterKey là key để lưu counter cho token ID
+	// TokenCounterKey is the key for storing the token ID counter
 	TokenCounterKey = "TokenCounter-"
 )
 

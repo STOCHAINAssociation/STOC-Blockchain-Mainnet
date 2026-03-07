@@ -98,7 +98,7 @@ func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.C
 	return k, keeper.NewMsgServerImpl(k), ctx, mockBank
 }
 
-func TestBurnToken(t *testing.T) {
+func TestBurnToken_NativeDenom_Blocked(t *testing.T) {
 	_, ms, ctx, mockBank := setupMsgServerWithMock(t)
 
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
@@ -108,30 +108,15 @@ func TestBurnToken(t *testing.T) {
 	// Setup initial balance
 	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(1000)))
 
-	// Test Burn Specific Amount
+	// Burning native denom should be rejected — only stoc-managed tokens allowed
 	_, err := ms.BurnToken(ctx, &types.MsgBurnToken{
-		Creator:           creator,
-		Amount:            math.NewInt(100),
-		Denom:             denom,
-		BurnAll:           false,
+		Creator: creator,
+		Amount:  math.NewInt(100),
+		Denom:   denom,
+		BurnAll: false,
 	})
-	require.NoError(t, err)
-
-	// Verify balance decreased in mock
-	// Note: SendCoinsFromAccountToModule in mock updates the balance
-	bal := mockBank.GetBalance(ctx, creatorAddr, denom)
-	require.Equal(t, math.NewInt(900), bal.Amount)
-
-	// Test Burn All
-	_, err = ms.BurnToken(ctx, &types.MsgBurnToken{
-		Creator:           creator,
-		Denom:             denom,
-		BurnAll:           true,
-	})
-	require.NoError(t, err)
-
-	bal = mockBank.GetBalance(ctx, creatorAddr, denom)
-	require.Equal(t, math.NewInt(0), bal.Amount)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "can only burn stoc-managed tokens")
 }
 
 func TestBurnManagedToken(t *testing.T) {

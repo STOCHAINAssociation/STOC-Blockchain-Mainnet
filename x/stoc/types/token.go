@@ -20,6 +20,9 @@ var MaxTokenSupply = math.NewIntFromBigInt(new(big.Int).Exp(big.NewInt(10), big.
 // MaxTaxPercent is the maximum tax percentage (50%)
 var MaxTaxPercent = math.LegacyNewDecWithPrec(5, 1) // 0.5 = 50%
 
+// MaxDistributions limits the number of distribution entries to prevent gas griefing
+const MaxDistributions = 20
+
 // ValidateToken validates a token structure
 func Validate(token Token) error {
 	if token.Name == "" {

@@ -37,6 +37,13 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 	if taxErr != nil {
 		// Log the error but don't revert the transaction
 		ctx.Logger().Error("Tax application failed, skipping tax", "error", taxErr)
+		// Emit event so tax failures are observable and monitorable
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				"token_tax_failed",
+				sdk.NewAttribute("error", taxErr.Error()),
+			),
+		)
 	} else {
 		// Only commit tax changes if successful
 		writeCache()
@@ -54,14 +61,11 @@ func (tpd TaxPostDecorator) applyTaxes(ctx sdk.Context, tx sdk.Tx) error {
 				return err
 			}
 		case *types.MsgMultiSend:
-			// Limit iterations to prevent DoS via large MsgMultiSend
-			outputs := m.Outputs
-			if len(outputs) > MaxMultiSendOutputs {
-				outputs = outputs[:MaxMultiSendOutputs]
-				ctx.Logger().Warn("MsgMultiSend outputs truncated for tax processing",
-					"total", len(m.Outputs), "processed", MaxMultiSendOutputs)
+			// Reject MsgMultiSend with too many outputs to prevent DoS and tax bypass
+			if len(m.Outputs) > MaxMultiSendOutputs {
+				return fmt.Errorf("MsgMultiSend has too many outputs (%d > %d)", len(m.Outputs), MaxMultiSendOutputs)
 			}
-			for _, output := range outputs {
+			for _, output := range m.Outputs {
 				if err := tpd.applyTaxForRecipient(ctx, output.Address, output.Coins); err != nil {
 					return err
 				}

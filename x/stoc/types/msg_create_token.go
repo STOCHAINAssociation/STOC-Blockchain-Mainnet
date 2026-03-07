@@ -79,6 +79,9 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	}
 
 	// Validate distributions if provided
+	if len(m.Distributions) > MaxDistributions {
+		return errorsmod.Wrapf(ErrInvalidToken, "too many distributions (max %d)", MaxDistributions)
+	}
 	if len(m.Distributions) > 0 {
 		totalPercent := uint32(0)
 		for _, dist := range m.Distributions {

@@ -156,7 +156,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		}
 	}
 
-	//If there are remaining tokens (totals > initial), mint them to module account
+	// If there are remaining tokens (totals > initial), mint them to module account
 
 	if remainingSupply.GT(math.ZeroInt()) {
 		coin := sdk.NewCoin(token.MinimalDenom, remainingSupply)
@@ -227,7 +227,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	k.Logger().Info("Token creation successful", "symbol", token.Symbol)
 
 	return &types.MsgCreateTokenResponse{
-		Symbol: token.Symbol,
+		Symbol:  token.Symbol,
+		Creator: token.Creator,
+		Success: true,
+		Message: token.MinimalDenom,
 	}, nil
 
 }
