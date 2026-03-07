@@ -107,6 +107,10 @@ func (im TaxMiddleware) OnRecvPacket(
 
 	// Determine the local denom by stripping the source port/channel prefix
 	denomPrefix := ibctransfertypes.GetDenomPrefix(packet.GetSourcePort(), packet.GetSourceChannel())
+	if len(data.Denom) <= len(denomPrefix) || data.Denom[:len(denomPrefix)] != denomPrefix {
+		// Denom doesn't match expected prefix — skip tax (defensive check)
+		return ack
+	}
 	localDenom := data.Denom[len(denomPrefix):]
 
 	// Look up token tax config

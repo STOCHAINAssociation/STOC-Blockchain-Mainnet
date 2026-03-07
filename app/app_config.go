@@ -93,10 +93,10 @@ var (
 		circuittypes.ModuleName,
 		// chain modules
 		stocmoduletypes.ModuleName,
-		// cosmos evm modules
+		// cosmos evm modules — feemarket MUST initialize BEFORE evm (base fee params required)
+		feemarkettypes.ModuleName,
 		evmutiltypes.ModuleName,
 		erc20types.ModuleName,
-		feemarkettypes.ModuleName,
 		evmtypes.ModuleName,
 		// NOTE: genutil must be after evm modules so EVM state is ready for genesis transactions
 		genutiltypes.ModuleName,
@@ -121,10 +121,10 @@ var (
 		ibcexported.ModuleName,
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
-		// cosmos evm modules
+		// cosmos evm modules — feemarket MUST run BEFORE evm (updates base fee for current block)
+		feemarkettypes.ModuleName,
 		evmutiltypes.ModuleName,
 		erc20types.ModuleName,
-		feemarkettypes.ModuleName,
 		evmtypes.ModuleName,
 		// chain modules
 		stocmoduletypes.ModuleName,
@@ -143,10 +143,10 @@ var (
 		ibcexported.ModuleName,
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
-		// cosmos evm modules
+		// cosmos evm modules — feemarket MUST run BEFORE evm (finalizes block gas usage)
+		feemarkettypes.ModuleName,
 		evmutiltypes.ModuleName,
 		erc20types.ModuleName,
-		feemarkettypes.ModuleName,
 		evmtypes.ModuleName,
 		// chain modules
 		stocmoduletypes.ModuleName,
@@ -175,7 +175,7 @@ var (
 		// evm module accounts
 		{Account: evmtypes.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
 		{Account: erc20types.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
-		{Account: feemarkettypes.ModuleName},
+		{Account: feemarkettypes.ModuleName, Permissions: []string{authtypes.Burner}},
 		{Account: evmutiltypes.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
 	}
 
@@ -243,7 +243,7 @@ var (
 				Name: stakingtypes.ModuleName,
 				Config: appconfig.WrapAny(&stakingmodulev1.Module{
 					// NOTE: specifying a prefix is only necessary when using bech32 addresses
-					// If not specfied, the auth Bech32Prefix appended with "valoper" and "valcons" is used by default
+					// If not specified, the auth Bech32Prefix appended with "valoper" and "valcons" is used by default
 					Bech32PrefixValidator: AccountAddressPrefix + "valoper",
 					Bech32PrefixConsensus: AccountAddressPrefix + "valcons",
 				}),

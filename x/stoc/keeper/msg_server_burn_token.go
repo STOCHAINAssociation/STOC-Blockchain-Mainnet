@@ -6,7 +6,6 @@ import (
 	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
-	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -42,6 +41,11 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "amount to burn must be positive")
 	}
 
+	// Validate supply tracking BEFORE any bank mutations (fail-fast on corrupted state)
+	if token.TotalSupply.LT(amountToBurn) {
+		return nil, sdkerrors.Wrapf(types.ErrInvalidAmount, "burn amount %s exceeds tracked total supply %s — state may be corrupted", amountToBurn.String(), token.TotalSupply.String())
+	}
+
 	// Transfer coins from user to module
 	coins := sdk.NewCoins(sdk.NewCoin(msg.Denom, amountToBurn))
 	err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, creator, types.ModuleName, coins)
@@ -56,11 +60,7 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	}
 
 	// Update token supply tracking
-	if token.TotalSupply.GTE(amountToBurn) {
-		token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
-	} else {
-		token.TotalSupply = math.ZeroInt()
-	}
+	token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
 	k.SetToken(ctx, token)
 
 	// Emit event

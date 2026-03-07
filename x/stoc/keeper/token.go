@@ -158,6 +158,10 @@ func (k Keeper) GetTokensBySymbol(ctx sdk.Context, symbol string) []types.Token 
 	var tokens []types.Token
 
 	for ; iterator.Valid(); iterator.Next() {
+		// Cap results to prevent unbounded iteration (DoS via symbol squatting)
+		if len(tokens) >= types.MaxQueryLimit {
+			break
+		}
 
 		key := string(iterator.Key())
 		parts := strings.Split(key, ":")

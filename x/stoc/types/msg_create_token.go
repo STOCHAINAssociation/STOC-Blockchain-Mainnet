@@ -1,6 +1,8 @@
 package types
 
 import (
+	"strings"
+
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -34,6 +36,12 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	if len(m.Name) > 64 {
 		return errorsmod.Wrap(ErrInvalidToken, "name too long (max 64 characters)")
 	}
+	// Reject control characters in name (prevent XSS/display issues in frontends)
+	for _, r := range m.Name {
+		if r < 32 || r == 127 {
+			return errorsmod.Wrap(ErrInvalidToken, "name contains invalid control characters")
+		}
+	}
 
 	if m.Symbol == "" {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol cannot be empty")
@@ -55,6 +63,10 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	}
 	if len(m.Logo) > 256 {
 		return errorsmod.Wrap(ErrInvalidToken, "logo too long (max 256 characters)")
+	}
+	// Validate logo is a valid URL scheme (prevent arbitrary data/XSS injection)
+	if !strings.HasPrefix(m.Logo, "https://") && !strings.HasPrefix(m.Logo, "http://") && !strings.HasPrefix(m.Logo, "ipfs://") {
+		return errorsmod.Wrap(ErrInvalidToken, "logo must be a valid URL (https://, http://, or ipfs://)")
 	}
 
 	if m.InitialSupply.IsNil() || m.InitialSupply.IsNegative() {

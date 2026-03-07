@@ -197,6 +197,7 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 	// update bond intra-tx counters.
 	store := ctx.KVStore(app.GetKey(stakingtypes.StoreKey))
 	iter := storetypes.KVStoreReversePrefixIterator(store, stakingtypes.ValidatorsKey)
+	defer iter.Close()
 	counter := int16(0)
 
 	for ; iter.Valid(); iter.Next() {
@@ -215,11 +216,6 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 			panic(err)
 		}
 		counter++
-	}
-
-	if err := iter.Close(); err != nil {
-		app.Logger().Error("error while closing the key-value store reverse prefix iterator", "error", err)
-		return
 	}
 
 	_, err = app.StakingKeeper.ApplyAndReturnValidatorSetUpdates(ctx)
