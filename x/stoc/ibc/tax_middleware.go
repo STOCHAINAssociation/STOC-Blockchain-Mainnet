@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	stockeeper "stoc/x/stoc/keeper"
+	stoctypes "stoc/x/stoc/types"
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -137,8 +138,14 @@ func (im TaxMiddleware) OnRecvPacket(
 		return ack
 	}
 
+	// Runtime cap: enforce MaxTaxPercent even if state was modified outside ValidateBasic
+	taxPercent := token.Tax.Percent
+	if taxPercent.GT(stoctypes.MaxTaxPercent) {
+		taxPercent = stoctypes.MaxTaxPercent
+	}
+
 	// Calculate tax on the transferred amount only
-	taxAmount := transferredAmount.ToLegacyDec().Mul(token.Tax.Percent).TruncateInt()
+	taxAmount := transferredAmount.ToLegacyDec().Mul(taxPercent).TruncateInt()
 	if taxAmount.IsZero() {
 		return ack
 	}

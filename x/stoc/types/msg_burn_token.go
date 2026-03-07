@@ -31,13 +31,13 @@ func (m *MsgBurnToken) ValidateBasic() error {
 	if m.Denom == "" {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "denom cannot be empty")
 	}
+	if err := sdk.ValidateDenom(m.Denom); err != nil {
+		return errorsmod.Wrapf(ErrInvalidTokenSymbol, "invalid denom: %v", err)
+	}
 
 	// Validate amount when not burning all
 	if !m.BurnAll {
-		if m.Amount.IsNil() || m.Amount.IsNegative() {
-			return errorsmod.Wrap(ErrInvalidAmount, "burn amount must be positive")
-		}
-		if m.Amount.IsZero() {
+		if m.Amount.IsNil() || !m.Amount.IsPositive() {
 			return errorsmod.Wrap(ErrInvalidAmount, "burn amount must be positive")
 		}
 	}
