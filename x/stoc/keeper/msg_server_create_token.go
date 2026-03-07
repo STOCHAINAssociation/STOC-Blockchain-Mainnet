@@ -76,11 +76,6 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.MinimalDenom)
 	}
 
-	// Only increment counter AFTER validation passes
-	if err := k.SetTokenCounter(ctx, counter+1); err != nil {
-		return nil, sdkerrors.Wrap(err, "failed to set token counter")
-	}
-
 	// Mint initial supply and distribute according to distribution list
 	creator, err := sdk.AccAddressFromBech32(msg.Creator)
 	if err != nil {
@@ -167,7 +162,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 	}
 
-	// Persist token AFTER all minting operations succeeded (CEI pattern)
+	// Persist state AFTER all bank operations succeeded (CEI pattern)
+	if err := k.SetTokenCounter(ctx, counter+1); err != nil {
+		return nil, sdkerrors.Wrap(err, "failed to set token counter")
+	}
 	k.SetToken(ctx, token)
 
 	// register metadata for token so that the wallet can display it correctly
