@@ -99,6 +99,11 @@ func Validate(token Token) error {
 		return fmt.Errorf("total supply cannot be less than initial supply")
 	}
 
+	// Reject dead tokens: zero total supply with no minting capability
+	if !token.Unlimited && !token.TotalSupply.IsNil() && token.TotalSupply.IsZero() {
+		return fmt.Errorf("total supply cannot be zero for non-unlimited tokens")
+	}
+
 	// Validate creator address
 	if token.Creator != "" {
 		if _, err := sdk.AccAddressFromBech32(token.Creator); err != nil {

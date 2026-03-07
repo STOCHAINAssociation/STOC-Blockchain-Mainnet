@@ -64,6 +64,14 @@ func (m *MockBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, de
 	amt := m.Balances[addr.String()].AmountOf(denom)
 	return sdk.NewCoin(denom, amt)
 }
+func (m *MockBankKeeper) GetSupply(ctx context.Context, denom string) sdk.Coin {
+	// Sum all balances for the denom across all accounts
+	total := math.ZeroInt()
+	for _, coins := range m.Balances {
+		total = total.Add(coins.AmountOf(denom))
+	}
+	return sdk.NewCoin(denom, total)
+}
 func (m *MockBankKeeper) SetDenomMetaData(ctx context.Context, denomMetaData banktypes.Metadata) {}
 
 func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.Context, *MockBankKeeper) {

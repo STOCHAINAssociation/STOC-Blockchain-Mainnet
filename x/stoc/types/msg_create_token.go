@@ -87,6 +87,11 @@ func (m *MsgCreateToken) ValidateBasic() error {
 		return errorsmod.Wrap(ErrInvalidTokenAmount, "total supply cannot be less than initial supply")
 	}
 
+	// Reject dead tokens: zero total supply with no minting capability
+	if !m.Unlimited && !m.TotalSupply.IsNil() && m.TotalSupply.IsZero() {
+		return errorsmod.Wrap(ErrInvalidTokenAmount, "total supply cannot be zero for non-unlimited tokens (would create a dead token)")
+	}
+
 	// Validate distributions if provided
 	if len(m.Distributions) > MaxDistributions {
 		return errorsmod.Wrapf(ErrInvalidToken, "too many distributions (max %d)", MaxDistributions)

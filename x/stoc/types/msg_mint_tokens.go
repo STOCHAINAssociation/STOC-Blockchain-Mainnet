@@ -39,6 +39,9 @@ func (m *MsgMintTokens) ValidateBasic() error {
 	if m.Amount.IsNil() || m.Amount.IsZero() || m.Amount.IsNegative() {
 		return errorsmod.Wrap(ErrInvalidAmount, "mint amount must be positive")
 	}
+	if m.Amount.GT(MaxTokenSupply) {
+		return errorsmod.Wrapf(ErrInvalidAmount, "mint amount exceeds maximum allowed (%s)", MaxTokenSupply.String())
+	}
 
 	return nil
 }

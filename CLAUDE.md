@@ -151,7 +151,7 @@ Gas multipliers for specific opcodes (defined in `app/evm.go:getCustomEVMActivat
 
 - CREATE/CREATE2: 10x multiplier
 - CALL: 10x multiplier
-- SSTORE: Fixed 500 gas
+- SSTORE: Fixed 2100 gas (EIP-2929 warm access cost)
 
 ### Ante Handlers
 

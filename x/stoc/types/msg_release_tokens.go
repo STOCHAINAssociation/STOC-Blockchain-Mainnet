@@ -39,6 +39,9 @@ func (m *MsgReleaseTokens) ValidateBasic() error {
 	if m.Amount.IsNil() || m.Amount.IsZero() || m.Amount.IsNegative() {
 		return errorsmod.Wrap(ErrInvalidAmount, "release amount must be positive")
 	}
+	if m.Amount.GT(MaxTokenSupply) {
+		return errorsmod.Wrapf(ErrInvalidAmount, "release amount exceeds maximum token supply (%s)", MaxTokenSupply.String())
+	}
 
 	_, err = sdk.AccAddressFromBech32(m.Recipient)
 	if err != nil {

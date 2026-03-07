@@ -40,6 +40,9 @@ func (m *MsgBurnToken) ValidateBasic() error {
 		if m.Amount.IsNil() || !m.Amount.IsPositive() {
 			return errorsmod.Wrap(ErrInvalidAmount, "burn amount must be positive")
 		}
+		if m.Amount.GT(MaxTokenSupply) {
+			return errorsmod.Wrapf(ErrInvalidAmount, "burn amount exceeds maximum token supply (%s)", MaxTokenSupply.String())
+		}
 	}
 
 	return nil
