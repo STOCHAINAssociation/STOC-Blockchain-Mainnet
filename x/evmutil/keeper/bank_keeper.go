@@ -303,11 +303,15 @@ func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error)
 }
 
 // SetDenomMetaData sets the metadata for a denom.
+// RESTRICTION: Only allows writes for the native cosmos denom. EVM denom is computed, custom tokens are blocked.
 func (k EvmBankKeeper) SetDenomMetaData(ctx context.Context, denomMetaData banktypes.Metadata) {
-	// For astoc, we don't actually store it - it's computed from ustoc
-	if denomMetaData.Base != getEvmDenom() {
-		k.bankKeeper.SetDenomMetaData(ctx, denomMetaData)
+	if denomMetaData.Base == getEvmDenom() {
+		return // EVM denom metadata is computed, not stored
 	}
+	if denomMetaData.Base != getCosmosDenom() {
+		return // Block custom token metadata writes from EVM context
+	}
+	k.bankKeeper.SetDenomMetaData(ctx, denomMetaData)
 }
 
 // IterateAccountBalances iterates over all balances of an account.

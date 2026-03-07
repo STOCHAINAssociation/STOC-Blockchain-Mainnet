@@ -108,7 +108,7 @@ func NewRootCmd() *cobra.Command {
 
 	overwriteFlagDefaults(rootCmd, map[string]string{
 		flags.FlagChainID:        strings.ReplaceAll(app.Name, "-", ""),
-		flags.FlagKeyringBackend: "test",
+		flags.FlagKeyringBackend: "os",
 	})
 
 	if err := autoCliOpts.EnhanceRootCommand(rootCmd); err != nil {

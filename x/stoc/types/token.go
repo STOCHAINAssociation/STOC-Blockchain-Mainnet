@@ -99,22 +99,24 @@ func Validate(token Token) error {
 		return fmt.Errorf("total supply cannot be less than initial supply")
 	}
 
-	// Validate distributions
-	totalPercent := uint32(0)
-	for _, dist := range token.Distributions {
-		if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
-			return fmt.Errorf("invalid address in distribution: %s", err)
+	// Validate distributions (only when present — empty is valid for genesis/migration)
+	if len(token.Distributions) > 0 {
+		totalPercent := uint32(0)
+		for _, dist := range token.Distributions {
+			if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
+				return fmt.Errorf("invalid address in distribution: %s", err)
+			}
+
+			if dist.Percent == 0 || dist.Percent > 100 {
+				return fmt.Errorf("distribution percentage must be between 1 and 100")
+			}
+
+			totalPercent += dist.Percent
 		}
 
-		if dist.Percent == 0 || dist.Percent > 100 {
-			return fmt.Errorf("distribution percentage must be between 1 and 100")
+		if totalPercent != 100 {
+			return fmt.Errorf("distribution percentages must sum to 100, got %d", totalPercent)
 		}
-
-		totalPercent += dist.Percent
-	}
-
-	if totalPercent != 100 {
-		return fmt.Errorf("distribution percentages must sum to 100, got %d", totalPercent)
 	}
 
 	// Validate tax — nil check prevents panic on uninitialized Tax.Percent

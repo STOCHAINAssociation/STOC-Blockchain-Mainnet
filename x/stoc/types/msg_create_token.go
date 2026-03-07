@@ -81,10 +81,15 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	}
 	if len(m.Distributions) > 0 {
 		totalPercent := uint32(0)
+		seenAddrs := make(map[string]bool, len(m.Distributions))
 		for _, dist := range m.Distributions {
 			if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
 				return errorsmod.Wrapf(ErrInvalidCreatorAddress, "invalid distribution address: %s", err)
 			}
+			if seenAddrs[dist.Address] {
+				return errorsmod.Wrap(ErrInvalidToken, "duplicate distribution address")
+			}
+			seenAddrs[dist.Address] = true
 			if dist.Percent == 0 || dist.Percent > 100 {
 				return errorsmod.Wrap(ErrInvalidToken, "distribution percentage must be between 1 and 100")
 			}
@@ -102,6 +107,11 @@ func (m *MsgCreateToken) ValidateBasic() error {
 		}
 		if m.Tax.Percent.GT(MaxTaxPercent) {
 			return errorsmod.Wrapf(ErrInvalidToken, "tax percentage cannot exceed %s (50%%)", MaxTaxPercent.String())
+		}
+		if m.Tax.Percent.IsPositive() {
+			if _, err := sdk.AccAddressFromBech32(m.Tax.RecipientAddress); err != nil {
+				return errorsmod.Wrap(ErrInvalidCreatorAddress, "tax recipient address is required when tax > 0")
+			}
 		}
 	}
 
