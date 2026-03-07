@@ -1,7 +1,6 @@
 package types
 
 import (
-	"regexp"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -10,9 +9,6 @@ import (
 
 // Verify that MsgCreateToken implements the sdk.Msg interface at compile time
 var _ sdk.Msg = &MsgCreateToken{}
-
-// symbolRegex only allows alphanumeric characters (no special chars that could break index keys)
-var symbolRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9]{0,31}$`)
 
 func (m *MsgCreateToken) Route() string { return "stoc" }
 func (m *MsgCreateToken) Type() string  { return "create_token" }
@@ -44,7 +40,7 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	if m.Symbol == "" {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol cannot be empty")
 	}
-	if !symbolRegex.MatchString(m.Symbol) {
+	if !TokenSymbolRegex.MatchString(m.Symbol) {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
 	// Prevent symbols that could be confused with native denoms
@@ -67,9 +63,15 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	if m.InitialSupply.IsNil() || m.InitialSupply.IsNegative() {
 		return errorsmod.Wrap(ErrInvalidTokenAmount, "initial supply must be non-negative")
 	}
+	if m.InitialSupply.GT(MaxTokenSupply) {
+		return errorsmod.Wrapf(ErrInvalidTokenAmount, "initial supply exceeds maximum allowed (%s)", MaxTokenSupply.String())
+	}
 
 	if m.TotalSupply.IsNil() || m.TotalSupply.IsNegative() {
 		return errorsmod.Wrap(ErrInvalidTokenAmount, "total supply must be non-negative")
+	}
+	if m.TotalSupply.GT(MaxTokenSupply) {
+		return errorsmod.Wrapf(ErrInvalidTokenAmount, "total supply exceeds maximum allowed (%s)", MaxTokenSupply.String())
 	}
 
 	if !m.TotalSupply.IsNil() && !m.InitialSupply.IsNil() && m.TotalSupply.LT(m.InitialSupply) {
@@ -94,8 +96,13 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	}
 
 	// Validate tax
-	if !m.Tax.Percent.IsNil() && m.Tax.Percent.IsNegative() {
-		return errorsmod.Wrap(ErrInvalidToken, "tax percentage cannot be negative")
+	if !m.Tax.Percent.IsNil() {
+		if m.Tax.Percent.IsNegative() {
+			return errorsmod.Wrap(ErrInvalidToken, "tax percentage cannot be negative")
+		}
+		if m.Tax.Percent.GT(MaxTaxPercent) {
+			return errorsmod.Wrapf(ErrInvalidToken, "tax percentage cannot exceed %s (50%%)", MaxTaxPercent.String())
+		}
 	}
 
 	return nil

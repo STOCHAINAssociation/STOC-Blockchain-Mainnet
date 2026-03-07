@@ -277,11 +277,11 @@ func TestSendCoins_DustAmount_ReturnsError(t *testing.T) {
 	ebk, _ := setup()
 	from, to := testAddr(), testAddr2()
 
-	// Send 1 wei (too small to convert to 1 ustoc)
+	// Send 1 wei (too small to convert to 1 ustoc) — rejected by dust remainder check
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(1)))
 	err := ebk.SendCoins(context.Background(), from, to, amt)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "too small")
+	require.Contains(t, err.Error(), "dust remainder")
 }
 
 func TestSendCoins_MixedEvmAndCosmos(t *testing.T) {
@@ -334,7 +334,7 @@ func TestMintCoins_DustAmount_ReturnsError(t *testing.T) {
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(1)))
 	err := ebk.MintCoins(context.Background(), "evm", amt)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "too small")
+	require.Contains(t, err.Error(), "dust remainder")
 }
 
 // ===================== BurnCoins Tests =====================
@@ -356,7 +356,7 @@ func TestBurnCoins_DustAmount_ReturnsError(t *testing.T) {
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(999)))
 	err := ebk.BurnCoins(context.Background(), "evm", amt)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "not divisible")
+	require.Contains(t, err.Error(), "dust remainder")
 }
 
 func TestBurnCoins_CustomToken_Blocked(t *testing.T) {
@@ -740,17 +740,18 @@ func TestConvertCosmosCoinToEvmCoin(t *testing.T) {
 	sdk.DefaultBondDenom = "ustoc"
 
 	coin := sdk.NewCoin("ustoc", math.NewInt(1))
-	result := keeper.ConvertCosmosCoinToEvmCoin(coin)
+	result, err := keeper.ConvertCosmosCoinToEvmCoin(coin)
+	require.NoError(t, err)
 	require.Equal(t, "astoc", result.Denom)
 	require.Equal(t, types.ConversionMultiplier, result.Amount)
 }
 
-func TestConvertCosmosCoinToEvmCoin_WrongDenom_Panics(t *testing.T) {
+func TestConvertCosmosCoinToEvmCoin_WrongDenom_ReturnsError(t *testing.T) {
 	sdk.DefaultBondDenom = "ustoc"
 
-	require.Panics(t, func() {
-		keeper.ConvertCosmosCoinToEvmCoin(sdk.NewCoin("MYTOKEN_0", math.NewInt(1)))
-	})
+	_, err := keeper.ConvertCosmosCoinToEvmCoin(sdk.NewCoin("MYTOKEN_0", math.NewInt(1)))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid denom")
 }
 
 // ===================== ConvertEvmCoinToCosmosCoin Tests =====================
@@ -759,7 +760,8 @@ func TestConvertEvmCoinToCosmosCoin(t *testing.T) {
 	sdk.DefaultBondDenom = "ustoc"
 
 	coin := sdk.NewCoin("astoc", types.ConversionMultiplier.MulRaw(5))
-	result := keeper.ConvertEvmCoinToCosmosCoin(coin)
+	result, err := keeper.ConvertEvmCoinToCosmosCoin(coin)
+	require.NoError(t, err)
 	require.Equal(t, "ustoc", result.Denom)
 	require.Equal(t, math.NewInt(5), result.Amount)
 }
@@ -769,7 +771,8 @@ func TestConvertEvmCoinToCosmosCoin_Dust_Truncates(t *testing.T) {
 
 	// 1.5 ustoc worth = 1_500_000_000_000 astoc → should truncate to 1 ustoc
 	coin := sdk.NewCoin("astoc", types.ConversionMultiplier.MulRaw(1).Add(math.NewInt(500_000_000_000)))
-	result := keeper.ConvertEvmCoinToCosmosCoin(coin)
+	result, err := keeper.ConvertEvmCoinToCosmosCoin(coin)
+	require.NoError(t, err)
 	require.Equal(t, "ustoc", result.Denom)
 	require.Equal(t, math.NewInt(1), result.Amount)
 }
@@ -779,17 +782,18 @@ func TestConvertEvmCoinToCosmosCoin_SubDust_TruncatesToZero(t *testing.T) {
 
 	// 1 wei → should truncate to 0 ustoc
 	coin := sdk.NewCoin("astoc", math.NewInt(1))
-	result := keeper.ConvertEvmCoinToCosmosCoin(coin)
+	result, err := keeper.ConvertEvmCoinToCosmosCoin(coin)
+	require.NoError(t, err)
 	require.Equal(t, "ustoc", result.Denom)
 	require.True(t, result.Amount.IsZero())
 }
 
-func TestConvertEvmCoinToCosmosCoin_WrongDenom_Panics(t *testing.T) {
+func TestConvertEvmCoinToCosmosCoin_WrongDenom_ReturnsError(t *testing.T) {
 	sdk.DefaultBondDenom = "ustoc"
 
-	require.Panics(t, func() {
-		keeper.ConvertEvmCoinToCosmosCoin(sdk.NewCoin("ustoc", math.NewInt(1)))
-	})
+	_, err := keeper.ConvertEvmCoinToCosmosCoin(sdk.NewCoin("ustoc", math.NewInt(1)))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid denom")
 }
 
 // ===================== ConvertCosmosAmountToEvmAmount Tests =====================

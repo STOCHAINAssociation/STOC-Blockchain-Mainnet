@@ -108,13 +108,13 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, symbol string, 
 
 	// Sử dụng đúng minimalDenom khi tạo coin
 	coins := sdk.NewCoins(sdk.NewCoin(token.MinimalDenom, amount))
-	err := k.BankKeeper.MintCoins(ctx, types.ModuleName, coins)
+	err := k.bankKeeper.MintCoins(ctx, types.ModuleName, coins)
 	if err != nil {
 		return err
 	}
 
 	//send coins to the owner
-	err = k.BankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, owner, coins)
+	err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, owner, coins)
 	if err != nil {
 		return err
 	}

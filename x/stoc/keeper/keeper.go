@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"encoding/binary"
-
 	"fmt"
 
 	"stoc/x/stoc/types"
@@ -11,21 +10,19 @@ import (
 	"cosmossdk.io/log"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
 )
 
 type (
 	Keeper struct {
 		cdc          codec.BinaryCodec
 		storeService store.KVStoreService
-		// tokenStoreKey storetypes.StoreKey
-		logger log.Logger
+		logger       log.Logger
 
 		// the address capable of executing a MsgUpdateParams message. Typically, this
 		// should be the x/gov module account.
 		authority     string
 		accountKeeper types.AccountKeeper
-		BankKeeper    types.BankKeeper
+		bankKeeper    types.BankKeeper
 	}
 )
 
@@ -46,9 +43,14 @@ func NewKeeper(
 		storeService:  storeService,
 		logger:        logger,
 		authority:     authority,
-		BankKeeper:    bankKeeper,
+		bankKeeper:    bankKeeper,
 		accountKeeper: accountKeeper,
 	}
+}
+
+// GetBankKeeper returns the bank keeper for controlled access
+func (k Keeper) GetBankKeeper() types.BankKeeper {
+	return k.bankKeeper
 }
 
 // GetAuthority returns the module's authority.
@@ -61,26 +63,26 @@ func (k Keeper) Logger() log.Logger {
 	return k.logger.With("module", fmt.Sprintf("x/%s", types.ModuleName))
 }
 
-// GetTokenCounter lấy giá trị counter hiện tại
-func (k Keeper) GetTokenCounter(ctx sdk.Context) uint64 {
+// GetTokenCounter returns the current token counter value.
+func (k Keeper) GetTokenCounter(ctx sdk.Context) (uint64, error) {
 	store := k.storeService.OpenKVStore(ctx)
 	bz, err := store.Get([]byte(types.TokenCounterKey))
 	if err != nil {
-		panic(err)
+		return 0, fmt.Errorf("failed to get token counter: %w", err)
 	}
 	if bz == nil {
-		return 0
+		return 0, nil
 	}
-	return binary.BigEndian.Uint64(bz)
+	return binary.BigEndian.Uint64(bz), nil
 }
 
-// SetTokenCounter cập nhật giá trị counter
-func (k Keeper) SetTokenCounter(ctx sdk.Context, counter uint64) {
+// SetTokenCounter updates the token counter value.
+func (k Keeper) SetTokenCounter(ctx sdk.Context, counter uint64) error {
 	store := k.storeService.OpenKVStore(ctx)
 	bz := make([]byte, 8)
 	binary.BigEndian.PutUint64(bz, counter)
 	if err := store.Set([]byte(types.TokenCounterKey), bz); err != nil {
-		panic(err)
+		return fmt.Errorf("failed to set token counter: %w", err)
 	}
+	return nil
 }
-

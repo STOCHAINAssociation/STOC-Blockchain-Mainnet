@@ -32,7 +32,9 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	}
 	// Restore counter so next CreateToken won't collide
 	if maxCounter > 0 {
-		k.SetTokenCounter(ctx, maxCounter)
+		if err := k.SetTokenCounter(ctx, maxCounter); err != nil {
+			panic(err)
+		}
 	}
 }
 

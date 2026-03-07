@@ -46,8 +46,12 @@ func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, deno
 	if denom == evmDenom {
 		// Get ustoc/utstoc balance and convert to astoc/atstoc
 		cosmosBalance := k.bankKeeper.GetBalance(ctx, addr, cosmosDenom)
-		evmAmount := ConvertCosmosCoinToEvmCoin(cosmosBalance)
-		return sdk.NewCoin(evmDenom, evmAmount.Amount)
+		evmCoin, err := ConvertCosmosCoinToEvmCoin(cosmosBalance)
+		if err != nil {
+			// Should not happen since we use the correct cosmos denom
+			return sdk.NewCoin(evmDenom, math.ZeroInt())
+		}
+		return evmCoin
 	}
 
 	// RESTRICTION: Only allow native tokens (ustoc/utstoc) from EVM
@@ -64,25 +68,9 @@ func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, deno
 // For EVM denom, it converts and uses Cosmos denom under the hood.
 // Custom tokens (created via STOC module) are NOT transferable from EVM.
 func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, amt sdk.Coins) error {
-	evmDenom := types.GetEvmDenom()
-	cosmosDenom := types.GetCosmosDenom()
-
-	// Convert any EVM denoms to Cosmos denoms
-	convertedAmt := sdk.NewCoins()
-	for _, coin := range amt {
-		if coin.Denom == evmDenom {
-			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
-			if cosmosCoin.Amount.IsZero() {
-				return fmt.Errorf("send amount too small: %s %s converts to 0 %s", coin.Amount.String(), evmDenom, cosmosDenom)
-			}
-			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else if coin.Denom == cosmosDenom {
-			// Allow native Cosmos denom
-			convertedAmt = convertedAmt.Add(coin)
-		} else {
-			// RESTRICTION: Block custom tokens (MYTOKEN_0, etc.) from EVM
-			return fmt.Errorf("custom token %s is not accessible from EVM. Please use Cosmos SDK transactions for custom tokens", coin.Denom)
-		}
+	convertedAmt, err := k.convertAndValidateCoins(amt)
+	if err != nil {
+		return err
 	}
 	return k.bankKeeper.SendCoins(ctx, from, to, convertedAmt)
 }
@@ -91,20 +79,9 @@ func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, a
 // For EVM denom, it converts to Cosmos denom.
 // Custom tokens cannot be minted from EVM context.
 func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
-	convertedAmt := sdk.NewCoins()
-	for _, coin := range amt {
-		if coin.Denom == getEvmDenom() {
-			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
-			if cosmosCoin.Amount.IsZero() {
-				return fmt.Errorf("mint amount too small: %s %s converts to 0 %s", coin.Amount.String(), getEvmDenom(), getCosmosDenom())
-			}
-			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else if coin.Denom == getCosmosDenom() {
-			convertedAmt = convertedAmt.Add(coin)
-		} else {
-			// RESTRICTION: Block custom tokens from EVM
-			return fmt.Errorf("custom token %s cannot be minted from EVM context", coin.Denom)
-		}
+	convertedAmt, err := k.convertAndValidateCoins(amt)
+	if err != nil {
+		return err
 	}
 	return k.bankKeeper.MintCoins(ctx, moduleName, convertedAmt)
 }
@@ -113,44 +90,9 @@ func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk
 // For EVM denom, it converts to Cosmos denom.
 // Custom tokens cannot be burned from EVM context.
 func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
-	convertedAmt := sdk.NewCoins()
-	for _, coin := range amt {
-		if coin.Denom == getEvmDenom() {
-			// VALIDATION: Check amount is divisible by conversion multiplier
-			// to prevent dust loss when converting astoc (18 decimals) to ustoc (6 decimals)
-			remainder := coin.Amount.Mod(types.ConversionMultiplier)
-			if !remainder.IsZero() {
-				return fmt.Errorf(
-					"invalid burn amount: %s astoc is not divisible by conversion multiplier %s. "+
-						"Dust amount of %s wei would be lost. "+
-						"Please burn in multiples of %s wei (equivalent to 1 ustoc)",
-					coin.Amount.String(),
-					types.ConversionMultiplier.String(),
-					remainder.String(),
-					types.ConversionMultiplier.String(),
-				)
-			}
-
-			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
-
-			// VALIDATION: Ensure converted amount is not zero
-			// Minimum burn amount is 1 ustoc (10^12 astoc wei)
-			if cosmosCoin.Amount.IsZero() {
-				return fmt.Errorf(
-					"burn amount too small: %s astoc converts to 0 ustoc. "+
-						"Minimum burn amount is %s astoc wei (1 ustoc equivalent)",
-					coin.Amount.String(),
-					types.ConversionMultiplier.String(),
-				)
-			}
-
-			convertedAmt = convertedAmt.Add(cosmosCoin)
-		} else if coin.Denom == getCosmosDenom() {
-			convertedAmt = convertedAmt.Add(coin)
-		} else {
-			// RESTRICTION: Block custom tokens from EVM
-			return fmt.Errorf("custom token %s cannot be burned from EVM context", coin.Denom)
-		}
+	convertedAmt, err := k.convertAndValidateCoins(amt)
+	if err != nil {
+		return err
 	}
 	return k.bankKeeper.BurnCoins(ctx, moduleName, convertedAmt)
 }
@@ -235,8 +177,11 @@ func (k EvmBankKeeper) GetSupply(ctx context.Context, denom string) sdk.Coin {
 	if denom == getEvmDenom() {
 		// Get ustoc supply and convert to astoc
 		cosmosSupply := k.bankKeeper.GetSupply(ctx, getCosmosDenom())
-		evmAmount := ConvertCosmosCoinToEvmCoin(cosmosSupply)
-		return sdk.NewCoin(getEvmDenom(), evmAmount.Amount)
+		evmCoin, err := ConvertCosmosCoinToEvmCoin(cosmosSupply)
+		if err != nil {
+			return sdk.NewCoin(getEvmDenom(), math.ZeroInt())
+		}
+		return evmCoin
 	}
 	if denom != getCosmosDenom() {
 		// RESTRICTION: Return zero supply for custom tokens from EVM context
@@ -268,7 +213,10 @@ func (k EvmBankKeeper) IsSendEnabledCoins(ctx context.Context, coins ...sdk.Coin
 	convertedCoins := make([]sdk.Coin, 0, len(coins))
 	for _, coin := range coins {
 		if coin.Denom == getEvmDenom() {
-			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
+			cosmosCoin, err := ConvertEvmCoinToCosmosCoin(coin)
+			if err != nil {
+				return err
+			}
 			convertedCoins = append(convertedCoins, cosmosCoin)
 		} else if coin.Denom == getCosmosDenom() {
 			convertedCoins = append(convertedCoins, coin)
@@ -297,8 +245,11 @@ func (k EvmBankKeeper) GetAllBalances(ctx context.Context, addr sdk.AccAddress) 
 func (k EvmBankKeeper) SpendableCoin(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin {
 	if denom == getEvmDenom() {
 		cosmosBalance := k.bankKeeper.SpendableCoin(ctx, addr, getCosmosDenom())
-		evmAmount := ConvertCosmosCoinToEvmCoin(cosmosBalance)
-		return sdk.NewCoin(getEvmDenom(), evmAmount.Amount)
+		evmCoin, err := ConvertCosmosCoinToEvmCoin(cosmosBalance)
+		if err != nil {
+			return sdk.NewCoin(getEvmDenom(), math.ZeroInt())
+		}
+		return evmCoin
 	}
 	if denom != getCosmosDenom() {
 		// RESTRICTION: Return zero balance for custom tokens from EVM context
@@ -317,13 +268,26 @@ func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderMo
 	return k.bankKeeper.SendCoinsFromModuleToModule(ctx, senderModule, recipientModule, convertedAmt)
 }
 
-// convertAndValidateCoins converts EVM coins to Cosmos coins with zero-amount validation.
+// convertAndValidateCoins converts EVM coins to Cosmos coins with dust remainder and zero-amount validation.
 // Rejects custom tokens and ensures converted amounts are non-zero.
 func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error) {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
 		if coin.Denom == getEvmDenom() {
-			cosmosCoin := ConvertEvmCoinToCosmosCoin(coin)
+			// Reject amounts with dust remainder to prevent silent value loss
+			remainder := coin.Amount.Mod(types.ConversionMultiplier)
+			if !remainder.IsZero() {
+				return nil, fmt.Errorf(
+					"amount %s %s has dust remainder %s wei that would be lost in conversion. "+
+						"Use multiples of %s wei (1 %s)",
+					coin.Amount.String(), getEvmDenom(), remainder.String(),
+					types.ConversionMultiplier.String(), getCosmosDenom(),
+				)
+			}
+			cosmosCoin, err := ConvertEvmCoinToCosmosCoin(coin)
+			if err != nil {
+				return nil, err
+			}
 			if cosmosCoin.Amount.IsZero() {
 				return nil, fmt.Errorf("amount too small: %s %s converts to 0 %s", coin.Amount.String(), getEvmDenom(), getCosmosDenom())
 			}
@@ -354,7 +318,10 @@ func (k EvmBankKeeper) IterateAccountBalances(ctx context.Context, account sdk.A
 			return false
 		}
 		// Only emit the EVM representation (astoc) to avoid double-counting
-		evmCoin := ConvertCosmosCoinToEvmCoin(coin)
+		evmCoin, err := ConvertCosmosCoinToEvmCoin(coin)
+		if err != nil {
+			return false
+		}
 		return cb(evmCoin)
 	})
 }
@@ -368,7 +335,10 @@ func (k EvmBankKeeper) IterateAllBalances(ctx context.Context, cb func(address s
 			return false
 		}
 		// Only emit the EVM representation (astoc) to avoid double-counting
-		evmCoin := ConvertCosmosCoinToEvmCoin(coin)
+		evmCoin, err := ConvertCosmosCoinToEvmCoin(coin)
+		if err != nil {
+			return false
+		}
 		return cb(address, evmCoin)
 	})
 }
@@ -382,42 +352,37 @@ func (k EvmBankKeeper) IterateTotalSupply(ctx context.Context, cb func(coin sdk.
 			return false
 		}
 		// Only emit the EVM representation (astoc) to avoid double-counting
-		evmCoin := ConvertCosmosCoinToEvmCoin(coin)
+		evmCoin, err := ConvertCosmosCoinToEvmCoin(coin)
+		if err != nil {
+			return false
+		}
 		return cb(evmCoin)
 	})
 }
 
 // ConvertCosmosCoinToEvmCoin converts ustoc (6 decimals) to astoc (18 decimals)
 // 1 ustoc = 10^12 astoc
-func ConvertCosmosCoinToEvmCoin(coin sdk.Coin) sdk.Coin {
+// Returns error if denom is not the expected cosmos denom.
+func ConvertCosmosCoinToEvmCoin(coin sdk.Coin) (sdk.Coin, error) {
 	if coin.Denom != getCosmosDenom() {
-		panic(fmt.Sprintf("invalid denom for conversion to EVM coin: %s", coin.Denom))
+		return sdk.Coin{}, fmt.Errorf("invalid denom for conversion to EVM coin: expected %s, got %s", getCosmosDenom(), coin.Denom)
 	}
 
 	evmAmount := coin.Amount.Mul(types.ConversionMultiplier)
-	return sdk.NewCoin(getEvmDenom(), evmAmount)
+	return sdk.NewCoin(getEvmDenom(), evmAmount), nil
 }
 
 // ConvertEvmCoinToCosmosCoin converts astoc (18 decimals) to ustoc (6 decimals)
 // 10^12 astoc = 1 ustoc
-// If the amount has dust (not divisible by 10^12), it truncates (rounds down) instead of panicking
-func ConvertEvmCoinToCosmosCoin(coin sdk.Coin) sdk.Coin {
+// Truncates dust amounts (rounds down). Returns error if denom is invalid.
+func ConvertEvmCoinToCosmosCoin(coin sdk.Coin) (sdk.Coin, error) {
 	if coin.Denom != getEvmDenom() {
-		panic(fmt.Sprintf("invalid denom for conversion to Cosmos coin: %s", coin.Denom))
-	}
-
-	// Check if amount has dust (not divisible by conversion multiplier)
-	remainder := coin.Amount.Mod(types.ConversionMultiplier)
-	if !remainder.IsZero() {
-		// FIXED: Truncate instead of panic - handles dust amounts gracefully
-		// This prevents DoS attacks from contracts sending small wei amounts
-		// The dust amount is effectively lost (rounded down to 0)
-		// Example: 1 wei (0.000000000001 ustoc) rounds down to 0 ustoc
+		return sdk.Coin{}, fmt.Errorf("invalid denom for conversion to Cosmos coin: expected %s, got %s", getEvmDenom(), coin.Denom)
 	}
 
 	// Truncate by dividing (automatically rounds down)
 	cosmosAmount := coin.Amount.Quo(types.ConversionMultiplier)
-	return sdk.NewCoin(getCosmosDenom(), cosmosAmount)
+	return sdk.NewCoin(getCosmosDenom(), cosmosAmount), nil
 }
 
 // ConvertCosmosAmountToEvmAmount converts a raw amount from Cosmos decimals to EVM decimals

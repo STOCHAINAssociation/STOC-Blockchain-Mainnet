@@ -99,6 +99,8 @@ func (k Keeper) Tokens(goCtx context.Context, req *types.QueryTokensRequest) (*t
 }
 
 func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBalancesWithMetadataRequest) (*types.QueryBalancesWithMetadataResponse, error) {
+	const maxBalances = 200
+
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
@@ -108,7 +110,7 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	
+
 	// Parse address
 	addr, err := sdk.AccAddressFromBech32(req.Address)
 	if err != nil {
@@ -116,7 +118,14 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 	}
 
 	// Get all balances for this address using bank keeper
-	balances := k.BankKeeper.GetAllBalances(ctx, addr)
+	balances := k.bankKeeper.GetAllBalances(ctx, addr)
+
+	// Cap results to prevent OOM on addresses with many token denoms
+	truncated := false
+	if len(balances) > maxBalances {
+		balances = balances[:maxBalances]
+		truncated = true
+	}
 
 	// Create response with metadata
 	var balancesWithMetadata []types.BalanceWithMetadata
@@ -125,19 +134,23 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 			Denom:  balance.Denom,
 			Amount: balance.Amount.String(),
 		}
-		
+
 		// Try to get token metadata for this denom
 		token, found := k.GetToken(ctx, balance.Denom)
 		if found {
 			balanceWithMetadata.Metadata = &token
 		}
-		
+
 		balancesWithMetadata = append(balancesWithMetadata, balanceWithMetadata)
 	}
 
-	// Create pagination response with proper total
+	// Create pagination response
+	var nextKey []byte
+	if truncated {
+		nextKey = []byte("truncated")
+	}
 	pageRes := &query.PageResponse{
-		NextKey: nil,
+		NextKey: nextKey,
 		Total:   uint64(len(balancesWithMetadata)),
 	}
 

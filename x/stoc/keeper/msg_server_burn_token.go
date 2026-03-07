@@ -24,7 +24,7 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		// Get current balance after gas deduction
 		// Note: Cosmos SDK deducts gas BEFORE handler execution,
 		// so GetBalance() returns balance AFTER gas has been paid
-		balance := k.BankKeeper.GetBalance(ctx, creator, msg.Denom)
+		balance := k.bankKeeper.GetBalance(ctx, creator, msg.Denom)
 		amountToBurn = balance.Amount
 	}
 
@@ -35,13 +35,13 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 
 	// Transfer coins from user to module
 	coins := sdk.NewCoins(sdk.NewCoin(msg.Denom, amountToBurn))
-	err = k.BankKeeper.SendCoinsFromAccountToModule(ctx, creator, types.ModuleName, coins)
+	err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, creator, types.ModuleName, coins)
 	if err != nil {
 		return nil, err
 	}
 
 	// Burn coins from module
-	err = k.BankKeeper.BurnCoins(ctx, types.ModuleName, coins)
+	err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, coins)
 	if err != nil {
 		return nil, err
 	}

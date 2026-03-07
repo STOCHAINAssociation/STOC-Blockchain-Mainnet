@@ -10,6 +10,9 @@ import (
 	"stoc/x/stoc/keeper"
 )
 
+// MaxMultiSendOutputs limits the number of outputs processed for tax to prevent DoS
+const MaxMultiSendOutputs = 50
+
 type TaxPostDecorator struct {
 	k   keeper.Keeper
 	cdc codec.BinaryCodec
@@ -27,25 +30,51 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 		return next(ctx, tx, simulate, success)
 	}
 
-	for _, msg := range tx.GetMsgs() {
-		switch m := msg.(type) {
-		case *types.MsgSend:
-			if err := tpd.applyTaxForRecipient(ctx, m.ToAddress, m.Amount); err != nil {
-				return ctx, err
-			}
-		case *types.MsgMultiSend:
-			for _, output := range m.Outputs {
-				if err := tpd.applyTaxForRecipient(ctx, output.Address, output.Coins); err != nil {
-					return ctx, err
-				}
-			}
-		}
+	// Use cache context so tax failures don't revert the entire transaction
+	cacheCtx, writeCache := ctx.CacheContext()
+
+	taxErr := tpd.applyTaxes(cacheCtx, tx)
+	if taxErr != nil {
+		// Log the error but don't revert the transaction
+		ctx.Logger().Error("Tax application failed, skipping tax", "error", taxErr)
+	} else {
+		// Only commit tax changes if successful
+		writeCache()
 	}
 
 	return next(ctx, tx, simulate, success)
 }
 
+// applyTaxes processes all tax-applicable messages in the transaction
+func (tpd TaxPostDecorator) applyTaxes(ctx sdk.Context, tx sdk.Tx) error {
+	for _, msg := range tx.GetMsgs() {
+		switch m := msg.(type) {
+		case *types.MsgSend:
+			if err := tpd.applyTaxForRecipient(ctx, m.ToAddress, m.Amount); err != nil {
+				return err
+			}
+		case *types.MsgMultiSend:
+			// Limit iterations to prevent DoS via large MsgMultiSend
+			outputs := m.Outputs
+			if len(outputs) > MaxMultiSendOutputs {
+				outputs = outputs[:MaxMultiSendOutputs]
+				ctx.Logger().Warn("MsgMultiSend outputs truncated for tax processing",
+					"total", len(m.Outputs), "processed", MaxMultiSendOutputs)
+			}
+			for _, output := range outputs {
+				if err := tpd.applyTaxForRecipient(ctx, output.Address, output.Coins); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // applyTaxForRecipient deducts tax from recipient for each taxable coin and sends it to the tax recipient.
+// NOTE: Tax only applies to direct MsgSend/MsgMultiSend. IBC transfers, authz delegated sends,
+// and other transfer mechanisms bypass this tax. This is by design — tax enforcement at the
+// PostDecorator level only covers direct sends.
 func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddress string, coins sdk.Coins) error {
 	recipientAddr, err := sdk.AccAddressFromBech32(recipientAddress)
 	if err != nil {
@@ -54,7 +83,7 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 
 	for _, coin := range coins {
 		token, found := tpd.k.GetToken(ctx, coin.Denom)
-		if !found || token.Tax.Percent.IsZero() || token.Tax.RecipientAddress == "" {
+		if !found || token.Tax.Percent.IsNil() || token.Tax.Percent.IsZero() || token.Tax.RecipientAddress == "" {
 			continue
 		}
 
@@ -71,7 +100,7 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 		}
 
 		// cap tax at recipient's available balance to avoid reverting the entire tx
-		recipientBalance := tpd.k.BankKeeper.GetBalance(ctx, recipientAddr, coin.Denom)
+		recipientBalance := tpd.k.GetBankKeeper().GetBalance(ctx, recipientAddr, coin.Denom)
 		if recipientBalance.Amount.LT(taxAmount) {
 			taxAmount = recipientBalance.Amount
 		}
@@ -84,7 +113,7 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 		}
 
 		taxCoin := sdk.NewCoin(coin.Denom, taxAmount)
-		if err := tpd.k.BankKeeper.SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin)); err != nil {
+		if err := tpd.k.GetBankKeeper().SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin)); err != nil {
 			ctx.Logger().Error("Failed to send tax", "error", err)
 			return fmt.Errorf("failed to send tax: %v", err)
 		}

@@ -158,7 +158,8 @@ func (app *App) postRegisterEVMModules() error {
 		return fmt.Errorf("failed to instantiate bech32 precompile: %w", err)
 	}
 
-	precompiles := maps.Clone(gethvm.PrecompiledContractsPrague) // clone from latest vm fork.
+	// Safe to use maps.Clone: WithStaticPrecompiles uses map lookups (not iteration) in consensus paths
+	precompiles := maps.Clone(gethvm.PrecompiledContractsPrague)
 	precompiles[bech32Precompile.Address()] = bech32Precompile
 	precompiles[p256Precompile.Address()] = p256Precompile
 

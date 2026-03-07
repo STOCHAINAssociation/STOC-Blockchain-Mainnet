@@ -38,7 +38,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		}
 	}
 	// Build token for validation BEFORE incrementing counter
-	counter := k.GetTokenCounter(ctx)
+	counter, err := k.GetTokenCounter(ctx)
+	if err != nil {
+		return nil, sdkerrors.Wrap(err, "failed to get token counter")
+	}
 	minimalDenom := fmt.Sprintf("%s_%d", msg.Symbol, counter)
 	tokenId := minimalDenom
 	token := types.Token{
@@ -74,12 +77,23 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	}
 
 	// Only increment counter AFTER validation passes
-	k.SetTokenCounter(ctx, counter+1)
+	if err := k.SetTokenCounter(ctx, counter+1); err != nil {
+		return nil, sdkerrors.Wrap(err, "failed to set token counter")
+	}
 
 	// Mint initial supply and distribute according to distribution list
 	creator, err := sdk.AccAddressFromBech32(msg.Creator)
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "invalid creator address")
+	}
+
+	// Deduct token creation fee (burned to prevent spam/storage bloat)
+	creationFee := sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, types.TokenCreationFee))
+	if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, creator, types.ModuleName, creationFee); err != nil {
+		return nil, sdkerrors.Wrapf(types.ErrInsufficientFunds, "insufficient funds for token creation fee (%s): %v", creationFee.String(), err)
+	}
+	if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, creationFee); err != nil {
+		return nil, sdkerrors.Wrap(err, "failed to burn creation fee")
 	}
 
 	// Calculate the initial supply as tokens (adjusted for decimals)
@@ -121,11 +135,11 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 			// Mint tokens to the recipient
 			coin := sdk.NewCoin(token.MinimalDenom, amount)
-			if err := k.BankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
+			if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 				return nil, err
 			}
 
-			if err := k.BankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
+			if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
 				return nil, err
 			}
 		}
@@ -133,11 +147,11 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	} else {
 		// If no distribution specified, mint everything to creator
 		coin := sdk.NewCoin(token.MinimalDenom, initialSupply)
-		if err := k.BankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
+		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
 
-		if err := k.BankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, creator, sdk.NewCoins(coin)); err != nil {
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, creator, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
 	}
@@ -146,7 +160,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 	if remainingSupply.GT(math.ZeroInt()) {
 		coin := sdk.NewCoin(token.MinimalDenom, remainingSupply)
-		if err := k.BankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
+		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
 
@@ -156,8 +170,9 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 	// register metadata for token so that the wallet can display it correctly
 
+	// Use minimalDenom as display to avoid metadata collision when multiple tokens share the same symbol
 	denomMetadata := banktypes.Metadata{
-		Description: fmt.Sprintf("Token %s created on Stoc chain", token.Name),
+		Description: fmt.Sprintf("Token %s (%s) created on Stoc chain", token.Name, token.Symbol),
 		DenomUnits: []*banktypes.DenomUnit{
 			{
 				Denom:    minimalDenom,
@@ -166,7 +181,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			},
 		},
 		Base:    minimalDenom,
-		Display: token.Symbol,
+		Display: minimalDenom,
 		Name:    token.Name,
 		Symbol:  token.Symbol,
 		URI:     token.Logo,
@@ -175,23 +190,20 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 	// if token has decimals, add DenomUnit with exponent = decimals
 	if token.Decimals > 0 {
-		// smallestDenom := token.Symbol
-		displayDenom := token.Symbol
-
 		denomMetadata.DenomUnits = []*banktypes.DenomUnit{
 			{
 				Denom:    minimalDenom,
 				Exponent: 0,
 			},
 			{
-				Denom:    displayDenom,
+				Denom:    fmt.Sprintf("%s_display", minimalDenom),
 				Exponent: uint32(token.Decimals),
 				Aliases:  []string{token.Symbol},
 			},
 		}
 	}
 
-	k.BankKeeper.SetDenomMetaData(ctx, denomMetadata)
+	k.bankKeeper.SetDenomMetaData(ctx, denomMetadata)
 
 	// Emit token creation event
 	ctx.EventManager().EmitEvent(
