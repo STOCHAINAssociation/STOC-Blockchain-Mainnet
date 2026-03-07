@@ -105,47 +105,36 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// NOTE: SetToken is called AFTER all minting succeeds (see below).
 	// This follows CEI pattern — if MintCoins/SendCoins fails, no orphan token is left in state.
 
-	// If distributions specified, distribute according to percentages
-	if len(token.Distributions) > 0 {
-		totalMinted := math.ZeroInt()
-		for i, dist := range token.Distributions {
-			recipient, err := sdk.AccAddressFromBech32(dist.Address)
-			if err != nil {
-				return nil, sdkerrors.Wrap(err, "invalid distribution address")
-			}
-
-			var amount math.Int
-			if i == len(token.Distributions)-1 {
-				// Last recipient gets the remainder to avoid rounding loss
-				amount = initialSupply.Sub(totalMinted)
-			} else {
-				// Calculate: amount = initialSupply * percent / 100
-				amount = initialSupply.MulRaw(int64(dist.Percent)).QuoRaw(100)
-			}
-
-			if amount.IsZero() {
-				continue
-			}
-			totalMinted = totalMinted.Add(amount)
-
-			// Mint tokens to the recipient
-			coin := sdk.NewCoin(token.MinimalDenom, amount)
-			if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
-				return nil, err
-			}
-
-			if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
-				return nil, err
-			}
+	// Distribute initial supply according to distribution list
+	// (distributions always has >= 1 entry: defaults to [{Creator, 100%}] when msg.Distributions is empty)
+	totalMinted := math.ZeroInt()
+	for i, dist := range token.Distributions {
+		recipient, err := sdk.AccAddressFromBech32(dist.Address)
+		if err != nil {
+			return nil, sdkerrors.Wrap(err, "invalid distribution address")
 		}
-	} else {
-		// If no distribution specified, mint everything to creator
-		coin := sdk.NewCoin(token.MinimalDenom, initialSupply)
+
+		var amount math.Int
+		if i == len(token.Distributions)-1 {
+			// Last recipient gets the remainder to avoid rounding loss
+			amount = initialSupply.Sub(totalMinted)
+		} else {
+			// Calculate: amount = initialSupply * percent / 100
+			amount = initialSupply.MulRaw(int64(dist.Percent)).QuoRaw(100)
+		}
+
+		if amount.IsZero() {
+			continue
+		}
+		totalMinted = totalMinted.Add(amount)
+
+		// Mint tokens to the recipient
+		coin := sdk.NewCoin(token.MinimalDenom, amount)
 		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
 
-		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, creator, sdk.NewCoins(coin)); err != nil {
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
 			return nil, err
 		}
 	}
