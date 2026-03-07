@@ -2,10 +2,14 @@ package types
 
 import (
 	"fmt"
+	"regexp"
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
+
+// tokenSymbolRegex validates token symbol: alphanumeric, starts with letter, max 32 chars
+var tokenSymbolRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9]{0,31}$`)
 
 // ValidateToken validates a token structure
 func Validate(token Token) error {
@@ -15,6 +19,9 @@ func Validate(token Token) error {
 
 	if token.Symbol == "" {
 		return fmt.Errorf("token symbol cannot be empty")
+	}
+	if !tokenSymbolRegex.MatchString(token.Symbol) {
+		return fmt.Errorf("token symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
 
 	if token.Decimals > 18 {

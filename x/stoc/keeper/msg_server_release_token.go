@@ -47,11 +47,11 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			"tokens_released",
-			sdk.NewAttribute("symbol", token.Symbol),
-			sdk.NewAttribute("amount", msg.Amount.String()),
-			sdk.NewAttribute("recipient", msg.Recipient),
-			sdk.NewAttribute("remaining", token.RemainingSupply.String()),
+			types.EventTypeReleaseTokens,
+			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
+			sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.String()),
+			sdk.NewAttribute(types.AttributeKeyRecipient, msg.Recipient),
+			sdk.NewAttribute(types.AttributeKeyRemainingSupply, token.RemainingSupply.String()),
 		),
 	)
 

@@ -26,8 +26,12 @@ const (
 	AttributeKeyTokenCreator  = "token_creator"
 	AttributeKeyInitialSupply = "initial_supply"
 	AttributeKeyMinimalDenom  = "minimal_denom"
-	AttributeKeyMintToken     = "mint_token"
-	AttributeKeyBurnAmount    = "burn_amount"
+	AttributeKeyMintToken       = "mint_token"
+	AttributeKeyBurnAmount      = "burn_amount"
+	EventTypeReleaseTokens      = "tokens_released"
+	AttributeKeyRecipient       = "recipient"
+	AttributeKeyRemainingSupply = "remaining"
+	AttributeKeyAmount          = "amount"
 )
 
 var (

@@ -37,12 +37,9 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			RecipientAddress: "",
 		}
 	}
-	// Tạo ID 16 ký tự unique dựa trên counter và block height
+	// Build token for validation BEFORE incrementing counter
 	counter := k.GetTokenCounter(ctx)
 	minimalDenom := fmt.Sprintf("%s_%d", msg.Symbol, counter)
-	k.SetTokenCounter(ctx, counter+1)
-
-	// Sử dụng minimalDenom làm tokenId luôn để đảm bảo unique
 	tokenId := minimalDenom
 	token := types.Token{
 		Id:            tokenId,
@@ -59,17 +56,25 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		MinimalDenom:  minimalDenom,
 	}
 
-	// Validate token
+	// Validate token BEFORE incrementing counter (prevents counter pollution on invalid tokens)
 	if err := types.Validate(token); err != nil {
 		k.Logger().Error("Token validation failed", "error", err)
 		return nil, sdkerrors.Wrap(err, "invalid token")
 	}
 
-	// Check if token symbol already exists
+	// Validate generated denom against SDK rules
+	if err := sdk.ValidateDenom(minimalDenom); err != nil {
+		return nil, sdkerrors.Wrapf(types.ErrInvalidTokenSymbol, "generated denom %s is invalid: %v", minimalDenom, err)
+	}
+
+	// Check if token already exists
 	if k.HasToken(ctx, token.MinimalDenom) {
 		k.Logger().Error("Token symbol already exists", "symbol", token.MinimalDenom)
 		return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.MinimalDenom)
 	}
+
+	// Only increment counter AFTER validation passes
+	k.SetTokenCounter(ctx, counter+1)
 
 	// Mint initial supply and distribute according to distribution list
 	creator, err := sdk.AccAddressFromBech32(msg.Creator)
@@ -91,15 +96,28 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	k.SetToken(ctx, token)
 	// If distributions specified, distribute according to percentages
 	if len(token.Distributions) > 0 {
-		for _, dist := range token.Distributions {
+		totalMinted := math.ZeroInt()
+		lastRecipient := sdk.AccAddress{}
+		for i, dist := range token.Distributions {
 			recipient, err := sdk.AccAddressFromBech32(dist.Address)
 			if err != nil {
 				return nil, sdkerrors.Wrap(err, "invalid distribution address")
 			}
+			lastRecipient = recipient
 
-			// Calculate amount using simple percentage math (40 means 40%)
-			// Calculate: amount = initialSupply * percent / 100
-			amount := initialSupply.MulRaw(int64(dist.Percent)).QuoRaw(100)
+			var amount math.Int
+			if i == len(token.Distributions)-1 {
+				// Last recipient gets the remainder to avoid rounding loss
+				amount = initialSupply.Sub(totalMinted)
+			} else {
+				// Calculate: amount = initialSupply * percent / 100
+				amount = initialSupply.MulRaw(int64(dist.Percent)).QuoRaw(100)
+			}
+
+			if amount.IsZero() {
+				continue
+			}
+			totalMinted = totalMinted.Add(amount)
 
 			// Mint tokens to the recipient
 			coin := sdk.NewCoin(token.MinimalDenom, amount)
@@ -111,6 +129,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 				return nil, err
 			}
 		}
+		_ = lastRecipient // used in last-recipient remainder logic above
 	} else {
 		// If no distribution specified, mint everything to creator
 		coin := sdk.NewCoin(token.MinimalDenom, initialSupply)

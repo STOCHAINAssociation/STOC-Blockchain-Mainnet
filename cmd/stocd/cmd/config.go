@@ -29,7 +29,7 @@ func initAppConfig() (string, interface{}) {
 
 	// Enable JSON-RPC by default so EVM is accessible out of the box
 	srvCfg.JSONRPC.Enable = true
-	srvCfg.JSONRPC.Address = "0.0.0.0:8545"
+	srvCfg.JSONRPC.Address = "127.0.0.1:8545"
 
 	// Enable REST API by default
 	srvCfg.API.Enable = true

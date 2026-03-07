@@ -1,0 +1,102 @@
+package types
+
+import (
+	"regexp"
+	"strings"
+
+	errorsmod "cosmossdk.io/errors"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+)
+
+// Verify that MsgCreateToken implements the sdk.Msg interface at compile time
+var _ sdk.Msg = &MsgCreateToken{}
+
+// symbolRegex only allows alphanumeric characters (no special chars that could break index keys)
+var symbolRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9]{0,31}$`)
+
+func (m *MsgCreateToken) Route() string { return "stoc" }
+func (m *MsgCreateToken) Type() string  { return "create_token" }
+func (m *MsgCreateToken) GetSigners() []sdk.AccAddress {
+	creator, err := sdk.AccAddressFromBech32(m.Creator)
+	if err != nil {
+		return []sdk.AccAddress{}
+	}
+	return []sdk.AccAddress{creator}
+}
+func (m *MsgCreateToken) GetSignBytes() []byte {
+	return sdk.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+}
+
+// ValidateBasic does a sanity check on the provided data.
+func (m *MsgCreateToken) ValidateBasic() error {
+	_, err := sdk.AccAddressFromBech32(m.Creator)
+	if err != nil {
+		return errorsmod.Wrap(err, "invalid creator address")
+	}
+
+	if m.Name == "" {
+		return errorsmod.Wrap(ErrInvalidToken, "name cannot be empty")
+	}
+	if len(m.Name) > 64 {
+		return errorsmod.Wrap(ErrInvalidToken, "name too long (max 64 characters)")
+	}
+
+	if m.Symbol == "" {
+		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol cannot be empty")
+	}
+	if !symbolRegex.MatchString(m.Symbol) {
+		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol must be alphanumeric, start with a letter, and max 32 characters")
+	}
+	// Prevent symbols that could be confused with native denoms
+	symbolLower := strings.ToLower(m.Symbol)
+	if symbolLower == "ustoc" || symbolLower == "astoc" || symbolLower == "utstoc" || symbolLower == "atstoc" || symbolLower == "stoc" {
+		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol cannot be a native denom")
+	}
+
+	if m.Decimals > 18 {
+		return errorsmod.Wrap(ErrInvalidToken, "decimals must be between 0 and 18")
+	}
+
+	if m.Logo == "" {
+		return errorsmod.Wrap(ErrInvalidToken, "logo cannot be empty")
+	}
+	if len(m.Logo) > 256 {
+		return errorsmod.Wrap(ErrInvalidToken, "logo too long (max 256 characters)")
+	}
+
+	if m.InitialSupply.IsNil() || m.InitialSupply.IsNegative() {
+		return errorsmod.Wrap(ErrInvalidTokenAmount, "initial supply must be non-negative")
+	}
+
+	if m.TotalSupply.IsNil() || m.TotalSupply.IsNegative() {
+		return errorsmod.Wrap(ErrInvalidTokenAmount, "total supply must be non-negative")
+	}
+
+	if !m.TotalSupply.IsNil() && !m.InitialSupply.IsNil() && m.TotalSupply.LT(m.InitialSupply) {
+		return errorsmod.Wrap(ErrInvalidTokenAmount, "total supply cannot be less than initial supply")
+	}
+
+	// Validate distributions if provided
+	if len(m.Distributions) > 0 {
+		totalPercent := uint32(0)
+		for _, dist := range m.Distributions {
+			if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
+				return errorsmod.Wrapf(ErrInvalidCreatorAddress, "invalid distribution address: %s", err)
+			}
+			if dist.Percent == 0 || dist.Percent > 100 {
+				return errorsmod.Wrap(ErrInvalidToken, "distribution percentage must be between 1 and 100")
+			}
+			totalPercent += dist.Percent
+		}
+		if totalPercent != 100 {
+			return errorsmod.Wrapf(ErrInvalidToken, "distribution percentages must sum to 100, got %d", totalPercent)
+		}
+	}
+
+	// Validate tax
+	if !m.Tax.Percent.IsNil() && m.Tax.Percent.IsNegative() {
+		return errorsmod.Wrap(ErrInvalidToken, "tax percentage cannot be negative")
+	}
+
+	return nil
+}

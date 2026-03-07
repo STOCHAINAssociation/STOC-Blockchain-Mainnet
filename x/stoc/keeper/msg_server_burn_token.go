@@ -6,6 +6,7 @@ import (
 	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -48,7 +49,12 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	// Update token stats if it is a managed token
 	token, found := k.GetToken(ctx, msg.Denom)
 	if found {
-		token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
+		// Prevent TotalSupply from going negative
+		if token.TotalSupply.GTE(amountToBurn) {
+			token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
+		} else {
+			token.TotalSupply = math.ZeroInt()
+		}
 		k.SetToken(ctx, token)
 	}
 

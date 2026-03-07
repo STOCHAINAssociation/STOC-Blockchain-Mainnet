@@ -1,6 +1,9 @@
 package stoc
 
 import (
+	"strconv"
+	"strings"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"stoc/x/stoc/keeper"
@@ -14,9 +17,22 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 		panic(err)
 	}
 
-	// Initialize tokens
+	// Initialize tokens and restore token counter from existing token IDs
+	var maxCounter uint64
 	for _, token := range genState.Tokens {
 		k.SetToken(ctx, token)
+		// Parse counter from minimalDenom (format: "SYMBOL_N")
+		if idx := strings.LastIndex(token.MinimalDenom, "_"); idx >= 0 {
+			if n, err := strconv.ParseUint(token.MinimalDenom[idx+1:], 10, 64); err == nil {
+				if n+1 > maxCounter {
+					maxCounter = n + 1
+				}
+			}
+		}
+	}
+	// Restore counter so next CreateToken won't collide
+	if maxCounter > 0 {
+		k.SetTokenCounter(ctx, maxCounter)
 	}
 }
 

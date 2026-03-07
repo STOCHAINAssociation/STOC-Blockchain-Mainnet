@@ -54,11 +54,24 @@ func (k Keeper) HasToken(ctx sdk.Context, symbol string) bool {
 	return store.Has([]byte(symbol))
 }
 
-// DeleteToken removes a token from the store
+// DeleteToken removes a token from the store and cleans up the symbol index
 func (k Keeper) DeleteToken(ctx sdk.Context, symbol string) {
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	store := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
-	store.Delete([]byte(symbol))
+
+	// Get token first to find its Symbol for index cleanup
+	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
+	b := mainStore.Get([]byte(symbol))
+	if b != nil {
+		var token types.Token
+		k.cdc.MustUnmarshal(b, &token)
+
+		// Clean up symbol index
+		indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
+		indexKey := []byte(token.Symbol + ":" + token.Id)
+		indexStore.Delete(indexKey)
+	}
+
+	mainStore.Delete([]byte(symbol))
 }
 
 // GetAllTokens returns all tokens
