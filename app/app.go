@@ -440,14 +440,7 @@ func (app *App) GetMemKey(storeKey string) *storetypes.MemoryStoreKey {
 
 // kvStoreKeys returns all the kv store keys registered inside App.
 func (app *App) kvStoreKeys() map[string]*storetypes.KVStoreKey {
-	keys := make(map[string]*storetypes.KVStoreKey)
-	for _, k := range app.GetStoreKeys() {
-		if kv, ok := k.(*storetypes.KVStoreKey); ok {
-			keys[kv.Name()] = kv
-		}
-	}
-
-	return keys
+	return app.GetStoreKeysMap()
 }
 
 // GetStoreKeysMap returns all the kv store keys registered inside App as a map.

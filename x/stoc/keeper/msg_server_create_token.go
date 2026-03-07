@@ -111,13 +111,11 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// If distributions specified, distribute according to percentages
 	if len(token.Distributions) > 0 {
 		totalMinted := math.ZeroInt()
-		lastRecipient := sdk.AccAddress{}
 		for i, dist := range token.Distributions {
 			recipient, err := sdk.AccAddressFromBech32(dist.Address)
 			if err != nil {
 				return nil, sdkerrors.Wrap(err, "invalid distribution address")
 			}
-			lastRecipient = recipient
 
 			var amount math.Int
 			if i == len(token.Distributions)-1 {
@@ -143,7 +141,6 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 				return nil, err
 			}
 		}
-		_ = lastRecipient // used in last-recipient remainder logic above
 	} else {
 		// If no distribution specified, mint everything to creator
 		coin := sdk.NewCoin(token.MinimalDenom, initialSupply)

@@ -50,7 +50,7 @@ func IsNativeDenom(denom string) bool {
 	return false
 }
 
-// ValidateToken validates a token structure
+// Validate validates a token structure
 func Validate(token Token) error {
 	if token.Name == "" {
 		return fmt.Errorf("token name cannot be empty")
@@ -106,8 +106,8 @@ func Validate(token Token) error {
 			return fmt.Errorf("invalid address in distribution: %s", err)
 		}
 
-		if dist.Percent > 100 {
-			return fmt.Errorf("distribution percentage must be between 0 and 100")
+		if dist.Percent == 0 || dist.Percent > 100 {
+			return fmt.Errorf("distribution percentage must be between 1 and 100")
 		}
 
 		totalPercent += dist.Percent

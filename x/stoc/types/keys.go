@@ -16,6 +16,14 @@ const (
 
 	// TokenCounterKey is the key for storing the token ID counter
 	TokenCounterKey = "TokenCounter-"
+
+	// Query pagination limits
+	MaxQueryLimit     = 100
+	DefaultQueryLimit = 20
+	MaxBalancesResult = 200
+
+	// MaxMultiSendOutputs limits outputs in MsgMultiSend to prevent DoS and tax bypass
+	MaxMultiSendOutputs = 50
 )
 
 // Event type and attribute keys

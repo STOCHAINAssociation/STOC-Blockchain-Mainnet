@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -195,8 +196,8 @@ func (k EvmBankKeeper) GetSupply(ctx context.Context, denom string) sdk.Coin {
 // RESTRICTION: Custom tokens always return false from EVM context.
 func (k EvmBankKeeper) IsSendEnabledCoin(ctx context.Context, coin sdk.Coin) bool {
 	if coin.Denom == getEvmDenom() {
-		// Check if ustoc is send enabled
-		cosmosCoin := sdk.NewCoin(getCosmosDenom(), coin.Amount)
+		// Check if the cosmos denom is send enabled (denom-only check)
+		cosmosCoin := sdk.NewCoin(getCosmosDenom(), math.OneInt())
 		return k.bankKeeper.IsSendEnabledCoin(ctx, cosmosCoin)
 	}
 	if coin.Denom != getCosmosDenom() {
@@ -222,7 +223,7 @@ func (k EvmBankKeeper) IsSendEnabledCoins(ctx context.Context, coins ...sdk.Coin
 			convertedCoins = append(convertedCoins, coin)
 		} else {
 			// RESTRICTION: Custom tokens are not send-enabled from EVM context
-			return fmt.Errorf("custom token %s is not send-enabled from EVM context", coin.Denom)
+			return errorsmod.Wrapf(types.ErrInvalidDenom, "custom token %s is not send-enabled from EVM context", coin.Denom)
 		}
 	}
 	return k.bankKeeper.IsSendEnabledCoins(ctx, convertedCoins...)
@@ -295,7 +296,7 @@ func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error)
 		} else if coin.Denom == getCosmosDenom() {
 			convertedAmt = convertedAmt.Add(coin)
 		} else {
-			return nil, fmt.Errorf("custom token %s cannot be transferred from EVM context", coin.Denom)
+			return nil, errorsmod.Wrapf(types.ErrInvalidDenom, "custom token %s cannot be transferred from EVM context", coin.Denom)
 		}
 	}
 	return convertedAmt, nil
@@ -365,7 +366,7 @@ func (k EvmBankKeeper) IterateTotalSupply(ctx context.Context, cb func(coin sdk.
 // Returns error if denom is not the expected cosmos denom.
 func ConvertCosmosCoinToEvmCoin(coin sdk.Coin) (sdk.Coin, error) {
 	if coin.Denom != getCosmosDenom() {
-		return sdk.Coin{}, fmt.Errorf("invalid denom for conversion to EVM coin: expected %s, got %s", getCosmosDenom(), coin.Denom)
+		return sdk.Coin{}, errorsmod.Wrapf(types.ErrInvalidDenom, "expected %s, got %s", getCosmosDenom(), coin.Denom)
 	}
 
 	evmAmount := coin.Amount.Mul(types.ConversionMultiplier)
@@ -377,7 +378,7 @@ func ConvertCosmosCoinToEvmCoin(coin sdk.Coin) (sdk.Coin, error) {
 // Truncates dust amounts (rounds down). Returns error if denom is invalid.
 func ConvertEvmCoinToCosmosCoin(coin sdk.Coin) (sdk.Coin, error) {
 	if coin.Denom != getEvmDenom() {
-		return sdk.Coin{}, fmt.Errorf("invalid denom for conversion to Cosmos coin: expected %s, got %s", getEvmDenom(), coin.Denom)
+		return sdk.Coin{}, errorsmod.Wrapf(types.ErrInvalidDenom, "expected %s, got %s", getEvmDenom(), coin.Denom)
 	}
 
 	// Truncate by dividing (automatically rounds down)

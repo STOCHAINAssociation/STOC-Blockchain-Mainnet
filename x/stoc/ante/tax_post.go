@@ -8,10 +8,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	"stoc/x/stoc/keeper"
+	stoctypes "stoc/x/stoc/types"
 )
-
-// MaxMultiSendOutputs limits the number of outputs processed for tax to prevent DoS
-const MaxMultiSendOutputs = 50
 
 type TaxPostDecorator struct {
 	k   keeper.Keeper
@@ -45,7 +43,7 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 			),
 		)
 	} else {
-		// Only commit tax changes if successful
+		// Commit tax state changes (writeCache also propagates events to parent in SDK v0.53)
 		writeCache()
 	}
 
@@ -62,8 +60,8 @@ func (tpd TaxPostDecorator) applyTaxes(ctx sdk.Context, tx sdk.Tx) error {
 			}
 		case *types.MsgMultiSend:
 			// Reject MsgMultiSend with too many outputs to prevent DoS and tax bypass
-			if len(m.Outputs) > MaxMultiSendOutputs {
-				return fmt.Errorf("MsgMultiSend has too many outputs (%d > %d)", len(m.Outputs), MaxMultiSendOutputs)
+			if len(m.Outputs) > stoctypes.MaxMultiSendOutputs {
+				return fmt.Errorf("MsgMultiSend has too many outputs (%d > %d)", len(m.Outputs), stoctypes.MaxMultiSendOutputs)
 			}
 			for _, output := range m.Outputs {
 				if err := tpd.applyTaxForRecipient(ctx, output.Address, output.Coins); err != nil {
@@ -103,7 +101,12 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			return fmt.Errorf("invalid tax recipient address: %v", err)
 		}
 
-		// cap tax at recipient's available balance to avoid reverting the entire tx
+		// Skip tax when recipient IS the tax recipient (no-op self-transfer)
+		if recipientAddr.Equals(taxRecipientAddr) {
+			continue
+		}
+
+		// Cap tax at recipient's available balance to avoid reverting the entire tx
 		recipientBalance := tpd.k.GetBankKeeper().GetBalance(ctx, recipientAddr, coin.Denom)
 		if recipientBalance.Amount.LT(taxAmount) {
 			taxAmount = recipientBalance.Amount

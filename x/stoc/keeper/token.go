@@ -48,19 +48,19 @@ func (k Keeper) GetToken(ctx sdk.Context, minimalDenom string) (val types.Token,
 }
 
 // HasToken returns whether a token exists in the store
-func (k Keeper) HasToken(ctx sdk.Context, symbol string) bool {
+func (k Keeper) HasToken(ctx sdk.Context, minimalDenom string) bool {
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
-	return store.Has([]byte(symbol))
+	return store.Has([]byte(minimalDenom))
 }
 
 // DeleteToken removes a token from the store and cleans up the symbol index
-func (k Keeper) DeleteToken(ctx sdk.Context, symbol string) {
+func (k Keeper) DeleteToken(ctx sdk.Context, minimalDenom string) {
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	// Get token first to find its Symbol for index cleanup
 	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
-	b := mainStore.Get([]byte(symbol))
+	b := mainStore.Get([]byte(minimalDenom))
 	if b != nil {
 		var token types.Token
 		k.cdc.MustUnmarshal(b, &token)
@@ -71,7 +71,7 @@ func (k Keeper) DeleteToken(ctx sdk.Context, symbol string) {
 		indexStore.Delete(indexKey)
 	}
 
-	mainStore.Delete([]byte(symbol))
+	mainStore.Delete([]byte(minimalDenom))
 }
 
 // GetAllTokens returns all tokens
@@ -91,19 +91,23 @@ func (k Keeper) GetAllTokens(ctx sdk.Context) (list []types.Token) {
 	return
 }
 
-// MintToken if the token is unlimited, mint the token to the address
-func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, symbol string, amount math.Int) error {
-	token, found := k.GetToken(ctx, symbol)
+// MintToken mints additional tokens for unlimited tokens and sends them to the owner
+func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom string, amount math.Int) error {
+	if amount.IsNil() || !amount.IsPositive() {
+		return sdkerrors.Wrap(types.ErrInvalidTokenAmount, "mint amount must be positive")
+	}
+
+	token, found := k.GetToken(ctx, minimalDenom)
 	if !found {
-		return sdkerrors.Wrapf(types.ErrTokenNotFound, "token %s not found", symbol)
+		return sdkerrors.Wrapf(types.ErrTokenNotFound, "token %s not found", minimalDenom)
 	}
 
 	if token.Creator != owner.String() {
-		return sdkerrors.Wrapf(types.ErrUnauthorized, "only token owner can mint token %s", symbol)
+		return sdkerrors.Wrapf(types.ErrUnauthorized, "only token owner can mint token %s", minimalDenom)
 	}
 
 	if !token.Unlimited {
-		return sdkerrors.Wrapf(types.ErrCannotMint, "token %s is not configured for unlimited minting", symbol)
+		return sdkerrors.Wrapf(types.ErrCannotMint, "token %s is not configured for unlimited minting", minimalDenom)
 	}
 
 	// Check supply cap even for unlimited tokens

@@ -21,7 +21,7 @@ func (k Keeper) TokensBySymbol(goCtx context.Context, req *types.QueryTokensBySy
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Lấy tất cả các token có cùng symbol
+	// Get all tokens with the same symbol
 	tokens := k.GetTokensBySymbol(ctx, req.Symbol)
 
 	if len(tokens) == 0 {
@@ -42,11 +42,10 @@ func (k Keeper) Token(goCtx context.Context, req *types.QueryTokenRequest) (*typ
 	var found bool
 
 	if req.MinimalDenom == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "minimal_denom is not supported")
-	} else {
-
-		token, found = k.GetToken(ctx, req.MinimalDenom)
+		return nil, status.Errorf(codes.InvalidArgument, "minimal_denom is required")
 	}
+
+	token, found = k.GetToken(ctx, req.MinimalDenom)
 
 	if !found {
 		return nil, status.Errorf(codes.NotFound, "token with symbol '%s' not found", req.MinimalDenom)
@@ -56,8 +55,8 @@ func (k Keeper) Token(goCtx context.Context, req *types.QueryTokenRequest) (*typ
 }
 
 func (k Keeper) Tokens(goCtx context.Context, req *types.QueryTokensRequest) (*types.QueryTokensResponse, error) {
-	const MaxLimit = 100
-	const DefaultLimit = 20
+	const MaxLimit = types.MaxQueryLimit
+	const DefaultLimit = types.DefaultQueryLimit
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
@@ -99,7 +98,7 @@ func (k Keeper) Tokens(goCtx context.Context, req *types.QueryTokensRequest) (*t
 }
 
 func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBalancesWithMetadataRequest) (*types.QueryBalancesWithMetadataResponse, error) {
-	const maxBalances = 200
+	const maxBalances = types.MaxBalancesResult
 
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
