@@ -23,6 +23,11 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 		return nil, sdkerrors.Wrap(types.ErrUnauthorized, "only token creator can release tokens")
 	}
 
+	// Defensive check: amount must be positive
+	if !msg.Amount.IsPositive() {
+		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "release amount must be positive")
+	}
+
 	// Check if requested amount exceeds remaining supply
 	if msg.Amount.GT(token.RemainingSupply) {
 		return nil, sdkerrors.Wrapf(types.ErrInsufficientTokens,

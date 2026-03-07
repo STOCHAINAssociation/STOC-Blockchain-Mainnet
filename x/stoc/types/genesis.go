@@ -1,5 +1,7 @@
 package types
 
+import "fmt"
+
 // this line is used by starport scaffolding # genesis/types/import
 
 // DefaultIndex is the default global index
@@ -18,10 +20,15 @@ func DefaultGenesis() *GenesisState {
 // failure.
 func (gs GenesisState) Validate() error {
 	// this line is used by starport scaffolding # genesis/types/validate
+	seenDenoms := make(map[string]bool, len(gs.Tokens))
 	for _, token := range gs.Tokens {
 		if err := Validate(token); err != nil {
 			return err
 		}
+		if seenDenoms[token.MinimalDenom] {
+			return fmt.Errorf("duplicate token MinimalDenom: %s", token.MinimalDenom)
+		}
+		seenDenoms[token.MinimalDenom] = true
 	}
 
 	return gs.Params.Validate()

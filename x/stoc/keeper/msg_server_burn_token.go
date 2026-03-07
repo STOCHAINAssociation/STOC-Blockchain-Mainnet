@@ -9,6 +9,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
+// BurnToken allows ANY token holder to burn their own tokens (similar to ERC20 burn).
+// This is BY DESIGN — not restricted to token creator. TotalSupply is updated accordingly.
 func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*types.MsgBurnTokenResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
