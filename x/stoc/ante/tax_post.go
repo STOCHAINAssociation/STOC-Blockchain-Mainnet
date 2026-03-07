@@ -5,11 +5,15 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/authz"
 	"github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	"stoc/x/stoc/keeper"
 	stoctypes "stoc/x/stoc/types"
 )
+
+// maxAuthzUnwrapDepth limits recursive MsgExec unwrapping to prevent DoS via deeply nested authz messages.
+const maxAuthzUnwrapDepth = 3
 
 type TaxPostDecorator struct {
 	k   keeper.Keeper
@@ -52,7 +56,12 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 
 // applyTaxes processes all tax-applicable messages in the transaction
 func (tpd TaxPostDecorator) applyTaxes(ctx sdk.Context, tx sdk.Tx) error {
-	for _, msg := range tx.GetMsgs() {
+	return tpd.applyTaxesForMsgs(ctx, tx.GetMsgs(), 0)
+}
+
+// applyTaxesForMsgs processes tax for a list of messages, supporting recursive authz MsgExec unwrapping.
+func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, depth int) error {
+	for _, msg := range msgs {
 		switch m := msg.(type) {
 		case *types.MsgSend:
 			if err := tpd.applyTaxForRecipient(ctx, m.ToAddress, m.Amount); err != nil {
@@ -68,15 +77,27 @@ func (tpd TaxPostDecorator) applyTaxes(ctx sdk.Context, tx sdk.Tx) error {
 					return err
 				}
 			}
+		case *authz.MsgExec:
+			if depth >= maxAuthzUnwrapDepth {
+				ctx.Logger().Warn("Authz MsgExec nesting depth exceeded, skipping tax", "depth", depth)
+				continue
+			}
+			innerMsgs, err := m.GetMessages()
+			if err != nil {
+				ctx.Logger().Error("Failed to unwrap authz MsgExec", "error", err)
+				continue
+			}
+			if err := tpd.applyTaxesForMsgs(ctx, innerMsgs, depth+1); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
 // applyTaxForRecipient deducts tax from recipient for each taxable coin and sends it to the tax recipient.
-// NOTE: Tax only applies to direct MsgSend/MsgMultiSend. IBC transfers, authz delegated sends,
-// and other transfer mechanisms bypass this tax. This is by design — tax enforcement at the
-// PostDecorator level only covers direct sends.
+// NOTE: Tax applies to MsgSend/MsgMultiSend including those wrapped in authz MsgExec.
+// IBC transfers and other transfer mechanisms still bypass this tax by design.
 func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddress string, coins sdk.Coins) error {
 	recipientAddr, err := sdk.AccAddressFromBech32(recipientAddress)
 	if err != nil {

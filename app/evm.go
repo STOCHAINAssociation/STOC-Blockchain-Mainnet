@@ -214,7 +214,7 @@ func (app *App) GetMempool() sdkmempool.ExtMempool {
 const (
 	activatorCreateGasMultiplier = 0 // Multiplies CREATE/CREATE2 constant gas by 10x
 	activatorCallGasMultiplier   = 1 // Multiplies CALL constant gas by 10x
-	activatorSstoreFixedGas      = 2 // Sets SSTORE constant gas to fixed 500
+	activatorSstoreFixedGas      = 2 // Sets SSTORE constant gas to 2100 (EIP-2929 warm access cost)
 )
 
 // getCustomEVMActivators defines a map of opcode modifiers associated
@@ -222,7 +222,7 @@ const (
 func getCustomEVMActivators() map[int]func(*gethvm.JumpTable) {
 	var (
 		multiplier        = uint64(10)
-		sstoreConstantGas = uint64(500)
+		sstoreConstantGas = uint64(2100) // EIP-2929 warm access cost — prevents state bloat from cheap storage writes
 	)
 
 	return map[int]func(*gethvm.JumpTable){
