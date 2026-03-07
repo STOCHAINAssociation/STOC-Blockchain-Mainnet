@@ -79,13 +79,12 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 			}
 		case *authz.MsgExec:
 			if depth >= maxAuthzUnwrapDepth {
-				ctx.Logger().Warn("Authz MsgExec nesting depth exceeded, skipping tax", "depth", depth)
-				continue
+				return fmt.Errorf("authz MsgExec nesting depth exceeded (%d), rejecting to prevent tax evasion", depth)
 			}
 			innerMsgs, err := m.GetMessages()
 			if err != nil {
-				ctx.Logger().Error("Failed to unwrap authz MsgExec", "error", err)
-				continue
+				// Return error instead of skipping — prevents tax evasion via corrupted authz messages
+				return fmt.Errorf("failed to unwrap authz MsgExec for tax: %w", err)
 			}
 			if err := tpd.applyTaxesForMsgs(ctx, innerMsgs, depth+1); err != nil {
 				return err

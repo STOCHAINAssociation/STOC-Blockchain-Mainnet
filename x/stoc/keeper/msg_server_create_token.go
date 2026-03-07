@@ -107,7 +107,9 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 	token.RemainingSupply = remainingSupply
 
-	k.SetToken(ctx, token)
+	// NOTE: SetToken is called AFTER all minting succeeds (see below).
+	// This follows CEI pattern — if MintCoins/SendCoins fails, no orphan token is left in state.
+
 	// If distributions specified, distribute according to percentages
 	if len(token.Distributions) > 0 {
 		totalMinted := math.ZeroInt()
@@ -164,6 +166,9 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		k.Logger().Info("Minting remaining tokens to module account", "symbol", token.Symbol, "amount", remainingSupply.String())
 
 	}
+
+	// Persist token AFTER all minting operations succeeded (CEI pattern)
+	k.SetToken(ctx, token)
 
 	// register metadata for token so that the wallet can display it correctly
 

@@ -187,6 +187,11 @@ var (
 		stakingtypes.BondedPoolName,
 		stakingtypes.NotBondedPoolName,
 		nft.ModuleName,
+		// EVM module accounts — prevent direct user transfers that bypass EVM logic
+		evmtypes.ModuleName,
+		erc20types.ModuleName,
+		feemarkettypes.ModuleName,
+		evmutiltypes.ModuleName,
 		// We allow the following module accounts to receive funds:
 		// govtypes.ModuleName
 	}

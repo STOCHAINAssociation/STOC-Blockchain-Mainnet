@@ -101,7 +101,7 @@ func initAppForTestnet(app *app.App, args valArgs) *app.App {
 		Jailed:          false,
 		Status:          stakingtypes.Bonded,
 		Tokens:          math.NewInt(valVotingPower),
-		DelegatorShares: math.LegacyMustNewDecFromStr("10000000"),
+		DelegatorShares: math.LegacyNewDecFromInt(math.NewInt(valVotingPower)),
 		Description: stakingtypes.Description{
 			Moniker: "Testnet Validator",
 		},

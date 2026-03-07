@@ -164,6 +164,14 @@ func (im TaxMiddleware) OnRecvPacket(
 	if err := im.keeper.GetBankKeeper().SendCoins(ctx, receiverAddr, taxRecipientAddr, sdk.NewCoins(taxCoin)); err != nil {
 		// Log but don't fail the IBC transfer — tax is best-effort
 		ctx.Logger().Error("IBC tax: failed to send tax", "error", err)
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				"ibc_token_tax_failed",
+				sdk.NewAttribute("token_denom", localDenom),
+				sdk.NewAttribute("error", err.Error()),
+				sdk.NewAttribute("receiver", data.Receiver),
+			),
+		)
 		return ack
 	}
 

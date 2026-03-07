@@ -31,6 +31,10 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 		}
 	}
 	// Restore counter so next CreateToken won't collide
+	// Fallback: if tokens exist but none had parseable _N suffix, use token count
+	if maxCounter == 0 && len(genState.Tokens) > 0 {
+		maxCounter = uint64(len(genState.Tokens))
+	}
 	if maxCounter > 0 {
 		if err := k.SetTokenCounter(ctx, maxCounter); err != nil {
 			panic(err)
