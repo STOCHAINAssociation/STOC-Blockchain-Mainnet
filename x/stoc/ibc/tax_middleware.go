@@ -5,6 +5,7 @@ import (
 
 	stockeeper "stoc/x/stoc/keeper"
 
+	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
@@ -130,14 +131,20 @@ func (im TaxMiddleware) OnRecvPacket(
 		return ack
 	}
 
-	// Calculate tax amount from the received balance
-	receiverBalance := im.keeper.GetBankKeeper().GetBalance(ctx, receiverAddr, localDenom)
-	taxAmount := receiverBalance.Amount.ToLegacyDec().Mul(token.Tax.Percent).TruncateInt()
+	// Parse the transferred amount from the packet (tax only the incoming amount, not entire balance)
+	transferredAmount, ok := math.NewIntFromString(data.Amount)
+	if !ok || !transferredAmount.IsPositive() {
+		return ack
+	}
+
+	// Calculate tax on the transferred amount only
+	taxAmount := transferredAmount.ToLegacyDec().Mul(token.Tax.Percent).TruncateInt()
 	if taxAmount.IsZero() {
 		return ack
 	}
 
-	// Cap at available balance
+	// Cap at receiver's available balance
+	receiverBalance := im.keeper.GetBankKeeper().GetBalance(ctx, receiverAddr, localDenom)
 	if taxAmount.GT(receiverBalance.Amount) {
 		taxAmount = receiverBalance.Amount
 	}

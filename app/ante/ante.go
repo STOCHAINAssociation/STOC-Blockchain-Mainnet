@@ -41,14 +41,8 @@ func NewAnteHandler(options ante.HandlerOptions) sdk.AnteHandler {
 			}
 		}
 
-		// handle as totally normal Cosmos SDK tx
-		switch tx.(type) {
-		case sdk.Tx:
-			anteHandler = newCosmosAnteHandler(options)
-		default:
-			return ctx, errorsmod.Wrapf(errortypes.ErrUnknownRequest, "invalid transaction type: %T", tx)
-		}
-
+		// handle as totally normal Cosmos SDK tx (no EVM extension options)
+		anteHandler = newCosmosAnteHandler(options)
 		return anteHandler(ctx, tx, sim)
 	}
 }

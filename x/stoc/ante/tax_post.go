@@ -110,8 +110,14 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			continue
 		}
 
+		// Runtime cap: enforce MaxTaxPercent even if state was modified outside ValidateBasic
+		taxPercent := token.Tax.Percent
+		if taxPercent.GT(stoctypes.MaxTaxPercent) {
+			taxPercent = stoctypes.MaxTaxPercent
+		}
+
 		// calculate tax — skip if rounds to zero
-		taxAmount := coin.Amount.ToLegacyDec().Mul(token.Tax.Percent).TruncateInt()
+		taxAmount := coin.Amount.ToLegacyDec().Mul(taxPercent).TruncateInt()
 		if taxAmount.IsZero() {
 			continue
 		}

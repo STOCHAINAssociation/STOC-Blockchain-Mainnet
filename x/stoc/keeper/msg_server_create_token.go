@@ -96,7 +96,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		return nil, sdkerrors.Wrap(err, "failed to burn creation fee")
 	}
 
-	// Calculate the initial supply as tokens (adjusted for decimals)
+	// InitialSupply and TotalSupply are in raw minimal units (decimals field is metadata only)
 	initialSupply := token.InitialSupply
 
 	// Determine if we should mint remaining tokens to module account

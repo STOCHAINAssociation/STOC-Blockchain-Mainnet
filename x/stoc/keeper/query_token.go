@@ -120,10 +120,8 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 	balances := k.bankKeeper.GetAllBalances(ctx, addr)
 
 	// Cap results to prevent OOM on addresses with many token denoms
-	truncated := false
 	if len(balances) > maxBalances {
 		balances = balances[:maxBalances]
-		truncated = true
 	}
 
 	// Create response with metadata
@@ -143,14 +141,10 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 		balancesWithMetadata = append(balancesWithMetadata, balanceWithMetadata)
 	}
 
-	// Create pagination response
-	var nextKey []byte
-	if truncated {
-		nextKey = []byte("truncated")
-	}
+	// Pagination response — BalancesWithMetadata does not support cursor-based pagination
+	// because it aggregates bank balances with stoc metadata. Total reflects returned count.
 	pageRes := &query.PageResponse{
-		NextKey: nextKey,
-		Total:   uint64(len(balancesWithMetadata)),
+		Total: uint64(len(balancesWithMetadata)),
 	}
 
 	return &types.QueryBalancesWithMetadataResponse{
