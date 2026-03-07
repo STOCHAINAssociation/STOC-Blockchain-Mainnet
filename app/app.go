@@ -172,6 +172,10 @@ type App struct {
 	StocKeeper stocmodulekeeper.Keeper
 	// this line is used by starport scaffolding # stargate/app/keeperDeclaration
 
+	// blockedPrecompileAddrs contains bech32 addresses of EVM precompiles.
+	// Used by blockPrecompileTransfers to prevent direct Cosmos sends to precompile addresses.
+	blockedPrecompileAddrs map[string]bool
+
 	// simulation manager
 	sm *module.SimulationManager
 }
@@ -319,6 +323,11 @@ func New(
 	if err := app.postRegisterEVMModules(); err != nil {
 		return nil, err
 	}
+
+	// Block transfers to EVM precompile addresses.
+	// NOTE: BlockedModuleAccountsOverride only handles module names (via NewModuleAddress),
+	// so precompile hex addresses must be blocked via SendRestriction instead.
+	app.blockPrecompileTransfers()
 
 	// register streaming services
 	if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {

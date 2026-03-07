@@ -163,7 +163,7 @@ func initAppForTestnet(app *app.App, args valArgs) *app.App {
 		tmos.Exit(err.Error())
 	}
 	app.StakingKeeper.SetValidatorByPowerIndex(ctx, newVal)
-	app.StakingKeeper.SetLastValidatorPower(ctx, validator, 0)
+	app.StakingKeeper.SetLastValidatorPower(ctx, validator, sdk.TokensToConsensusPower(math.NewInt(valVotingPower), sdk.DefaultPowerReduction))
 	if err := app.StakingKeeper.Hooks().AfterValidatorCreated(ctx, validator); err != nil {
 		tmos.Exit(err.Error())
 	}

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 	"maps"
@@ -166,7 +167,30 @@ func (app *App) postRegisterEVMModules() error {
 	// add more stateful precompiles here, if needed.
 
 	app.EVMKeeper.WithStaticPrecompiles(precompiles)
+
+	// Build precompile address blocklist for bank SendRestriction
+	blockedPrecompiles := make(map[string]bool, len(precompiles))
+	for addr := range precompiles {
+		blockedPrecompiles[sdk.AccAddress(addr.Bytes()).String()] = true
+	}
+	app.blockedPrecompileAddrs = blockedPrecompiles
+
 	return nil
+}
+
+// blockPrecompileTransfers registers a bank SendRestriction that prevents
+// Cosmos SDK transfers to EVM precompile addresses. Funds sent to precompile
+// addresses would be permanently locked since no private key exists for them.
+// NOTE: BlockedModuleAccountsOverride cannot be used for this because it calls
+// authtypes.NewModuleAddress(name) which re-hashes the address, producing wrong results.
+func (app *App) blockPrecompileTransfers() {
+	blocked := app.blockedPrecompileAddrs
+	app.BankKeeper.AppendSendRestriction(func(ctx context.Context, fromAddr, toAddr sdk.AccAddress, amt sdk.Coins) (sdk.AccAddress, error) {
+		if blocked[toAddr.String()] {
+			return toAddr, fmt.Errorf("cannot send to EVM precompile address %s", toAddr)
+		}
+		return toAddr, nil
+	})
 }
 
 // setEVMMempool sets the EVM priority nonce mempool

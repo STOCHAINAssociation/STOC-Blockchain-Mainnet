@@ -22,6 +22,12 @@ func NewAnteHandler(options ante.HandlerOptions) sdk.AnteHandler {
 		txWithExtensions, ok := tx.(authante.HasExtensionOptionsTx)
 		if ok {
 			opts := txWithExtensions.GetExtensionOptions()
+			if len(opts) > 1 {
+				return ctx, errorsmod.Wrap(
+					errortypes.ErrUnknownExtensionOptions,
+					"transactions with multiple extension options are not supported",
+				)
+			}
 			if len(opts) > 0 {
 				switch typeURL := opts[0].GetTypeUrl(); typeURL {
 				case "/cosmos.evm.vm.v1.ExtensionOptionsEthereumTx":

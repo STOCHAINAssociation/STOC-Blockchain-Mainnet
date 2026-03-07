@@ -99,7 +99,17 @@ func Validate(token Token) error {
 		return fmt.Errorf("total supply cannot be less than initial supply")
 	}
 
+	// Validate creator address
+	if token.Creator != "" {
+		if _, err := sdk.AccAddressFromBech32(token.Creator); err != nil {
+			return fmt.Errorf("invalid creator address: %s", err)
+		}
+	}
+
 	// Validate distributions (only when present — empty is valid for genesis/migration)
+	if len(token.Distributions) > MaxDistributions {
+		return fmt.Errorf("too many distributions (%d > max %d)", len(token.Distributions), MaxDistributions)
+	}
 	if len(token.Distributions) > 0 {
 		totalPercent := uint32(0)
 		for _, dist := range token.Distributions {
