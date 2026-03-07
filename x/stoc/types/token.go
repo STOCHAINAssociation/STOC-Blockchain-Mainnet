@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"strings"
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -22,6 +23,32 @@ var MaxTaxPercent = math.LegacyNewDecWithPrec(5, 1) // 0.5 = 50%
 
 // MaxDistributions limits the number of distribution entries to prevent gas griefing
 const MaxDistributions = 20
+
+// IsNativeDenom dynamically checks if a denom is a native chain denom.
+// Uses sdk.DefaultBondDenom (set from genesis staking params) to derive all native denoms:
+// - Cosmos denom (e.g. "ustoc" or "utstoc")
+// - EVM denom (e.g. "astoc" or "atstoc") — derived by replacing 'u' prefix with 'a'
+// - Display denom (e.g. "stoc" or "tstoc") — derived by trimming 'u' prefix
+func IsNativeDenom(denom string) bool {
+	d := strings.ToLower(denom)
+	cosmosDenom := strings.ToLower(sdk.DefaultBondDenom)
+	if d == cosmosDenom {
+		return true
+	}
+	// EVM denom: replace 'u' prefix with 'a'
+	if len(cosmosDenom) > 0 && cosmosDenom[0] == 'u' {
+		evmDenom := "a" + cosmosDenom[1:]
+		if d == evmDenom {
+			return true
+		}
+		// Display denom: trim 'u' prefix
+		displayDenom := cosmosDenom[1:]
+		if d == displayDenom {
+			return true
+		}
+	}
+	return false
+}
 
 // ValidateToken validates a token structure
 func Validate(token Token) error {

@@ -1,8 +1,6 @@
 package types
 
 import (
-	"strings"
-
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -43,9 +41,8 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	if !TokenSymbolRegex.MatchString(m.Symbol) {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
-	// Prevent symbols that could be confused with native denoms
-	symbolLower := strings.ToLower(m.Symbol)
-	if symbolLower == "ustoc" || symbolLower == "astoc" || symbolLower == "utstoc" || symbolLower == "atstoc" || symbolLower == "stoc" {
+	// Prevent symbols that could be confused with native denoms (dynamically detected)
+	if IsNativeDenom(m.Symbol) {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol cannot be a native denom")
 	}
 
