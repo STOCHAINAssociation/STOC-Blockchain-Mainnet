@@ -6,7 +6,9 @@ import (
 	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 // BurnToken allows ANY token holder to burn their own tokens (similar to ERC20 burn).
@@ -65,20 +67,31 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
 
 	// If TotalSupply dropped below RemainingSupply, burn excess from module account
-	// to maintain invariant: moduleBalance == token.RemainingSupply
+	// to maintain invariant: moduleBalance == token.RemainingSupply.
+	// Use actual module balance to determine burnable excess (defensive against stale RemainingSupply).
 	if token.RemainingSupply.GT(token.TotalSupply) {
 		excess := token.RemainingSupply.Sub(token.TotalSupply)
-		ctx.Logger().Warn("Burning excess module tokens after user burn",
-			"denom", token.MinimalDenom,
-			"excess", excess.String(),
-			"remaining_before", token.RemainingSupply.String(),
-			"total_after", token.TotalSupply.String(),
-		)
-		excessCoins := sdk.NewCoins(sdk.NewCoin(msg.Denom, excess))
-		if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, excessCoins); err != nil {
-			return nil, sdkerrors.Wrap(err, "failed to burn excess module tokens")
+
+		// Check actual module balance to avoid BurnCoins failure on stale state
+		moduleAddr := authtypes.NewModuleAddress(types.ModuleName)
+		moduleBalance := k.bankKeeper.GetBalance(ctx, moduleAddr, msg.Denom)
+		actualBurnable := math.MinInt(excess, moduleBalance.Amount)
+
+		if actualBurnable.IsPositive() {
+			ctx.Logger().Warn("Burning excess module tokens after user burn",
+				"denom", token.MinimalDenom,
+				"excess", excess.String(),
+				"actual_burnable", actualBurnable.String(),
+				"remaining_before", token.RemainingSupply.String(),
+				"total_after", token.TotalSupply.String(),
+			)
+			excessCoins := sdk.NewCoins(sdk.NewCoin(msg.Denom, actualBurnable))
+			if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, excessCoins); err != nil {
+				return nil, sdkerrors.Wrap(err, "failed to burn excess module tokens")
+			}
 		}
-		token.RemainingSupply = token.TotalSupply
+		// Update RemainingSupply to match actual module balance after burn
+		token.RemainingSupply = moduleBalance.Amount.Sub(actualBurnable)
 	}
 
 	if err := k.SetToken(ctx, token); err != nil {
