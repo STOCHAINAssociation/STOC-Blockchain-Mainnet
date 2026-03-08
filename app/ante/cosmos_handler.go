@@ -1,7 +1,6 @@
 package ante
 
 import (
-	baseevmante "github.com/cosmos/evm/ante"
 	cosmosante "github.com/cosmos/evm/ante/cosmos"
 	evmante "github.com/cosmos/evm/ante/evm"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
@@ -10,10 +9,12 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	sdkvesting "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
+
+	stocante "stoc/x/stoc/ante"
 )
 
 // newCosmosAnteHandler creates the default ante handler for Cosmos transactions
-func newCosmosAnteHandler(options baseevmante.HandlerOptions) sdk.AnteHandler {
+func newCosmosAnteHandler(options StocAnteOptions) sdk.AnteHandler {
 	return sdk.ChainAnteDecorators(
 		cosmosante.NewRejectMessagesDecorator(), // reject MsgEthereumTxs
 		cosmosante.NewAuthzLimiterDecorator( // disable the Msg types that cannot be included on an authz.MsgExec msgs field
@@ -25,6 +26,7 @@ func newCosmosAnteHandler(options baseevmante.HandlerOptions) sdk.AnteHandler {
 		ante.NewValidateBasicDecorator(),
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
+		stocante.NewIBCCustomTokenRestriction(options.StocKeeper), // block custom token IBC transfers
 		cosmosante.NewMinGasPriceDecorator(options.FeeMarketKeeper, options.EvmKeeper),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
 		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, options.TxFeeChecker),

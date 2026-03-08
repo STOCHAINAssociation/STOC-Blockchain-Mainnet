@@ -7,13 +7,21 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	errortypes "github.com/cosmos/cosmos-sdk/types/errors"
 	authante "github.com/cosmos/cosmos-sdk/x/auth/ante"
+
+	stockeeper "stoc/x/stoc/keeper"
 )
+
+// StocAnteOptions wraps EVM HandlerOptions with stoc-specific keepers
+type StocAnteOptions struct {
+	ante.HandlerOptions
+	StocKeeper stockeeper.Keeper
+}
 
 // NewAnteHandler returns an ante handler responsible for attempting to route an
 // Ethereum or SDK transaction to an internal ante handler for performing
 // transaction-level processing (e.g. fee payment, signature verification) before
 // being passed onto it's respective handler.
-func NewAnteHandler(options ante.HandlerOptions) sdk.AnteHandler {
+func NewAnteHandler(options StocAnteOptions) sdk.AnteHandler {
 	return func(
 		ctx sdk.Context, tx sdk.Tx, sim bool,
 	) (newCtx sdk.Context, err error) {

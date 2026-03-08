@@ -360,24 +360,27 @@ func New(
 	// MaxTxGasWanted caps per-tx gas; 0 = no cap (mitigated by min gas price + block gas limit)
 	maxGasWanted := cast.ToUint64(appOpts.Get("gas-wanted"))
 
-	anteOptions := evmante.HandlerOptions{
-		Cdc:                    app.appCodec,
-		AccountKeeper:          app.AccountKeeper,
-		BankKeeper:             app.BankKeeper,
-		SignModeHandler:        app.txConfig.SignModeHandler(),
-		FeegrantKeeper:         app.FeeGrantKeeper,
-		SigGasConsumer:         evmante.SigVerificationGasConsumer,
-		ExtensionOptionChecker: cosmosevmtypes.HasDynamicFeeExtensionOption,
-		TxFeeChecker:           cosmosevmante.NewDynamicFeeChecker(app.FeeMarketKeeper),
-		EvmKeeper:              app.EVMKeeper,
-		FeeMarketKeeper:        &app.FeeMarketKeeper,
-		MaxTxGasWanted:         maxGasWanted,
-		PendingTxListener: func(hash common.Hash) {
-			for _, listener := range app.pendingTxListeners {
-				listener(hash)
-			}
+	anteOptions := stocappante.StocAnteOptions{
+		HandlerOptions: evmante.HandlerOptions{
+			Cdc:                    app.appCodec,
+			AccountKeeper:          app.AccountKeeper,
+			BankKeeper:             app.BankKeeper,
+			SignModeHandler:        app.txConfig.SignModeHandler(),
+			FeegrantKeeper:         app.FeeGrantKeeper,
+			SigGasConsumer:         evmante.SigVerificationGasConsumer,
+			ExtensionOptionChecker: cosmosevmtypes.HasDynamicFeeExtensionOption,
+			TxFeeChecker:           cosmosevmante.NewDynamicFeeChecker(app.FeeMarketKeeper),
+			EvmKeeper:              app.EVMKeeper,
+			FeeMarketKeeper:        &app.FeeMarketKeeper,
+			MaxTxGasWanted:         maxGasWanted,
+			PendingTxListener: func(hash common.Hash) {
+				for _, listener := range app.pendingTxListeners {
+					listener(hash)
+				}
+			},
+			IBCKeeper: app.IBCKeeper,
 		},
-		IBCKeeper: app.IBCKeeper,
+		StocKeeper: app.StocKeeper,
 	}
 	if err := anteOptions.Validate(); err != nil {
 		panic(err)

@@ -8,7 +8,7 @@ import (
 )
 
 // newMonoEVMAnteHandler creates the sdk.AnteHandler implementation for the EVM transactions.
-func newMonoEVMAnteHandler(options ante.HandlerOptions) sdk.AnteHandler {
+func newMonoEVMAnteHandler(options StocAnteOptions) sdk.AnteHandler {
 	decorators := []sdk.AnteDecorator{
 		evmante.NewEVMMonoDecorator(
 			options.AccountKeeper,
