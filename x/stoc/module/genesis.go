@@ -26,8 +26,13 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 		// Parse counter from minimalDenom (format: "SYMBOL_N")
 		if idx := strings.LastIndex(token.MinimalDenom, "_"); idx >= 0 {
 			if n, err := strconv.ParseUint(token.MinimalDenom[idx+1:], 10, 64); err == nil {
-				if n+1 > maxCounter {
-					maxCounter = n + 1
+				// Saturate at max uint64 to prevent overflow; CreateToken will reject with counter overflow error
+				next := n + 1
+				if n == ^uint64(0) {
+					next = n
+				}
+				if next > maxCounter {
+					maxCounter = next
 				}
 			}
 		}
