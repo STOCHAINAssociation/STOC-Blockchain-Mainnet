@@ -16,7 +16,10 @@ func (k Keeper) GetParams(ctx context.Context) (params types.Params) {
 		return params
 	}
 
-	k.cdc.MustUnmarshal(bz, &params)
+	if err := k.cdc.Unmarshal(bz, &params); err != nil {
+		// Return zero-value params on corruption rather than panicking in query paths
+		return params
+	}
 	return params
 }
 

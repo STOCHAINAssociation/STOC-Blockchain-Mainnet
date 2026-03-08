@@ -102,7 +102,7 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeBurnToken,
-			sdk.NewAttribute(types.AttributeKeyTokenCreator, msg.Creator),
+			sdk.NewAttribute(types.AttributeKeyBurner, msg.Creator),
 			sdk.NewAttribute(types.AttributeKeyMinimalDenom, msg.Denom),
 			sdk.NewAttribute(types.AttributeKeyBurnAmount, amountToBurn.String()),
 		),

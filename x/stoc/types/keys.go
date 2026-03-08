@@ -37,6 +37,7 @@ const (
 	AttributeKeyInitialSupply = "initial_supply"
 	AttributeKeyMinimalDenom  = "minimal_denom"
 	AttributeKeyMintToken       = "mint_token"
+	AttributeKeyBurner          = "burner"
 	AttributeKeyBurnAmount      = "burn_amount"
 	EventTypeReleaseTokens      = "tokens_released"
 	AttributeKeyRecipient       = "recipient"

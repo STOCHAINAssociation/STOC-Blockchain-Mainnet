@@ -27,7 +27,11 @@ func (k Keeper) SetToken(ctx sdk.Context, token types.Token) error {
 	} // Ensure Id is always minimalDenom, never auto-generated uuid
 
 	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
-	mainStore.Set([]byte(token.Id), k.cdc.MustMarshal(&token))
+	bz, err := k.cdc.Marshal(&token)
+	if err != nil {
+		return sdkerrors.Wrap(err, "failed to marshal token")
+	}
+	mainStore.Set([]byte(token.Id), bz)
 
 	indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
 	indexKey := []byte(token.Symbol + ":" + token.Id)
@@ -49,7 +53,10 @@ func (k Keeper) GetToken(ctx sdk.Context, minimalDenom string) (val types.Token,
 	}
 
 	var token types.Token
-	k.cdc.MustUnmarshal(b, &token)
+	if err := k.cdc.Unmarshal(b, &token); err != nil {
+		k.Logger().Error("Failed to unmarshal token", "minimalDenom", minimalDenom, "error", err)
+		return types.Token{}, false
+	}
 	return token, true
 }
 
@@ -69,12 +76,14 @@ func (k Keeper) DeleteToken(ctx sdk.Context, minimalDenom string) {
 	b := mainStore.Get([]byte(minimalDenom))
 	if b != nil {
 		var token types.Token
-		k.cdc.MustUnmarshal(b, &token)
-
-		// Clean up symbol index
-		indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
-		indexKey := []byte(token.Symbol + ":" + token.Id)
-		indexStore.Delete(indexKey)
+		if err := k.cdc.Unmarshal(b, &token); err != nil {
+			k.Logger().Error("Failed to unmarshal token during delete", "minimalDenom", minimalDenom, "error", err)
+		} else {
+			// Clean up symbol index
+			indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
+			indexKey := []byte(token.Symbol + ":" + token.Id)
+			indexStore.Delete(indexKey)
+		}
 	}
 
 	mainStore.Delete([]byte(minimalDenom))
@@ -90,7 +99,10 @@ func (k Keeper) GetAllTokens(ctx sdk.Context) (list []types.Token) {
 
 	for ; iterator.Valid(); iterator.Next() {
 		var val types.Token
-		k.cdc.MustUnmarshal(iterator.Value(), &val)
+		if err := k.cdc.Unmarshal(iterator.Value(), &val); err != nil {
+			k.Logger().Error("Failed to unmarshal token during iteration", "error", err)
+			continue
+		}
 		list = append(list, val)
 	}
 
@@ -181,7 +193,10 @@ func (k Keeper) GetTokensBySymbol(ctx sdk.Context, symbol string) []types.Token 
 		b := mainStore.Get([]byte(tokenId))
 		if b != nil {
 			var token types.Token
-			k.cdc.MustUnmarshal(b, &token)
+			if err := k.cdc.Unmarshal(b, &token); err != nil {
+				k.Logger().Error("Failed to unmarshal token by symbol", "tokenId", tokenId, "error", err)
+				continue
+			}
 			tokens = append(tokens, token)
 		}
 	}
