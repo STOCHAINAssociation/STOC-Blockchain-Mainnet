@@ -134,13 +134,19 @@ func TestBurnManagedToken(t *testing.T) {
 	creator := creatorAddr.String()
 	denom := "mytoken"
 
-	// Setup managed token
+	// Setup managed token with all required fields to pass validation
 	token := types.Token{
-		Id:           denom,
-		Symbol:       "MYT",
-		TotalSupply:  math.NewInt(1000),
-		MinimalDenom: denom,
-		Creator:      creator,
+		Id:              denom,
+		Name:            "My Token",
+		Symbol:          "MYT",
+		Decimals:        6,
+		Logo:            "https://example.com/logo.png",
+		InitialSupply:   math.NewInt(1000),
+		TotalSupply:     math.NewInt(1000),
+		RemainingSupply: math.ZeroInt(),
+		MinimalDenom:    denom,
+		Creator:         creator,
+		Unlimited:       false,
 	}
 	k.SetToken(ctx, token)
 

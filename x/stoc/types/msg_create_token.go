@@ -64,9 +64,10 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	if len(m.Logo) > 256 {
 		return errorsmod.Wrap(ErrInvalidToken, "logo too long (max 256 characters)")
 	}
-	// Validate logo is a valid URL scheme (prevent arbitrary data/XSS injection)
-	if !strings.HasPrefix(m.Logo, "https://") && !strings.HasPrefix(m.Logo, "http://") && !strings.HasPrefix(m.Logo, "ipfs://") {
-		return errorsmod.Wrap(ErrInvalidToken, "logo must be a valid URL (https://, http://, or ipfs://)")
+	// Validate logo is a valid URL scheme (prevent arbitrary data/XSS injection and SSRF)
+	// Only allow https:// and ipfs:// — http:// is rejected to prevent SSRF via frontend logo fetching
+	if !strings.HasPrefix(m.Logo, "https://") && !strings.HasPrefix(m.Logo, "ipfs://") {
+		return errorsmod.Wrap(ErrInvalidToken, "logo must be a valid URL (https:// or ipfs://)")
 	}
 
 	if m.InitialSupply.IsNil() || m.InitialSupply.IsNegative() {

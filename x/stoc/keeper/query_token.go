@@ -116,10 +116,13 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 		return nil, status.Errorf(codes.InvalidArgument, "invalid address: %v", err)
 	}
 
-	// Get all balances for this address using bank keeper
+	// Get all balances for this address using bank keeper.
+	// NOTE: GetAllBalances loads all denoms into memory before capping.
+	// For addresses with thousands of denoms, this may allocate significant memory.
+	// TODO: Switch to paginated bank balance query when available in keeper interface.
 	balances := k.bankKeeper.GetAllBalances(ctx, addr)
 
-	// Cap results to prevent OOM on addresses with many token denoms
+	// Cap results to prevent large response payloads
 	if len(balances) > maxBalances {
 		balances = balances[:maxBalances]
 	}

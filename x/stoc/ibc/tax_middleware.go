@@ -190,13 +190,12 @@ func (im TaxMiddleware) OnRecvPacket(
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			"token_tax_applied",
+			"ibc_token_tax_applied",
 			sdk.NewAttribute("token_denom", localDenom),
 			sdk.NewAttribute("token_symbol", token.Symbol),
 			sdk.NewAttribute("tax_amount", taxAmount.String()),
 			sdk.NewAttribute("recipient", data.Receiver),
 			sdk.NewAttribute("tax_recipient", token.Tax.RecipientAddress),
-			sdk.NewAttribute("source", "ibc_transfer"),
 		),
 	)
 

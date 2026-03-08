@@ -50,7 +50,38 @@ func IsNativeDenom(denom string) bool {
 	return false
 }
 
-// Validate validates a token structure
+// ValidateState validates a token for state persistence (post-creation mutations like burn/mint).
+// Unlike Validate(), this skips creation-time invariants (e.g., TotalSupply >= InitialSupply)
+// that may not hold after legitimate operations like burns.
+func ValidateState(token Token) error {
+	if token.Name == "" {
+		return fmt.Errorf("token name cannot be empty")
+	}
+	if token.Symbol == "" {
+		return fmt.Errorf("token symbol cannot be empty")
+	}
+	if !TokenSymbolRegex.MatchString(token.Symbol) {
+		return fmt.Errorf("token symbol must be alphanumeric, start with a letter, and max 32 characters")
+	}
+	if token.Decimals > 18 {
+		return fmt.Errorf("decimals must be between 0 and 18")
+	}
+	if token.Logo == "" {
+		return fmt.Errorf("logo cannot be empty")
+	}
+	if token.TotalSupply.IsNil() || token.TotalSupply.IsNegative() {
+		return fmt.Errorf("total supply cannot be nil or negative")
+	}
+	if token.TotalSupply.GT(MaxTokenSupply) {
+		return fmt.Errorf("total supply exceeds maximum allowed (%s)", MaxTokenSupply.String())
+	}
+	if token.MinimalDenom == "" {
+		return fmt.Errorf("minimal denom cannot be empty")
+	}
+	return nil
+}
+
+// Validate validates a token structure (for creation-time validation)
 func Validate(token Token) error {
 	if token.Name == "" {
 		return fmt.Errorf("token name cannot be empty")

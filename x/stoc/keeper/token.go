@@ -13,8 +13,13 @@ import (
 	
 )
 
-// SetToken sets a token in the store
+// SetToken sets a token in the store after validating its structure.
+// Panics if the token is invalid — callers must ensure validity before persisting.
 func (k Keeper) SetToken(ctx sdk.Context, token types.Token) {
+	if err := types.ValidateState(token); err != nil {
+		panic("SetToken: refusing to persist invalid token: " + err.Error())
+	}
+
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	if token.Id == "" {

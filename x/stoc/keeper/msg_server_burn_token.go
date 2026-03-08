@@ -67,6 +67,11 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	// Cap RemainingSupply if TotalSupply dropped below it (burned tokens reduce total
 	// but module-held remaining tokens can't exceed total — maintain invariant)
 	if token.RemainingSupply.GT(token.TotalSupply) {
+		ctx.Logger().Error("RemainingSupply exceeds TotalSupply after burn — possible state corruption",
+			"denom", token.MinimalDenom,
+			"remaining", token.RemainingSupply.String(),
+			"total", token.TotalSupply.String(),
+		)
 		token.RemainingSupply = token.TotalSupply
 	}
 
