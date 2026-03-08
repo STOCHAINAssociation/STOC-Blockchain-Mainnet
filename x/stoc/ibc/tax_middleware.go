@@ -148,10 +148,11 @@ func (im TaxMiddleware) OnRecvPacket(
 		taxPercent = stoctypes.MaxTaxPercent
 	}
 
-	// Calculate tax on the transferred amount only
+	// Calculate tax on the transferred amount only — enforce minimum 1 unit
+	// to prevent tax evasion via IBC transfer splitting (consistent with ante handler)
 	taxAmount := transferredAmount.ToLegacyDec().Mul(taxPercent).TruncateInt()
 	if taxAmount.IsZero() {
-		return ack
+		taxAmount = math.OneInt()
 	}
 
 	// Cap at receiver's available balance
