@@ -22,9 +22,8 @@ func (k Keeper) SetToken(ctx sdk.Context, token types.Token) error {
 
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
-	if token.Id == "" {
-		token.Id = token.MinimalDenom
-	} // Ensure Id is always minimalDenom, never auto-generated uuid
+	// Always enforce Id == MinimalDenom to prevent key/denom mismatch
+	token.Id = token.MinimalDenom
 
 	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
 	bz, err := k.cdc.Marshal(&token)
@@ -67,8 +66,9 @@ func (k Keeper) HasToken(ctx sdk.Context, minimalDenom string) bool {
 	return store.Has([]byte(minimalDenom))
 }
 
-// DeleteToken removes a token from the store and cleans up the symbol index
-func (k Keeper) DeleteToken(ctx sdk.Context, minimalDenom string) {
+// DeleteToken removes a token from the store and cleans up the symbol index.
+// Returns error if the token exists but cannot be unmarshaled (prevents orphan index entries).
+func (k Keeper) DeleteToken(ctx sdk.Context, minimalDenom string) error {
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	// Get token first to find its Symbol for index cleanup
@@ -77,16 +77,17 @@ func (k Keeper) DeleteToken(ctx sdk.Context, minimalDenom string) {
 	if b != nil {
 		var token types.Token
 		if err := k.cdc.Unmarshal(b, &token); err != nil {
-			k.Logger().Error("Failed to unmarshal token during delete", "minimalDenom", minimalDenom, "error", err)
-		} else {
-			// Clean up symbol index
-			indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
-			indexKey := []byte(token.Symbol + ":" + token.Id)
-			indexStore.Delete(indexKey)
+			// Return error to prevent orphan symbol index entries
+			return sdkerrors.Wrapf(err, "cannot delete token %s: unmarshal failed, index cleanup would be incomplete", minimalDenom)
 		}
+		// Clean up symbol index
+		indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
+		indexKey := []byte(token.Symbol + ":" + token.Id)
+		indexStore.Delete(indexKey)
 	}
 
 	mainStore.Delete([]byte(minimalDenom))
+	return nil
 }
 
 // GetAllTokens returns all tokens
