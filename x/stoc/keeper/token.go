@@ -134,20 +134,23 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 		return sdkerrors.Wrapf(types.ErrInvalidTokenAmount, "minting would exceed max supply (%s)", types.MaxTokenSupply.String())
 	}
 
+	// Pre-validate: ensure updated state will pass SetToken validation BEFORE any bank mutations.
+	// This prevents a scenario where bank ops succeed but SetToken rejects the new state.
+	token.TotalSupply = newTotal
+	if err := types.ValidateState(token); err != nil {
+		return sdkerrors.Wrap(err, "mint would produce invalid token state")
+	}
+
 	coins := sdk.NewCoins(sdk.NewCoin(token.MinimalDenom, amount))
-	err := k.bankKeeper.MintCoins(ctx, types.ModuleName, coins)
-	if err != nil {
+	if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, coins); err != nil {
 		return err
 	}
 
-	//send coins to the owner
-	err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, owner, coins)
-	if err != nil {
+	if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, owner, coins); err != nil {
 		return err
 	}
 
-	//update total supply
-	token.TotalSupply = token.TotalSupply.Add(amount)
+	// Persist state — already validated above, SetToken re-validates defensively
 	if err := k.SetToken(ctx, token); err != nil {
 		return err
 	}

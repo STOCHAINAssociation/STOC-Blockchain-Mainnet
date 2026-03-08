@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 
@@ -17,7 +18,8 @@ func (k Keeper) GetParams(ctx context.Context) (params types.Params) {
 	}
 
 	if err := k.cdc.Unmarshal(bz, &params); err != nil {
-		// Return zero-value params on corruption rather than panicking in query paths
+		// Log corruption and return zero-value params rather than panicking in query paths
+		k.logger.Error(fmt.Sprintf("x/%s: failed to unmarshal params from store, returning defaults", types.ModuleName), "error", err)
 		return params
 	}
 	return params

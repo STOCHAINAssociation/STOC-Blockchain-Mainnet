@@ -45,13 +45,15 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 }
 
 // ExportGenesis returns the module's exported genesis.
+// NOTE: Token counter is not in the protobuf GenesisState — it is reconstructed from
+// token MinimalDenom suffixes in InitGenesis. The reconstruction is safe because
+// CreateToken always generates denoms in "SYMBOL_N" format with monotonically increasing N.
 func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	genesis := types.DefaultGenesis()
 	genesis.Params = k.GetParams(ctx)
 
 	// this line is used by starport scaffolding # genesis/module/export
 
-	//export tokens
 	genesis.Tokens = k.GetAllTokens(ctx)
 
 	return genesis
