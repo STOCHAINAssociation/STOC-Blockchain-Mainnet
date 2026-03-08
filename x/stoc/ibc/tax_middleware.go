@@ -160,8 +160,11 @@ func (im TaxMiddleware) OnRecvPacket(
 		taxAmount = receiverBalance.Amount
 	}
 
+	// Wrap tax in CacheContext for atomicity — either all tax is collected or none,
+	// preventing partial state mutations if SendCoins fails mid-operation
 	taxCoin := sdk.NewCoin(localDenom, taxAmount)
-	if err := im.keeper.GetBankKeeper().SendCoins(ctx, receiverAddr, taxRecipientAddr, sdk.NewCoins(taxCoin)); err != nil {
+	cacheCtx, writeCache := ctx.CacheContext()
+	if err := im.keeper.GetBankKeeper().SendCoins(cacheCtx, receiverAddr, taxRecipientAddr, sdk.NewCoins(taxCoin)); err != nil {
 		// Log but don't fail the IBC transfer — tax is best-effort
 		ctx.Logger().Error("IBC tax: failed to send tax", "error", err)
 		ctx.EventManager().EmitEvent(
@@ -174,6 +177,9 @@ func (im TaxMiddleware) OnRecvPacket(
 		)
 		return ack
 	}
+
+	// Tax succeeded — commit cached state and events to parent context
+	writeCache()
 
 	ctx.Logger().Info("IBC tax applied",
 		"token_denom", localDenom,

@@ -63,6 +63,13 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 
 	// Update token supply tracking
 	token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
+
+	// Cap RemainingSupply if TotalSupply dropped below it (burned tokens reduce total
+	// but module-held remaining tokens can't exceed total — maintain invariant)
+	if token.RemainingSupply.GT(token.TotalSupply) {
+		token.RemainingSupply = token.TotalSupply
+	}
+
 	k.SetToken(ctx, token)
 
 	// Emit event

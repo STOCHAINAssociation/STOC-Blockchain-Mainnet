@@ -51,6 +51,15 @@ func SupplyInvariant(k Keeper) sdk.Invariant {
 				)
 				broken = true
 			}
+
+			// Check 3: RemainingSupply must never exceed TotalSupply
+			if token.RemainingSupply.GT(token.TotalSupply) {
+				msg += fmt.Sprintf(
+					"\ttoken %s (%s): RemainingSupply %s > TotalSupply %s\n",
+					token.Symbol, denom, token.RemainingSupply, token.TotalSupply,
+				)
+				broken = true
+			}
 		}
 
 		return sdk.FormatInvariant(types.ModuleName, supplyInvariantRoute, msg), broken

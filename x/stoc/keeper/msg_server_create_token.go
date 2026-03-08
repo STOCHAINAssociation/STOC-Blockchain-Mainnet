@@ -152,6 +152,9 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	}
 
 	// Persist state AFTER all bank operations succeeded (CEI pattern)
+	if counter == ^uint64(0) {
+		return nil, sdkerrors.Wrap(types.ErrInvalidTokenAmount, "token counter overflow — maximum number of tokens reached")
+	}
 	if err := k.SetTokenCounter(ctx, counter+1); err != nil {
 		return nil, sdkerrors.Wrap(err, "failed to set token counter")
 	}
