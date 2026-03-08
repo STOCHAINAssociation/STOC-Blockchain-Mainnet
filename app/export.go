@@ -138,6 +138,9 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 		}
 		return false
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	// reinitialize all delegations
 	for _, del := range dels {

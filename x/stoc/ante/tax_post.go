@@ -104,6 +104,12 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 	}
 
 	for _, coin := range coins {
+		// Fast-path: skip store lookup for native denoms (ustoc, astoc, etc.)
+		// which can never be custom tokens — avoids unnecessary store reads per tx
+		if stoctypes.IsNativeDenom(coin.Denom) {
+			continue
+		}
+
 		token, found := tpd.k.GetToken(ctx, coin.Denom)
 		if !found || token.Tax.Percent.IsNil() || token.Tax.Percent.IsZero() || token.Tax.RecipientAddress == "" {
 			continue

@@ -157,7 +157,9 @@ func initAppForTestnet(app *app.App, args valArgs) *app.App {
 	iterator.Close()
 
 	// Add our validator to power and last validators store
-	app.StakingKeeper.SetValidator(ctx, newVal)
+	if err := app.StakingKeeper.SetValidator(ctx, newVal); err != nil {
+		tmos.Exit(err.Error())
+	}
 	err = app.StakingKeeper.SetValidatorByConsAddr(ctx, newVal)
 	if err != nil {
 		tmos.Exit(err.Error())
