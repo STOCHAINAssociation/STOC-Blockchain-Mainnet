@@ -50,6 +50,17 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, sdkerrors.Wrapf(types.ErrInvalidAmount, "burn amount %s exceeds tracked total supply %s — state may be corrupted", amountToBurn.String(), token.TotalSupply.String())
 	}
 
+	// Pre-validate: ensure post-burn state will pass SetToken validation BEFORE any bank mutations.
+	// This follows the same CEI pattern as MintToken — prevents wasted gas on invalid burns.
+	preValidateToken := token
+	preValidateToken.TotalSupply = token.TotalSupply.Sub(amountToBurn)
+	if preValidateToken.RemainingSupply.GT(preValidateToken.TotalSupply) {
+		preValidateToken.RemainingSupply = preValidateToken.TotalSupply
+	}
+	if err := types.ValidateState(preValidateToken); err != nil {
+		return nil, sdkerrors.Wrap(err, "burn would produce invalid token state")
+	}
+
 	// Transfer coins from user to module
 	coins := sdk.NewCoins(sdk.NewCoin(msg.Denom, amountToBurn))
 	err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, creator, types.ModuleName, coins)

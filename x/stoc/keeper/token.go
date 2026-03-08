@@ -162,7 +162,7 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 			types.EventTypeMintToken,
 			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.MinimalDenom),
 			sdk.NewAttribute(types.AttributeKeyTokenCreator, owner.String()),
-			sdk.NewAttribute(types.AttributeKeyMintToken, amount.String()),
+			sdk.NewAttribute(types.AttributeKeyMintAmount, amount.String()),
 		),
 	)
 
@@ -188,8 +188,8 @@ func (k Keeper) GetTokensBySymbol(ctx sdk.Context, symbol string) []types.Token 
 		}
 
 		key := string(iterator.Key())
-		parts := strings.Split(key, ":")
-		if len(parts) != 2 {
+		parts := strings.SplitN(key, ":", 2)
+		if len(parts) != 2 || parts[1] == "" {
 			continue
 		}
 		tokenId := parts[1]

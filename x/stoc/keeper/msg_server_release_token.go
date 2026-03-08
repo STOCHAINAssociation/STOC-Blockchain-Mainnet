@@ -35,6 +35,13 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 			msg.Amount, token.RemainingSupply)
 	}
 
+	// Pre-validate: ensure post-release state will pass SetToken validation BEFORE bank mutations.
+	preValidateToken := token
+	preValidateToken.RemainingSupply = token.RemainingSupply.Sub(msg.Amount)
+	if err := types.ValidateState(preValidateToken); err != nil {
+		return nil, sdkerrors.Wrap(err, "release would produce invalid token state")
+	}
+
 	// Transfer tokens from module account to recipient
 	recipient, err := sdk.AccAddressFromBech32(msg.Recipient)
 	if err != nil {
