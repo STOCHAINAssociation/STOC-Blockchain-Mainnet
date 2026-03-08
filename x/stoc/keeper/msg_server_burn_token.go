@@ -75,7 +75,9 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		token.RemainingSupply = token.TotalSupply
 	}
 
-	k.SetToken(ctx, token)
+	if err := k.SetToken(ctx, token); err != nil {
+		return nil, err
+	}
 
 	// Emit event
 	ctx.EventManager().EmitEvent(

@@ -14,10 +14,10 @@ import (
 )
 
 // SetToken sets a token in the store after validating its structure.
-// Panics if the token is invalid — callers must ensure validity before persisting.
-func (k Keeper) SetToken(ctx sdk.Context, token types.Token) {
+// Returns error if the token fails state validation — prevents persisting corrupt data.
+func (k Keeper) SetToken(ctx sdk.Context, token types.Token) error {
 	if err := types.ValidateState(token); err != nil {
-		panic("SetToken: refusing to persist invalid token: " + err.Error())
+		return sdkerrors.Wrap(err, "refusing to persist invalid token")
 	}
 
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
@@ -32,6 +32,7 @@ func (k Keeper) SetToken(ctx sdk.Context, token types.Token) {
 	indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
 	indexKey := []byte(token.Symbol + ":" + token.Id)
 	indexStore.Set(indexKey, []byte{1})
+	return nil
 }
 
 // GetToken gets a token from the store
@@ -135,7 +136,9 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 
 	//update total supply
 	token.TotalSupply = token.TotalSupply.Add(amount)
-	k.SetToken(ctx, token)
+	if err := k.SetToken(ctx, token); err != nil {
+		return err
+	}
 
 	//Emit event
 	ctx.EventManager().EmitEvent(

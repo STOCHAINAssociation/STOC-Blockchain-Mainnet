@@ -148,7 +148,7 @@ func TestBurnManagedToken(t *testing.T) {
 		Creator:         creator,
 		Unlimited:       false,
 	}
-	k.SetToken(ctx, token)
+	require.NoError(t, k.SetToken(ctx, token))
 
 	// Setup initial balance
 	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(500)))

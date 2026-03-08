@@ -42,6 +42,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "failed to get token counter")
 	}
+	// Fail-fast: check counter overflow BEFORE any bank operations to prevent orphan coins
+	if counter == ^uint64(0) {
+		return nil, sdkerrors.Wrap(types.ErrInvalidTokenAmount, "token counter overflow — maximum number of tokens reached")
+	}
 	minimalDenom := fmt.Sprintf("%s_%d", msg.Symbol, counter)
 	tokenId := minimalDenom
 	token := types.Token{
@@ -152,13 +156,12 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	}
 
 	// Persist state AFTER all bank operations succeeded (CEI pattern)
-	if counter == ^uint64(0) {
-		return nil, sdkerrors.Wrap(types.ErrInvalidTokenAmount, "token counter overflow — maximum number of tokens reached")
-	}
 	if err := k.SetTokenCounter(ctx, counter+1); err != nil {
 		return nil, sdkerrors.Wrap(err, "failed to set token counter")
 	}
-	k.SetToken(ctx, token)
+	if err := k.SetToken(ctx, token); err != nil {
+		return nil, err
+	}
 
 	// register metadata for token so that the wallet can display it correctly
 

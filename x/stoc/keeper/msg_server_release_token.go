@@ -48,7 +48,9 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 
 	// Update remaining supply
 	token.RemainingSupply = token.RemainingSupply.Sub(msg.Amount)
-	k.SetToken(ctx, token)
+	if err := k.SetToken(ctx, token); err != nil {
+		return nil, err
+	}
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(

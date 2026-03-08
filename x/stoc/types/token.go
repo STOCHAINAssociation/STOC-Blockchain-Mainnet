@@ -75,6 +75,12 @@ func ValidateState(token Token) error {
 	if token.TotalSupply.GT(MaxTokenSupply) {
 		return fmt.Errorf("total supply exceeds maximum allowed (%s)", MaxTokenSupply.String())
 	}
+	if !token.RemainingSupply.IsNil() && token.RemainingSupply.IsNegative() {
+		return fmt.Errorf("remaining supply cannot be negative")
+	}
+	if !token.RemainingSupply.IsNil() && token.RemainingSupply.GT(token.TotalSupply) {
+		return fmt.Errorf("remaining supply (%s) exceeds total supply (%s)", token.RemainingSupply.String(), token.TotalSupply.String())
+	}
 	if token.MinimalDenom == "" {
 		return fmt.Errorf("minimal denom cannot be empty")
 	}

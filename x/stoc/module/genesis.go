@@ -20,7 +20,9 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	// Initialize tokens and restore token counter from existing token IDs
 	var maxCounter uint64
 	for _, token := range genState.Tokens {
-		k.SetToken(ctx, token)
+		if err := k.SetToken(ctx, token); err != nil {
+			panic(err)
+		}
 		// Parse counter from minimalDenom (format: "SYMBOL_N")
 		if idx := strings.LastIndex(token.MinimalDenom, "_"); idx >= 0 {
 			if n, err := strconv.ParseUint(token.MinimalDenom[idx+1:], 10, 64); err == nil {
