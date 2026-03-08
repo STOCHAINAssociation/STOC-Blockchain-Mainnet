@@ -64,14 +64,20 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	// Update token supply tracking
 	token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
 
-	// Cap RemainingSupply if TotalSupply dropped below it (burned tokens reduce total
-	// but module-held remaining tokens can't exceed total — maintain invariant)
+	// If TotalSupply dropped below RemainingSupply, burn excess from module account
+	// to maintain invariant: moduleBalance == token.RemainingSupply
 	if token.RemainingSupply.GT(token.TotalSupply) {
-		ctx.Logger().Error("RemainingSupply exceeds TotalSupply after burn — possible state corruption",
+		excess := token.RemainingSupply.Sub(token.TotalSupply)
+		ctx.Logger().Warn("Burning excess module tokens after user burn",
 			"denom", token.MinimalDenom,
-			"remaining", token.RemainingSupply.String(),
-			"total", token.TotalSupply.String(),
+			"excess", excess.String(),
+			"remaining_before", token.RemainingSupply.String(),
+			"total_after", token.TotalSupply.String(),
 		)
+		excessCoins := sdk.NewCoins(sdk.NewCoin(msg.Denom, excess))
+		if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, excessCoins); err != nil {
+			return nil, sdkerrors.Wrap(err, "failed to burn excess module tokens")
+		}
 		token.RemainingSupply = token.TotalSupply
 	}
 

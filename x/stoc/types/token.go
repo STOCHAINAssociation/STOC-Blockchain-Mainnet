@@ -141,6 +141,10 @@ func Validate(token Token) error {
 		return fmt.Errorf("total supply cannot be zero for non-unlimited tokens")
 	}
 
+	if token.MinimalDenom == "" {
+		return fmt.Errorf("minimal denom cannot be empty")
+	}
+
 	// Validate creator address
 	if token.Creator != "" {
 		if _, err := sdk.AccAddressFromBech32(token.Creator); err != nil {

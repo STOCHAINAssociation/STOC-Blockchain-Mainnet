@@ -22,7 +22,9 @@ func (gs GenesisState) Validate() error {
 	// this line is used by starport scaffolding # genesis/types/validate
 	seenDenoms := make(map[string]bool, len(gs.Tokens))
 	for _, token := range gs.Tokens {
-		if err := Validate(token); err != nil {
+		// Use ValidateState (not Validate) because exported genesis may contain
+		// post-mutation state where TotalSupply < InitialSupply after burns
+		if err := ValidateState(token); err != nil {
 			return err
 		}
 		if seenDenoms[token.MinimalDenom] {
