@@ -73,6 +73,13 @@ func (m *MockBankKeeper) GetSupply(ctx context.Context, denom string) sdk.Coin {
 	return sdk.NewCoin(denom, total)
 }
 func (m *MockBankKeeper) SetDenomMetaData(ctx context.Context, denomMetaData banktypes.Metadata) {}
+func (m *MockBankKeeper) IterateAccountBalances(ctx context.Context, addr sdk.AccAddress, cb func(coin sdk.Coin) bool) {
+	for _, coin := range m.Balances[addr.String()] {
+		if cb(coin) {
+			break
+		}
+	}
+}
 
 func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.Context, *MockBankKeeper) {
 	storeKey := storetypes.NewKVStoreKey(types.StoreKey)

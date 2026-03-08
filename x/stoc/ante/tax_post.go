@@ -3,6 +3,7 @@ package ante
 import (
 	"fmt"
 
+	"cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
@@ -121,9 +122,13 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			taxPercent = stoctypes.MaxTaxPercent
 		}
 
-		// calculate tax — skip if rounds to zero
+		// calculate tax — enforce minimum 1 unit to prevent tax evasion via transaction splitting
 		taxAmount := coin.Amount.ToLegacyDec().Mul(taxPercent).TruncateInt()
 		if taxAmount.IsZero() {
+			taxAmount = math.OneInt()
+		}
+		// Skip only if transfer amount itself is zero (no-op)
+		if coin.Amount.IsZero() {
 			continue
 		}
 

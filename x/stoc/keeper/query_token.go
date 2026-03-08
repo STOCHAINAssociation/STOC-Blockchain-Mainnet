@@ -116,33 +116,24 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 		return nil, status.Errorf(codes.InvalidArgument, "invalid address: %v", err)
 	}
 
-	// Get all balances for this address using bank keeper.
-	// NOTE: GetAllBalances loads all denoms into memory before capping.
-	// For addresses with thousands of denoms, this may allocate significant memory.
-	// TODO: Switch to paginated bank balance query when available in keeper interface.
-	balances := k.bankKeeper.GetAllBalances(ctx, addr)
-
-	// Cap results to prevent large response payloads
-	if len(balances) > maxBalances {
-		balances = balances[:maxBalances]
-	}
-
-	// Create response with metadata
+	// Iterate balances with early termination to avoid loading all denoms into memory.
+	// This prevents memory DoS via addresses with thousands of airdropped denoms.
 	var balancesWithMetadata []types.BalanceWithMetadata
-	for _, balance := range balances {
-		balanceWithMetadata := types.BalanceWithMetadata{
-			Denom:  balance.Denom,
-			Amount: balance.Amount.String(),
+	k.bankKeeper.IterateAccountBalances(ctx, addr, func(coin sdk.Coin) bool {
+		if len(balancesWithMetadata) >= maxBalances {
+			return true // stop iteration
 		}
-
-		// Try to get token metadata for this denom
-		token, found := k.GetToken(ctx, balance.Denom)
+		bwm := types.BalanceWithMetadata{
+			Denom:  coin.Denom,
+			Amount: coin.Amount.String(),
+		}
+		token, found := k.GetToken(ctx, coin.Denom)
 		if found {
-			balanceWithMetadata.Metadata = &token
+			bwm.Metadata = &token
 		}
-
-		balancesWithMetadata = append(balancesWithMetadata, balanceWithMetadata)
-	}
+		balancesWithMetadata = append(balancesWithMetadata, bwm)
+		return false
+	})
 
 	// Pagination response — BalancesWithMetadata does not support cursor-based pagination
 	// because it aggregates bank balances with stoc metadata. Total reflects returned count.
