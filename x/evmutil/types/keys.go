@@ -39,11 +39,13 @@ func GetCosmosDenom() string {
 //   - Testnet: sdk.DefaultBondDenom = "utstoc" → returns "atstoc"
 func GetEvmDenom() string {
 	cosmosDenom := sdk.DefaultBondDenom
-	if len(cosmosDenom) > 0 && cosmosDenom[0] == 'u' {
+	if len(cosmosDenom) > 1 && cosmosDenom[0] == 'u' {
 		// Replace 'u' prefix with 'a' prefix
 		// "ustoc" -> "astoc", "utstoc" -> "atstoc"
 		return "a" + cosmosDenom[1:]
 	}
-	// Fallback: if denom doesn't start with 'u', just add 'a' prefix
-	return "a" + cosmosDenom
+	// Fail loudly: the EVM denom derivation requires a 'u'-prefixed cosmos denom.
+	// A misconfigured DefaultBondDenom would silently produce wrong EVM denoms,
+	// leading to fund loss. Panic so operators notice immediately.
+	panic("evmutil: DefaultBondDenom must start with 'u' prefix (e.g. 'ustoc'), got: " + cosmosDenom)
 }

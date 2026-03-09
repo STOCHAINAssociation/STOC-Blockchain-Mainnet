@@ -59,6 +59,9 @@ func ValidateState(token Token) error {
 	if token.Name == "" {
 		return fmt.Errorf("token name cannot be empty")
 	}
+	if len(token.Name) > 64 {
+		return fmt.Errorf("token name too long (max 64 characters)")
+	}
 	if token.Symbol == "" {
 		return fmt.Errorf("token symbol cannot be empty")
 	}
@@ -70,6 +73,13 @@ func ValidateState(token Token) error {
 	}
 	if token.Logo == "" {
 		return fmt.Errorf("logo cannot be empty")
+	}
+	if len(token.Logo) > 256 {
+		return fmt.Errorf("logo too long (max 256 characters)")
+	}
+	// Validate logo URL scheme to prevent persisting malicious payloads (XSS/SSRF defense)
+	if !strings.HasPrefix(token.Logo, "https://") && !strings.HasPrefix(token.Logo, "ipfs://") {
+		return fmt.Errorf("logo must be a valid URL (https:// or ipfs://)")
 	}
 	if token.TotalSupply.IsNil() || token.TotalSupply.IsNegative() {
 		return fmt.Errorf("total supply cannot be nil or negative")
@@ -85,6 +95,12 @@ func ValidateState(token Token) error {
 	}
 	if token.MinimalDenom == "" {
 		return fmt.Errorf("minimal denom cannot be empty")
+	}
+	// Validate Creator address to prevent persisting corrupted state
+	if token.Creator != "" {
+		if _, err := sdk.AccAddressFromBech32(token.Creator); err != nil {
+			return fmt.Errorf("invalid creator address in state: %s", err)
+		}
 	}
 	return nil
 }

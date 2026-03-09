@@ -28,11 +28,15 @@ func TestGetEvmDenom_TestnetConversion(t *testing.T) {
 	require.Equal(t, "atstoc", types.GetEvmDenom())
 }
 
-func TestGetEvmDenom_FallbackNoUPrefix(t *testing.T) {
+func TestGetEvmDenom_FallbackNoUPrefix_Panics(t *testing.T) {
 	sdk.DefaultBondDenom = "stoc"
-	require.Equal(t, "astoc", types.GetEvmDenom())
-	// Restore
-	sdk.DefaultBondDenom = "ustoc"
+	defer func() {
+		// Restore before asserting
+		sdk.DefaultBondDenom = "ustoc"
+	}()
+	require.Panics(t, func() {
+		types.GetEvmDenom()
+	}, "GetEvmDenom should panic when DefaultBondDenom doesn't start with 'u'")
 }
 
 func TestConversionMultiplier(t *testing.T) {

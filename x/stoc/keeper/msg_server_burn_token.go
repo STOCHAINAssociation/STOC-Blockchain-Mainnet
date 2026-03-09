@@ -109,13 +109,15 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, err
 	}
 
-	// Emit event
+	// Emit event with post-burn state for supply tracking observability
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeBurnToken,
 			sdk.NewAttribute(types.AttributeKeyBurner, msg.Creator),
 			sdk.NewAttribute(types.AttributeKeyMinimalDenom, msg.Denom),
 			sdk.NewAttribute(types.AttributeKeyBurnAmount, amountToBurn.String()),
+			sdk.NewAttribute("total_supply_after", token.TotalSupply.String()),
+			sdk.NewAttribute(types.AttributeKeyRemainingSupply, token.RemainingSupply.String()),
 		),
 	)
 

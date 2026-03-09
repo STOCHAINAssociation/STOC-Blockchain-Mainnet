@@ -59,13 +59,23 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 		return nil, err
 	}
 
+	ctx.Logger().Info("Tokens released",
+		"symbol", token.Symbol,
+		"minimal_denom", token.MinimalDenom,
+		"amount", msg.Amount.String(),
+		"recipient", msg.Recipient,
+		"remaining_supply", token.RemainingSupply.String(),
+	)
+
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeReleaseTokens,
 			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
+			sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
 			sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.String()),
 			sdk.NewAttribute(types.AttributeKeyRecipient, msg.Recipient),
 			sdk.NewAttribute(types.AttributeKeyRemainingSupply, token.RemainingSupply.String()),
+			sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
 		),
 	)
 

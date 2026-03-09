@@ -40,6 +40,19 @@ func (d IBCCustomTokenRestriction) AnteHandle(ctx sdk.Context, tx sdk.Tx, simula
 
 		// Check if this denom is a custom stoc token
 		if d.k.HasToken(ctx, coin.Denom) {
+			ctx.Logger().Warn("Blocked IBC transfer of custom token",
+				"denom", coin.Denom,
+				"sender", transfer.Sender,
+				"source_port", transfer.SourcePort,
+				"source_channel", transfer.SourceChannel,
+			)
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					"ibc_custom_token_blocked",
+					sdk.NewAttribute("denom", coin.Denom),
+					sdk.NewAttribute("sender", transfer.Sender),
+				),
+			)
 			return ctx, fmt.Errorf(
 				"IBC transfer of custom token %q is not allowed: custom tokens created via x/stoc are Cosmos-only and cannot be transferred cross-chain",
 				coin.Denom,
