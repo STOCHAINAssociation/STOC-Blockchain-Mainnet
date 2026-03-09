@@ -30,7 +30,6 @@ import (
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 	solomachine "github.com/cosmos/ibc-go/v10/modules/light-clients/06-solomachine"
 	ibctm "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-	stocibc "stoc/x/stoc/ibc"
 	// this line is used by starport scaffolding # ibc/app/import
 )
 
@@ -111,9 +110,6 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 
 	// add evm capabilities
 	transferStack = erc20.NewIBCMiddleware(&app.Erc20Keeper, transferStack)
-
-	// add stoc token tax enforcement on incoming IBC transfers
-	transferStack = stocibc.NewTaxMiddleware(transferStack, app.StocKeeper)
 
 	// create static IBC router, add transfer route, then set it on the keeper
 	ibcRouter := porttypes.NewRouter().
