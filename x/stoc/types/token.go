@@ -102,6 +102,17 @@ func ValidateState(token Token) error {
 			return fmt.Errorf("invalid creator address in state: %s", err)
 		}
 	}
+	// Validate tax fields — prevents genesis import of tokens with out-of-range tax or invalid recipient
+	if !token.Tax.Percent.IsNil() {
+		if token.Tax.Percent.IsNegative() || token.Tax.Percent.GT(MaxTaxPercent) {
+			return fmt.Errorf("tax percentage must be between 0 and %s (50%%)", MaxTaxPercent.String())
+		}
+		if token.Tax.Percent.GT(math.LegacyZeroDec()) && token.Tax.RecipientAddress != "" {
+			if _, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress); err != nil {
+				return fmt.Errorf("invalid tax recipient address in state: %s", err)
+			}
+		}
+	}
 	return nil
 }
 

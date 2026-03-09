@@ -101,8 +101,9 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 				return nil, sdkerrors.Wrap(err, "failed to burn excess module tokens")
 			}
 		}
-		// Update RemainingSupply to match actual module balance after burn
-		token.RemainingSupply = moduleBalance.Amount.Sub(actualBurnable)
+		// Cap RemainingSupply at TotalSupply using tracked value only.
+		// DO NOT derive from moduleBalance — direct transfers to module account would inflate RemainingSupply.
+		token.RemainingSupply = token.TotalSupply
 	}
 
 	if err := k.SetToken(ctx, token); err != nil {
