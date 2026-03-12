@@ -21,11 +21,8 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, sdkerrors.Wrap(err, "invalid creator address")
 	}
 
-	// Only allow burning stoc-managed tokens (not native ustoc/astoc)
-	token, found := k.GetToken(ctx, msg.Denom)
-	if !found {
-		return nil, sdkerrors.Wrapf(types.ErrTokenNotFound, "can only burn stoc-managed tokens, denom %s not found", msg.Denom)
-	}
+	// Check if this is a stoc-managed token (optional — native denom burns are allowed)
+	token, isManaged := k.GetToken(ctx, msg.Denom)
 
 	// Determine amount to burn
 	amountToBurn := msg.Amount
@@ -45,20 +42,22 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "amount to burn must be positive")
 	}
 
-	// Validate supply tracking BEFORE any bank mutations (fail-fast on corrupted state)
-	if token.TotalSupply.LT(amountToBurn) {
-		return nil, sdkerrors.Wrapf(types.ErrInvalidAmount, "burn amount %s exceeds tracked total supply %s — state may be corrupted", amountToBurn.String(), token.TotalSupply.String())
-	}
+	// Supply validation only for stoc-managed tokens
+	if isManaged {
+		// Validate supply tracking BEFORE any bank mutations (fail-fast on corrupted state)
+		if token.TotalSupply.LT(amountToBurn) {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount, "burn amount %s exceeds tracked total supply %s — state may be corrupted", amountToBurn.String(), token.TotalSupply.String())
+		}
 
-	// Pre-validate: ensure post-burn state will pass SetToken validation BEFORE any bank mutations.
-	// This follows the same CEI pattern as MintToken — prevents wasted gas on invalid burns.
-	preValidateToken := token
-	preValidateToken.TotalSupply = token.TotalSupply.Sub(amountToBurn)
-	if preValidateToken.RemainingSupply.GT(preValidateToken.TotalSupply) {
-		preValidateToken.RemainingSupply = preValidateToken.TotalSupply
-	}
-	if err := types.ValidateState(preValidateToken); err != nil {
-		return nil, sdkerrors.Wrap(err, "burn would produce invalid token state")
+		// Pre-validate: ensure post-burn state will pass SetToken validation BEFORE any bank mutations.
+		preValidateToken := token
+		preValidateToken.TotalSupply = token.TotalSupply.Sub(amountToBurn)
+		if preValidateToken.RemainingSupply.GT(preValidateToken.TotalSupply) {
+			preValidateToken.RemainingSupply = preValidateToken.TotalSupply
+		}
+		if err := types.ValidateState(preValidateToken); err != nil {
+			return nil, sdkerrors.Wrap(err, "burn would produce invalid token state")
+		}
 	}
 
 	// Transfer coins from user to module
@@ -74,51 +73,47 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, err
 	}
 
-	// Update token supply tracking
-	token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
+	// Update token supply tracking only for stoc-managed tokens
+	if isManaged {
+		token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
 
-	// If TotalSupply dropped below RemainingSupply, burn excess from module account
-	// to maintain invariant: moduleBalance == token.RemainingSupply.
-	// Use actual module balance to determine burnable excess (defensive against stale RemainingSupply).
-	if token.RemainingSupply.GT(token.TotalSupply) {
-		excess := token.RemainingSupply.Sub(token.TotalSupply)
+		// If TotalSupply dropped below RemainingSupply, burn excess from module account
+		if token.RemainingSupply.GT(token.TotalSupply) {
+			excess := token.RemainingSupply.Sub(token.TotalSupply)
 
-		// Check actual module balance to avoid BurnCoins failure on stale state
-		moduleAddr := authtypes.NewModuleAddress(types.ModuleName)
-		moduleBalance := k.bankKeeper.GetBalance(ctx, moduleAddr, msg.Denom)
-		actualBurnable := math.MinInt(excess, moduleBalance.Amount)
+			// Check actual module balance to avoid BurnCoins failure on stale state
+			moduleAddr := authtypes.NewModuleAddress(types.ModuleName)
+			moduleBalance := k.bankKeeper.GetBalance(ctx, moduleAddr, msg.Denom)
+			actualBurnable := math.MinInt(excess, moduleBalance.Amount)
 
-		if actualBurnable.IsPositive() {
-			ctx.Logger().Warn("Burning excess module tokens after user burn",
-				"denom", token.MinimalDenom,
-				"excess", excess.String(),
-				"actual_burnable", actualBurnable.String(),
-				"remaining_before", token.RemainingSupply.String(),
-				"total_after", token.TotalSupply.String(),
-			)
-			excessCoins := sdk.NewCoins(sdk.NewCoin(msg.Denom, actualBurnable))
-			if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, excessCoins); err != nil {
-				return nil, sdkerrors.Wrap(err, "failed to burn excess module tokens")
+			if actualBurnable.IsPositive() {
+				ctx.Logger().Warn("Burning excess module tokens after user burn",
+					"denom", token.MinimalDenom,
+					"excess", excess.String(),
+					"actual_burnable", actualBurnable.String(),
+					"remaining_before", token.RemainingSupply.String(),
+					"total_after", token.TotalSupply.String(),
+				)
+				excessCoins := sdk.NewCoins(sdk.NewCoin(msg.Denom, actualBurnable))
+				if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, excessCoins); err != nil {
+					return nil, sdkerrors.Wrap(err, "failed to burn excess module tokens")
+				}
 			}
+			token.RemainingSupply = token.TotalSupply
 		}
-		// Cap RemainingSupply at TotalSupply using tracked value only.
-		// DO NOT derive from moduleBalance — direct transfers to module account would inflate RemainingSupply.
-		token.RemainingSupply = token.TotalSupply
+
+		if err := k.SetToken(ctx, token); err != nil {
+			return nil, err
+		}
 	}
 
-	if err := k.SetToken(ctx, token); err != nil {
-		return nil, err
-	}
-
-	// Emit event with post-burn state for supply tracking observability
+	// Emit event
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeBurnToken,
 			sdk.NewAttribute(types.AttributeKeyBurner, msg.Creator),
 			sdk.NewAttribute(types.AttributeKeyMinimalDenom, msg.Denom),
 			sdk.NewAttribute(types.AttributeKeyBurnAmount, amountToBurn.String()),
-			sdk.NewAttribute("total_supply_after", token.TotalSupply.String()),
-			sdk.NewAttribute(types.AttributeKeyRemainingSupply, token.RemainingSupply.String()),
 		),
 	)
 
