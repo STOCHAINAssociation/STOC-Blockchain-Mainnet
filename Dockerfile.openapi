@@ -1,0 +1,31 @@
+FROM --platform=linux/amd64 ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    curl git make gcc wget unzip ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go 1.24.3 (match go.mod toolchain)
+ENV GO_VERSION=1.24.3
+RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz \
+    && tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz \
+    && rm go${GO_VERSION}.linux-amd64.tar.gz
+
+ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
+ENV GOPATH="/root/go"
+
+# Install Ignite CLI v29.6.2
+RUN curl https://get.ignite.com/cli@v29.6.2! | bash
+
+# Install protoc-gen-openapiv2 (required for openapi generation)
+RUN go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@latest
+
+# Set working directory and copy project first (ignite app install needs go.mod)
+WORKDIR /app
+COPY . .
+
+# Download Go dependencies
+RUN go mod download
+
+CMD ["ignite", "generate", "openapi", "--yes"]
