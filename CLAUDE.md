@@ -279,6 +279,25 @@ Important replacements in `go.mod`:
 - `github.com/syndtr/goleveldb` replaced with fixed version
 - These are required for proper EVM integration
 
+## Git Conventions
+
+### No Husky
+
+This repo does NOT have husky hooks. Standard git commit/push works.
+
+### Branch Naming
+
+Use descriptive branch names: `feat/evm`, `fix/burn-token`, etc.
+
+### Commit Message
+
+Follow conventional commits:
+```
+feat(module): description
+fix(keeper): description
+chore(proto): description
+```
+
 ## Important Work Guidelines
 
 **Critical Rules:**
