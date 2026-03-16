@@ -1,35 +1,46 @@
-# STOC Blockchain Node Setup Guide
+# STOC Chain - Node Setup Guide
 
-This guide provides step-by-step instructions for setting up and running a STOC blockchain node.
+Complete guide for running a STOC Chain node (full node, validator, or indexer).
 
-## Prerequisites
+## System Requirements
 
-- Go 1.24.3 or higher (toolchain go1.24.3)
-- Ignite CLI v29 (including Cosmos SDK)
-- Buf CLI (for protobuf generation)
-- Git
-- Minimum 16GB RAM
-- 500GB+ available disk space
-- Stable internet connection
+### Minimum (Full Node)
 
-## Important Links
+- CPU: 4 cores
+- RAM: 16GB
+- Storage: 500GB SSD
+- Network: 100 Mbps
+- OS: Ubuntu 20.04+ / CentOS 8+ / RHEL 8+
 
-- **Snapshot Download**: https://api-sync-stoc-mainnet.stochainscan.io/snapshots/download-latest
-- **Genesis JSON**: https://rpc-stoc-mainnet.stochainscan.io/genesis
-- **Addrbook API (for peers)**: https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook
-- **Source Code**: https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet
+### Recommended (Validator / Indexer)
 
-## Setup Instructions
+- CPU: 8+ cores
+- RAM: 32GB+
+- Storage: 1TB+ NVMe SSD
+- Network: 1 Gbps
+- OS: Ubuntu 22.04 LTS
 
-### 1. Install Required Tools
+## Network Information
 
-First, install the necessary tools:
+| Parameter | Value |
+|-----------|-------|
+| Chain ID | `stoc` |
+| Native Token | `ustoc` (6 decimals) |
+| EVM Token | `astoc` (18 decimals) |
+| Min Gas Price | `0.001ustoc` |
+| RPC | https://rpc-stoc-mainnet.stochainscan.io/ |
+| REST API | https://api-stoc-mainnet.stochainscan.io |
+| Genesis | https://rpc-stoc-mainnet.stochainscan.io/genesis |
+| Snapshot | https://api-sync-stoc-mainnet.stochainscan.io/snapshots/download-latest |
+| Addrbook | https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook |
+| Explorer | https://stochainscan.io |
+
+## 1. Install Prerequisites
 
 ```bash
-# Install go version 1.24.3
+# Install Go 1.24.3
 sudo apt update
 sudo wget https://go.dev/dl/go1.24.3.linux-amd64.tar.gz
-#unpack it
 sudo tar -C /usr/local -xzf go1.24.3.linux-amd64.tar.gz
 
 echo 'export GOROOT=/usr/local/go' >> ~/.bashrc
@@ -37,87 +48,77 @@ echo 'export GOPATH=$HOME/go' >> ~/.bashrc
 echo 'export PATH=$PATH:$GOROOT/bin:$GOPATH/bin:/usr/local/bin' >> ~/.bashrc
 source ~/.bashrc
 
-# Install Buf CLI for protobuf generation
-go install github.com/bufbuild/buf/cmd/buf@latest
+# Verify
+go version
+# go version go1.24.3 linux/amd64
 
-# Verify buf installation
-buf --version
+# Install Buf CLI (for protobuf generation, optional)
+go install github.com/bufbuild/buf/cmd/buf@latest
 ```
 
-### 2. Build Chain
+## 2. Build the Binary
 
-Clone the repository and build the binary (by using Ignite CLI):
+### Option A: Build from Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
 cd STOC-Blockchain-Mainnet
 
-# Build the binary
+# Build with Ignite CLI
 ignite chain build
-```
 
-Check if stocd is installed:
-```bash
+# Or build with Make
+make install
+
+# Verify
 stocd version
 ```
 
-### Alternative: Download Pre-built Binary
+### Option B: Download Pre-built Binary
 
-If you encounter issues building the chain, you can download the pre-built binary: [Here](https://drive.google.com/file/d/1FWjVfsqQ7Y6qR1U2aAIzk0pm08spMiq-/view?usp=sharing)
+Download from [Releases](https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet/releases) or [Google Drive](https://drive.google.com/file/d/1FWjVfsqQ7Y6qR1U2aAIzk0pm08spMiq-/view?usp=sharing).
 
-
-### 3. Initialize Node
-
-Initialize your node with a custom moniker name:
+## 3. Initialize Node
 
 ```bash
+# Initialize with your moniker name
 stocd init <your_moniker_name> --chain-id stoc
-```
 
-**Important Configuration:**
-- Chain ID: `stoc`
-- Minimum gas price: `0.001ustoc`
-
-Update the minimum gas price in your configuration:
-```bash
-# Edit app.toml to set minimum gas prices
+# Set minimum gas price
 sed -i 's/minimum-gas-prices = ""/minimum-gas-prices = "0.001ustoc"/' ~/.stoc/config/app.toml
 ```
 
-### 4. Configure Peers
-
-Get the current peer list from the addrbook API and configure your node (`vi ~/.stoc/config/config.toml`):
+## 4. Download Genesis
 
 ```bash
-# Fetch peers from addrbook API
-curl -s https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook | jq -r '.data.addrs[] | "\(.addr.id)@\(.addr.ip):\(.addr.port)"' | head -10
-
-# Current active peers for STOC mainnet:
-persistent_peers = "4ed01c03afcca1399467c644efbb7f076cb406d0@202.182.110.150:26656,41f8094cd1da001a7a4416246c3ea5ab62196bd9@45.32.180.48:26656,5f0cd810689cc8907aa3520a75705b20f9f179bb@64.176.4.207:26656"
-```
-
-### 5. Update Genesis
-
-Download and update the genesis file:
-
-```bash
-# Download genesis file
 curl -s https://rpc-stoc-mainnet.stochainscan.io/genesis | jq '.result.genesis' > ~/.stoc/config/genesis.json
 
-# Verify genesis file
+# Verify
 stocd genesis validate ~/.stoc/config/genesis.json
 ```
 
-### 6. Download Chain Data (Snapshot)
-
-To speed up synchronization, download the latest snapshot:
+## 5. Configure Peers
 
 ```bash
-# Stop the node if running
+# Fetch peers from addrbook
+curl -s https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook | jq -r '.data.addrs[] | "\(.addr.id)@\(.addr.ip):\(.addr.port)"' | head -10
+```
+
+Edit `~/.stoc/config/config.toml`:
+
+```toml
+persistent_peers = "4ed01c03afcca1399467c644efbb7f076cb406d0@202.182.110.150:26656,41f8094cd1da001a7a4416246c3ea5ab62196bd9@45.32.180.48:26656,5f0cd810689cc8907aa3520a75705b20f9f179bb@64.176.4.207:26656"
+```
+
+## 6. Sync with Snapshot (Recommended)
+
+Using a snapshot speeds up sync from days to minutes.
+
+```bash
+# Stop node if running
 sudo systemctl stop stocd
 
-# Remove old data
+# Remove old data (keep config)
 rm -rf ~/.stoc/data
 
 # Download and extract snapshot
@@ -126,47 +127,105 @@ wget -O snapshot.tar.gz https://api-sync-stoc-mainnet.stochainscan.io/snapshots/
 tar -xzf snapshot.tar.gz
 rm snapshot.tar.gz
 
-# Set proper permissions
+# Fix permissions
 chown -R $(whoami):$(whoami) ~/.stoc/data
 ```
 
-### 7. Start Node and Begin Sync
+## 7. Configure EVM (JSON-RPC)
 
-Start the STOC daemon to begin synchronization:
+Edit `~/.stoc/config/app.toml` to enable EVM JSON-RPC:
+
+```toml
+[evm]
+tracer = ""
+
+[json-rpc]
+enable = true
+address = "0.0.0.0:8545"
+ws-address = "0.0.0.0:8546"
+allow-unprotected-txs = false
+enable-unsafe = false
+api = ["eth", "net", "web3", "txpool"]
+```
+
+**Note**: If you're running a public-facing node, restrict `address` to `127.0.0.1:8545` and use a reverse proxy.
+
+## 8. Start the Node
+
+### Direct Start
 
 ```bash
-# Start node directly
 stocd start
 ```
 
-## Monitoring and Maintenance
+### Systemd Service (Recommended for Production)
 
-### Check Sync Status
+Create `/etc/systemd/system/stocd.service`:
+
+```ini
+[Unit]
+Description=STOC Chain Node
+After=network-online.target
+
+[Service]
+User=stoc
+ExecStart=/usr/local/bin/stocd start
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ```bash
-# Check if node is catching up
+sudo systemctl daemon-reload
+sudo systemctl enable stocd
+sudo systemctl start stocd
+
+# Check status
+sudo systemctl status stocd
+```
+
+## 9. Verify Sync
+
+```bash
+# Check if still catching up
 stocd status | jq '.SyncInfo.catching_up'
+# false = fully synced
 
 # Check current block height
 stocd status | jq '.SyncInfo.latest_block_height'
 
-# Check peer connections
-stocd status | jq '.NodeInfo.network'
+# Test EVM JSON-RPC
+curl -s -X POST -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+  http://localhost:8545
 ```
 
-### Useful Commands
+---
+
+## Become a Validator
+
+After your node is fully synced:
+
+### 1. Create or Import a Key
 
 ```bash
-# Check node status
-stocd status
+# Create new key
+stocd keys add <key_name>
 
-# Check account balance
-stocd query bank balances <address>
+# Or import existing
+stocd keys add <key_name> --recover
+```
 
-# Check validator info
-stocd query staking validators
+### 2. Fund Your Account
 
-# Create validator (after sync completion)
+Transfer at least 1,000,000 ustoc (1 STOC) to your validator address for self-delegation plus gas fees.
+
+### 3. Create Validator
+
+```bash
 stocd tx staking create-validator \
   --amount=1000000ustoc \
   --pubkey=$(stocd tendermint show-validator) \
@@ -181,42 +240,140 @@ stocd tx staking create-validator \
   --from=<key_name>
 ```
 
-## Troubleshooting
-
-### Common Issues
-
-1. **Peer Connection Issues**: Update peers list from the addrbook API
-2. **Genesis Mismatch**: Re-download genesis file
-3. **Disk Space**: Ensure sufficient disk space for blockchain data
-4. **Memory Issues**: Increase system memory or add swap space
-
-### Log Analysis
+### 4. Verify Validator
 
 ```bash
-# View recent logs
-sudo journalctl -u stocd -n 100
+# Check your validator
+stocd query staking validator $(stocd keys show <key_name> --bech val -a)
 
-# Follow logs in real-time
-sudo journalctl -u stocd -f
-
-# Check for errors
-sudo journalctl -u stocd | grep -i error
+# Check all validators
+stocd query staking validators
 ```
-
-## Security Considerations
-
-- Keep your node updated with the latest version
-- Secure your private keys and never share them
-- Use firewall to restrict access to necessary ports only
-- Regular backup of your validator keys and important data
-- Monitor your node's performance and uptime
-
-## Support
-
-For additional support and community discussions:
-- GitHub Issues: https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet/issues
-- Official Documentation: Check the repository's docs folder
 
 ---
 
-**Note**: This guide assumes a Linux environment. Adjust commands accordingly for other operating systems.
+## Run as Indexer Node
+
+An indexer node stores all transaction data and serves API queries. Configuration differs from a validator:
+
+### Indexer-Specific Configuration
+
+Edit `~/.stoc/config/config.toml`:
+
+```toml
+# Index all events for query
+indexer = "kv"
+```
+
+Edit `~/.stoc/config/app.toml`:
+
+```toml
+# Enable API
+[api]
+enable = true
+swagger = true
+address = "tcp://0.0.0.0:1317"
+
+[grpc]
+enable = true
+address = "0.0.0.0:9090"
+
+# Enable EVM JSON-RPC
+[json-rpc]
+enable = true
+address = "0.0.0.0:8545"
+ws-address = "0.0.0.0:8546"
+api = ["eth", "net", "web3", "txpool"]
+
+# Keep all state (no pruning)
+pruning = "nothing"
+```
+
+### Ports Reference
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 26656 | TCP | P2P (required) |
+| 26657 | TCP | Tendermint RPC |
+| 1317 | TCP | REST API |
+| 9090 | TCP | gRPC |
+| 8545 | TCP | EVM JSON-RPC |
+| 8546 | TCP | EVM WebSocket |
+
+### Firewall Setup
+
+```bash
+# P2P (required for all nodes)
+sudo ufw allow 26656/tcp
+
+# RPC/API (for indexer/public nodes)
+sudo ufw allow 26657/tcp
+sudo ufw allow 1317/tcp
+sudo ufw allow 9090/tcp
+sudo ufw allow 8545/tcp
+sudo ufw allow 8546/tcp
+
+sudo ufw enable
+```
+
+---
+
+## Monitoring
+
+```bash
+# Node status
+stocd status | jq
+
+# Sync progress
+stocd status | jq '.SyncInfo'
+
+# Peer count
+stocd status | jq '.NodeInfo.other.tx_index'
+
+# Account balance
+stocd query bank balances <address>
+
+# View logs (systemd)
+sudo journalctl -u stocd -f
+sudo journalctl -u stocd -n 100 --no-pager
+sudo journalctl -u stocd | grep -i error
+```
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Peer connection failed | Update peers from addrbook API |
+| Genesis mismatch | Re-download genesis file |
+| Disk full | Expand storage or enable pruning |
+| Out of memory | Increase RAM or add swap |
+| JSON-RPC not responding | Check `app.toml` `[json-rpc]` section, verify port not blocked |
+| Slow sync | Use snapshot instead of syncing from genesis |
+
+## Security Best Practices
+
+- Keep node binary updated to latest version
+- Never share validator private keys (`priv_validator_key.json`)
+- Use firewall to restrict access to necessary ports only
+- Run node under a dedicated system user (not root)
+- Regular backup of `~/.stoc/config/` and validator keys
+- Monitor node uptime — missed blocks result in slashing
+
+## Upgrade Process
+
+When a chain upgrade is announced via governance proposal:
+
+1. Check the upgrade name and target height
+2. Build or download the new binary
+3. Replace the old binary before the upgrade height
+4. The chain halts at the upgrade height, runs upgrade handler, then resumes
+
+```bash
+# Check active upgrade plan
+stocd query upgrade plan
+
+# Check if upgrade was applied
+stocd query upgrade applied <upgrade-name>
+```
+
+For automated upgrades, consider using [Cosmovisor](https://docs.cosmos.network/main/build/tooling/cosmovisor).

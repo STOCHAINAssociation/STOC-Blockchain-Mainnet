@@ -1,370 +1,258 @@
-# STOC Blockchain Development Guide
+# STOC Chain - Development Guide
 
-This document provides comprehensive guidance for developers working on the STOC blockchain project.
+Development documentation for building on and contributing to STOC Chain.
 
-## Development Environment Setup
+## Prerequisites
 
-### Prerequisites
-
-- Go 1.24.3
-- Node.js 18+ (for frontend development)
-- Docker & Docker Compose
-- Git
+- Go 1.24.3+
 - Ignite CLI
-- Protocol Buffers compiler (protoc)
-- Minimum 16GB RAM
-- 500GB+ available disk space
-- Stable internet connection
+- Buf CLI (for protobuf generation)
+- Git
 
-### Installation
+## Development Setup
 
 ```bash
-# Install Ignite CLI
-curl https://get.ignite.com/cli! | bash
+# Clone
+git clone https://github.com/MinhAnh-Corp/stochain.git
+cd stochain
 
-# Install protoc
-# On macOS
-brew install protobuf
+# Start with hot reload
+ignite chain serve
 
-# On Ubuntu/Debian
-sudo apt install protobuf-compiler
-
-# Install Go dependencies
-go mod download
+# This builds, initializes with test accounts, and starts the chain locally
 ```
+
+### Test Accounts (from config.yml)
+
+| Account | Balance | Purpose |
+|---------|---------|---------|
+| admin | 10^16 ustoc | Admin operations |
+| validator1 | 10^10 ustoc | Validator + faucet |
+| validator2 | 10^10 ustoc | Second validator |
 
 ## Project Structure
 
 ```
-STOC-Blockchain-Mainnet/
-├── app/                    # Application configuration
-├── cmd/                    # Command line interfaces
-├── x/                      # Custom modules
-│   ├── stoc/              # Main STOC module
-│   └── ...                # Other custom modules
-├── proto/                  # Protocol buffer definitions
-├── docs/                   # Documentation
-├── testutil/              # Test utilities
-├── api/                   # Generated API files
-└── tools/                 # Development tools
+stochain/
+├── app/                        # Core application
+│   ├── app.go                  # Main app (dependency injection)
+│   ├── app_config.go           # Module configuration
+│   ├── evm.go                  # EVM module, precompiles, gas config
+│   ├── ibc.go                  # IBC module setup
+│   ├── upgrades.go             # Chain upgrade handlers
+│   └── ante/                   # Transaction ante/post handlers
+│       ├── ante.go             # Cosmos/EVM router
+│       ├── cosmos_handler.go   # Cosmos ante chain
+│       └── evm_handler.go      # EVM ante chain
+├── cmd/stocd/                  # CLI binary
+│   └── cmd/
+│       ├── root.go             # Root command
+│       ├── commands.go         # Additional commands
+│       ├── testnet.go          # Single-node testnet
+│       └── testnet_multi_node.go
+├── x/stoc/                     # Custom token module
+│   ├── keeper/                 # State management
+│   ├── types/                  # Message types, errors
+│   ├── ante/                   # Tax post-decorator, IBC restriction
+│   ├── module/                 # Module interface
+│   └── simulation/             # Simulation helpers
+├── x/evmutil/                  # EVM denomination conversion
+│   ├── keeper/bank_keeper.go   # ustoc <-> astoc conversion
+│   └── types/
+├── proto/stoc/                 # Protobuf definitions
+├── api/                        # Generated API (do NOT edit)
+├── testutil/                   # Test utilities
+└── documents/                  # Documentation
 ```
 
-## Development Workflow
-
-### 1. Local Development Setup
+## Build Commands
 
 ```bash
-# Clone the repository
-git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
-cd STOC-Blockchain-Mainnet
-
-# Start development environment
-ignite chain serve
-
-# This will:
-# - Build the chain
-# - Initialize with test data
-# - Start the chain locally
-# - Enable hot reload for development
+make install        # Build and install stocd binary
+make test           # Full test suite (vet + vuln + unit)
+make test-unit      # Unit tests only
+make test-race      # Tests with race detection
+make test-cover     # Generate coverage report
+make lint           # Run golangci-lint (15min timeout)
+make lint-fix       # Auto-fix lint issues
+make proto-gen      # Regenerate protobuf code
 ```
 
-### 2. Creating Custom Modules
+### Run a Single Test
 
 ```bash
-# Generate a new module
-ignite scaffold module <module-name>
-
-# Generate message types
-ignite scaffold message <message-name> <field1> <field2> --module <module-name>
-
-# Generate queries
-ignite scaffold query <query-name> <field1> <field2> --module <module-name>
-
-# Generate transactions
-ignite scaffold transaction <tx-name> <field1> <field2> --module <module-name>
-```
-
-### 3. Protocol Buffer Development
-
-```bash
-# Generate protobuf files
-make proto-gen
-
-# Format protobuf files
-make proto-format
-
-# Lint protobuf files
-make proto-lint
-```
-
-## Testing
-
-### Unit Tests
-
-```bash
-# Run all tests
-go test ./...
-
-# Run tests with coverage
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
-
-# Run specific module tests
-go test ./x/stoc/...
-```
-
-### Integration Tests
-
-```bash
-# Run integration tests
-make test-integration
-
-# Run end-to-end tests
-make test-e2e
-```
-
-### Simulation Tests
-
-```bash
-# Run simulation tests
-make test-sim
-
-# Run simulation with specific parameters
-go test -mod=readonly ./app -run TestFullAppSimulation -Enabled=true -NumBlocks=100 -BlockSize=200 -Commit=true -Seed=99 -Period=5 -v -timeout 24h
-```
-
-## Code Standards
-
-### Go Code Style
-
-- Follow standard Go conventions
-- Use `gofmt` and `goimports`
-- Write comprehensive tests
-- Document public functions and types
-
-```bash
-# Format code
-make format
-
-# Lint code
-make lint
-
-# Security scan
-make security
-```
-
-### Commit Guidelines
-
-```
-type(scope): description
-
-Types:
-- feat: New feature
-- fix: Bug fix
-- docs: Documentation changes
-- style: Code style changes
-- refactor: Code refactoring
-- test: Test changes
-- chore: Build/tooling changes
-
-Example:
-feat(stoc): add new token transfer functionality
+go test -mod=readonly -v -timeout 30m ./path/to/package -run TestFunctionName
 ```
 
 ## Module Development
 
-### Creating a Custom Module
-
-1. **Define the module structure**:
-```go
-// x/mymodule/types/genesis.go
-type GenesisState struct {
-    Params Params `protobuf:"bytes,1,opt,name=params,proto3" json:"params"`
-}
-```
-
-2. **Implement keeper functions**:
-```go
-// x/mymodule/keeper/keeper.go
-func (k Keeper) SetParams(ctx sdk.Context, params types.Params) {
-    store := ctx.KVStore(k.storeKey)
-    bz := k.cdc.MustMarshal(&params)
-    store.Set(types.ParamsKey, bz)
-}
-```
-
-3. **Add message handlers**:
-```go
-// x/mymodule/keeper/msg_server.go
-func (ms msgServer) UpdateParams(goCtx context.Context, req *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
-    ctx := sdk.UnwrapSDKContext(goCtx)
-    // Implementation
-    return &types.MsgUpdateParamsResponse{}, nil
-}
-```
-
-## API Development
-
-### REST API
+### Scaffold with Ignite CLI
 
 ```bash
-# Generate OpenAPI documentation
-make proto-swagger-gen
+# New module
+ignite scaffold module <name>
 
-# Start REST server
-stocd start --api.enable=true --api.swagger=true
+# New message
+ignite scaffold message <name> <field1> <field2> --module <module>
+
+# New query
+ignite scaffold query <name> <field1> --module <module>
 ```
 
-### gRPC API
+### Protobuf Workflow
+
+1. Define messages in `proto/stoc/<module>/`
+2. Run `make proto-gen` or `ignite generate proto-go --yes`
+3. Generated code appears in `api/` and `x/<module>/types/`
+4. Run `make test` before committing
+
+### Keeper Pattern
 
 ```go
-// Query client example
-conn, err := grpc.Dial("localhost:9090", grpc.WithInsecure())
-defer conn.Close()
+// x/<module>/keeper/keeper.go
+type Keeper struct {
+    cdc          codec.BinaryCodec
+    storeService store.KVStoreService
+    // ...
+}
 
-client := types.NewQueryClient(conn)
-res, err := client.Params(context.Background(), &types.QueryParamsRequest{})
+// x/<module>/keeper/msg_server_*.go
+func (k msgServer) HandleMessage(ctx context.Context, msg *types.MsgX) (*types.MsgXResponse, error) {
+    // ValidateBasic already called by ante handler
+    // Business logic here
+    return &types.MsgXResponse{}, nil
+}
 ```
 
-## Frontend Development
+## EVM Development
 
-### React/TypeScript Integration
+### Architecture
+
+- **Dual Denomination**: `ustoc` (6 dec, Cosmos) ↔ `astoc` (18 dec, EVM)
+- **Conversion**: 1 ustoc = 10^12 astoc, handled by `EvmBankKeeper`
+- **Custom Tokens**: Cosmos-only, NOT accessible from EVM side
+- **Gas Multipliers**: CREATE/CREATE2/CALL at 10x, SSTORE at 2100
+
+### Test EVM Locally
 
 ```bash
-# Install dependencies
-npm install @cosmjs/stargate @cosmjs/proto-signing
+# Start chain
+ignite chain serve
 
-# Generate TypeScript types
-ignite generate ts-client
+# Test JSON-RPC
+curl -s -X POST -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+  http://localhost:8545
+
+# Get block number
+curl -s -X POST -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+  http://localhost:8545
 ```
+
+### Deploy Smart Contracts
+
+Use standard Ethereum tools (Hardhat, Foundry, Remix) pointing to `http://localhost:8545`.
+
+```bash
+# Foundry example
+forge create --rpc-url http://localhost:8545 \
+  --private-key <PRIVATE_KEY> \
+  src/MyContract.sol:MyContract
+```
+
+### Custom Precompiles
+
+Registered in `app/evm.go:postRegisterEVMModules()`:
+
+| Precompile | Purpose |
+|------------|---------|
+| Bech32 | Convert between 0x and stoc1... addresses |
+| P256 | secp256r1 signature verification (EIP-7212) |
+
+## Custom Token System (`x/stoc`)
+
+### Token Operations
+
+| Message | Description |
+|---------|-------------|
+| `MsgCreateToken` | Create new token with metadata, supply, distributions |
+| `MsgMintTokens` | Mint additional tokens (if unlimited flag set) |
+| `MsgReleaseTokens` | Release minted tokens to circulation |
+| `MsgBurnToken` | Burn tokens from circulation |
+
+### Tax System
+
+- Applied as `PostDecorator` after transaction success
+- Tax deducted from recipient, not sender
+- Only applies to `MsgSend` transactions
+- Configurable percentage and recipient per token
+- Minimum tax: 1 unit (if percentage rounds to zero)
+
+### IBC Restrictions
+
+- Custom tokens created via `x/stoc` are blocked from IBC transfers
+- Only native `ustoc` can be transferred via IBC
+- Enforced by `IBCCustomTokenRestriction` ante decorator
+
+## Frontend Integration
+
+### CosmJS
 
 ```typescript
-// Example client usage
-import { StocClient } from './client'
+import { SigningStargateClient } from "@cosmjs/stargate";
 
-const client = new StocClient({
-  apiURL: "http://localhost:1317",
-  rpcURL: "http://localhost:26657",
-})
+const client = await SigningStargateClient.connectWithSigner(
+  "http://localhost:26657",
+  signer
+);
 
 // Query balance
-const balance = await client.query.bank.balance(address, "ustoc")
+const balance = await client.getBalance(address, "ustoc");
+
+// Send tokens
+await client.sendTokens(sender, recipient, [{ denom: "ustoc", amount: "1000000" }], fee);
 ```
+
+### EVM (ethers.js / Web3.js)
+
+```typescript
+import { ethers } from "ethers";
+
+const provider = new ethers.JsonRpcProvider("http://localhost:8545");
+const balance = await provider.getBalance(address);
+```
+
+## API Endpoints
+
+| Endpoint | Port | Protocol |
+|----------|------|----------|
+| Tendermint RPC | 26657 | HTTP/WS |
+| REST API | 1317 | HTTP |
+| gRPC | 9090 | gRPC |
+| EVM JSON-RPC | 8545 | HTTP |
+| EVM WebSocket | 8546 | WS |
+| OpenAPI Docs | 1317/swagger | HTTP |
+
+## Code Quality
+
+- golangci-lint v1.61.0 with 15-minute timeout
+- govulncheck for security scanning
+- Always run `make test` before commits
+- Follow conventional commits: `feat(module):`, `fix(keeper):`, `chore(proto):`
 
 ## Debugging
 
-### Local Debugging
-
 ```bash
-# Enable debug mode
+# Debug mode
 stocd start --log_level debug
 
-# Use delve debugger
+# Delve debugger
 dlv debug ./cmd/stocd -- start
-```
-
-### Network Debugging
-
-```bash
-# Check node status
-stocd status
-
-# Query specific data
-stocd query bank balances <address>
 
 # Check transaction
 stocd query tx <hash>
+
+# Check account
+stocd query bank balances <address>
 ```
-
-## Performance Optimization
-
-### Profiling
-
-```bash
-# CPU profiling
-go tool pprof http://localhost:6060/debug/pprof/profile
-
-# Memory profiling
-go tool pprof http://localhost:6060/debug/pprof/heap
-
-# Enable profiling in config
-echo 'profiling = true' >> ~/.stoc/config/config.toml
-```
-
-### Database Optimization
-
-```bash
-# Compact database
-stocd compact
-
-# Prune old data
-stocd prune everything
-```
-
-## Security Best Practices
-
-1. **Input Validation**: Always validate user inputs
-2. **Access Control**: Implement proper permission checks
-3. **Rate Limiting**: Prevent spam and DoS attacks
-4. **Audit Logging**: Log important operations
-5. **Secure Defaults**: Use secure configuration defaults
-
-## Deployment
-
-### Docker Development
-
-```dockerfile
-# Dockerfile.dev
-FROM golang:1.23-alpine AS builder
-WORKDIR /app
-COPY . .
-RUN go build -o stocd ./cmd/stocd
-
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /app/stocd /usr/local/bin/
-EXPOSE 26656 26657 1317 9090
-CMD ["stocd", "start"]
-```
-
-```bash
-# Build and run
-docker build -f Dockerfile.dev -t stoc-dev .
-docker run -p 26657:26657 -p 1317:1317 stoc-dev
-```
-
-## Useful Development Commands
-
-```bash
-# Reset development chain
-ignite chain serve --reset-once
-
-# Build without starting
-ignite chain build
-
-# Update dependencies
-go mod tidy
-
-# Vendor dependencies
-go mod vendor
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Run linting and tests
-6. Submit a pull request
-
-## Resources
-
-- [Cosmos SDK Documentation](https://docs.cosmos.network/)
-- [Ignite CLI Documentation](https://docs.ignite.com/)
-- [Go Documentation](https://golang.org/doc/)
-- [Protocol Buffers Guide](https://developers.google.com/protocol-buffers)
-
----
-
-For questions and support, please refer to the GitHub issues or community channels. 
