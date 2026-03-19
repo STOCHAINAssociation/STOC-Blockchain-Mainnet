@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"maps"
 	"os"
 	"path/filepath"
@@ -322,10 +321,13 @@ func cosmosChainIDToEVMChainID(chainID string) uint64 {
 		}
 	}
 
-	// Fallback: FNV-1a hash of the full chain-id string
-	hasher := fnv.New32a()
-	hasher.Write([]byte(chainID))
-	return uint64(hasher.Sum32())
+	// No fallback — require explicit configuration to prevent chain ID collisions.
+	// A colliding EVM chain ID enables cross-chain transaction replay attacks.
+	panic(fmt.Sprintf(
+		"cannot derive EVM chain ID from cosmos chain-id %q: expected format 'name_EVMID-version' (e.g. stoc_1306-1) "+
+			"or set 'evm.evm-chain-id' in app.toml explicitly",
+		chainID,
+	))
 }
 
 // RegisterEVM Since the EVM modules don't support dependency injection,

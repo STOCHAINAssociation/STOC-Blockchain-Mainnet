@@ -38,9 +38,10 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 		}
 	}
 	// Restore counter so next CreateToken won't collide
-	// Fallback: if tokens exist but none had parseable _N suffix, use token count
+	// If tokens exist but none had parseable _N suffix, panic to prevent counter collision.
+	// This is safer than guessing — a wrong counter can cause duplicate minimalDenoms.
 	if maxCounter == 0 && len(genState.Tokens) > 0 {
-		maxCounter = uint64(len(genState.Tokens))
+		panic("genesis contains tokens but none have parseable '_N' suffix in MinimalDenom — cannot safely reconstruct token counter")
 	}
 	if maxCounter > 0 {
 		if err := k.SetTokenCounter(ctx, maxCounter); err != nil {

@@ -17,6 +17,26 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					Use:       "params",
 					Short:     "Shows the parameters of the module",
 				},
+				{
+					RpcMethod: "Token",
+					Use:       "token [minimal_denom]",
+					Short:     "Query a token by its minimal denom (e.g. MYTOKEN_0)",
+				},
+				{
+					RpcMethod: "Tokens",
+					Use:       "tokens",
+					Short:     "List all tokens with pagination",
+				},
+				{
+					RpcMethod: "TokensBySymbol",
+					Use:       "tokens-by-symbol [symbol]",
+					Short:     "Query tokens by symbol (e.g. MYTOKEN)",
+				},
+				{
+					RpcMethod: "BalancesWithMetadata",
+					Use:       "balances [address]",
+					Short:     "Query token balances with metadata for an address",
+				},
 				// this line is used by ignite scaffolding # autocli/query
 			},
 		},

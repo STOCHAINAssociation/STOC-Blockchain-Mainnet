@@ -16,7 +16,8 @@ accounts:
       - 10000000000ustoc
 faucet:
   name: validator1
-  coins: []
+  coins:
+    - 100000ustoc
   openapi:
     path: docs/static/openapi.yml
 genesis:
@@ -30,6 +31,8 @@ genesis:
 validators:
   - name: validator1
     bonded: 10000000000ustoc
+    app:
+      minimum-gas-prices: 0.0001ustoc
   - name: validator2
     bonded: 10000000000ustoc
     app:

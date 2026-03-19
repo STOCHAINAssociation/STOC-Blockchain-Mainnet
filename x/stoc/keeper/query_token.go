@@ -48,7 +48,7 @@ func (k Keeper) Token(goCtx context.Context, req *types.QueryTokenRequest) (*typ
 	token, found = k.GetToken(ctx, req.MinimalDenom)
 
 	if !found {
-		return nil, status.Errorf(codes.NotFound, "token with symbol '%s' not found", req.MinimalDenom)
+		return nil, status.Errorf(codes.NotFound, "token with minimal_denom '%s' not found", req.MinimalDenom)
 	}
 
 	return &types.QueryTokenResponse{Token: token}, nil
@@ -137,8 +137,12 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 
 	// Pagination response — BalancesWithMetadata does not support cursor-based pagination
 	// because it aggregates bank balances with stoc metadata. Total reflects returned count.
+	// If truncated at maxBalances, set NextKey to signal more results exist.
 	pageRes := &query.PageResponse{
 		Total: uint64(len(balancesWithMetadata)),
+	}
+	if len(balancesWithMetadata) >= maxBalances {
+		pageRes.NextKey = []byte("truncated")
 	}
 
 	return &types.QueryBalancesWithMetadataResponse{

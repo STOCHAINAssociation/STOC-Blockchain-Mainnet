@@ -45,5 +45,12 @@ func (m *MsgBurnToken) ValidateBasic() error {
 		}
 	}
 
+	// Reject ambiguous input: BurnAll=true with a non-zero Amount to prevent user confusion.
+	// When BurnAll is set, the entire balance is burned — Amount is ignored, which could
+	// surprise users who set both fields expecting Amount to be a cap.
+	if m.BurnAll && !m.Amount.IsNil() && m.Amount.IsPositive() {
+		return errorsmod.Wrap(ErrInvalidAmount, "cannot set both burn_all=true and a specific amount — use one or the other")
+	}
+
 	return nil
 }

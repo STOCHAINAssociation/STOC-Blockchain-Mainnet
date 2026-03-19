@@ -1,8 +1,9 @@
 package keeper
 
 import (
-	"stoc/x/stoc/types"
 	"strings"
+
+	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
 	"cosmossdk.io/math"
@@ -10,7 +11,6 @@ import (
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
 )
 
 // SetToken sets a token in the store after validating its structure.
@@ -160,7 +160,8 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeMintToken,
-			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.MinimalDenom),
+			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
+			sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
 			sdk.NewAttribute(types.AttributeKeyTokenCreator, owner.String()),
 			sdk.NewAttribute(types.AttributeKeyMintAmount, amount.String()),
 		),
@@ -168,6 +169,30 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 
 	return nil
 
+}
+
+// FindToken resolves a token by minimalDenom first, then falls back to symbol lookup.
+// This handles the case where callers pass either "MYTOKEN_0" (minimalDenom) or "MYTOKEN" (symbol).
+// Returns error if symbol matches multiple tokens (ambiguous).
+func (k Keeper) FindToken(ctx sdk.Context, symbolOrDenom string) (types.Token, error) {
+	// Try direct lookup by minimalDenom first (most common case)
+	token, found := k.GetToken(ctx, symbolOrDenom)
+	if found {
+		return token, nil
+	}
+
+	// Fallback: lookup by symbol via index
+	tokens := k.GetTokensBySymbol(ctx, symbolOrDenom)
+	if len(tokens) == 0 {
+		return types.Token{}, sdkerrors.Wrapf(types.ErrTokenNotFound,
+			"token %q not found by minimalDenom or symbol", symbolOrDenom)
+	}
+	if len(tokens) > 1 {
+		return types.Token{}, sdkerrors.Wrapf(types.ErrTokenNotFound,
+			"symbol %q matches %d tokens — use minimalDenom (e.g., %q) for disambiguation",
+			symbolOrDenom, len(tokens), tokens[0].MinimalDenom)
+	}
+	return tokens[0], nil
 }
 
 // GetTokensBySymbol use index to find token
@@ -181,18 +206,20 @@ func (k Keeper) GetTokensBySymbol(ctx sdk.Context, symbol string) []types.Token 
 	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
 	var tokens []types.Token
 
+	symbolPrefix := symbol + ":"
 	for ; iterator.Valid(); iterator.Next() {
 		// Cap results to prevent unbounded iteration (DoS via symbol squatting)
 		if len(tokens) >= types.MaxQueryLimit {
 			break
 		}
 
-		key := string(iterator.Key())
-		parts := strings.SplitN(key, ":", 2)
-		if len(parts) != 2 || parts[1] == "" {
+		// KVStorePrefixIterator does NOT strip the iteration prefix from keys.
+		// iterator.Key() returns "SYMBOL:tokenId", so we must strip "SYMBOL:" to get the tokenId.
+		rawKey := string(iterator.Key())
+		tokenId := strings.TrimPrefix(rawKey, symbolPrefix)
+		if tokenId == "" {
 			continue
 		}
-		tokenId := parts[1]
 
 		b := mainStore.Get([]byte(tokenId))
 		if b != nil {

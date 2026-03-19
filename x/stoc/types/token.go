@@ -52,6 +52,18 @@ func IsNativeDenom(denom string) bool {
 	return false
 }
 
+// safeIsNativeDenom wraps IsNativeDenom with panic recovery.
+// IsNativeDenom calls evmutil.GetEvmDenom() which panics if sdk.DefaultBondDenom
+// is not properly initialized (e.g., "stake" in tests instead of "ustoc").
+func safeIsNativeDenom(denom string) (isNative bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			isNative = false
+		}
+	}()
+	return IsNativeDenom(denom)
+}
+
 // ValidateState validates a token for state persistence (post-creation mutations like burn/mint).
 // Unlike Validate(), this skips creation-time invariants (e.g., TotalSupply >= InitialSupply)
 // that may not hold after legitimate operations like burns.
@@ -67,6 +79,12 @@ func ValidateState(token Token) error {
 	}
 	if !TokenSymbolRegex.MatchString(token.Symbol) {
 		return fmt.Errorf("token symbol must be alphanumeric, start with a letter, and max 32 characters")
+	}
+	// Block native denom symbols to prevent confusion and genesis injection attacks.
+	// Use recover because IsNativeDenom calls GetEvmDenom() which can panic
+	// if sdk.DefaultBondDenom is not properly initialized (e.g., in tests).
+	if isNative := safeIsNativeDenom(token.Symbol); isNative {
+		return fmt.Errorf("token symbol %q conflicts with native chain denom", token.Symbol)
 	}
 	if token.Decimals > 18 {
 		return fmt.Errorf("decimals must be between 0 and 18")
@@ -96,11 +114,13 @@ func ValidateState(token Token) error {
 	if token.MinimalDenom == "" {
 		return fmt.Errorf("minimal denom cannot be empty")
 	}
-	// Validate Creator address to prevent persisting corrupted state
-	if token.Creator != "" {
-		if _, err := sdk.AccAddressFromBech32(token.Creator); err != nil {
-			return fmt.Errorf("invalid creator address in state: %s", err)
-		}
+	// Require creator address — tokens without a creator become permanently orphaned
+	// (no one can mint/release). Reject at state validation to prevent genesis injection.
+	if token.Creator == "" {
+		return fmt.Errorf("creator address cannot be empty")
+	}
+	if _, err := sdk.AccAddressFromBech32(token.Creator); err != nil {
+		return fmt.Errorf("invalid creator address in state: %s", err)
 	}
 	// Validate tax fields — prevents genesis import of tokens with out-of-range tax or invalid recipient
 	if !token.Tax.Percent.IsNil() {

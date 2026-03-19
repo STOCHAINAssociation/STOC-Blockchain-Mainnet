@@ -2,6 +2,7 @@ package keeper_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"cosmossdk.io/log"
@@ -45,9 +46,12 @@ func (m *MockBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, sende
 	return nil
 }
 func (m *MockBankKeeper) SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error {
-	// Deduct from sender
+	// Deduct from sender, return error if insufficient balance
 	senderBal := m.Balances[senderAddr.String()]
-	newBal, _ := senderBal.SafeSub(amt...) // Simplified, assuming enough balance
+	newBal, hasNeg := senderBal.SafeSub(amt...)
+	if hasNeg {
+		return fmt.Errorf("insufficient funds: %s is smaller than %s", senderBal, amt)
+	}
 	m.Balances[senderAddr.String()] = newBal
 	return nil
 }
@@ -177,4 +181,207 @@ func TestBurnManagedToken(t *testing.T) {
 	token, found := k.GetToken(ctx, denom)
 	require.True(t, found)
 	require.Equal(t, math.NewInt(900), token.TotalSupply)
+}
+
+func TestBurnToken_BurnAll(t *testing.T) {
+	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	denom := "MYTOKEN_0"
+
+	token := types.Token{
+		Id:              denom,
+		Name:            "My Token",
+		Symbol:          "MYT",
+		Decimals:        6,
+		Logo:            "https://example.com/logo.png",
+		InitialSupply:   math.NewInt(1000),
+		TotalSupply:     math.NewInt(1000),
+		RemainingSupply: math.ZeroInt(),
+		MinimalDenom:    denom,
+		Creator:         creator,
+		Unlimited:       false,
+	}
+	require.NoError(t, k.SetToken(ctx, token))
+
+	// Set balance to 500
+	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(500)))
+
+	// BurnAll=true, Amount should be zero
+	resp, err := ms.BurnToken(ctx, &types.MsgBurnToken{
+		Creator: creator,
+		Amount:  math.ZeroInt(),
+		Denom:   denom,
+		BurnAll: true,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.Success)
+
+	// Verify all tokens burned from user
+	balance := mockBank.Balances[creator].AmountOf(denom)
+	require.True(t, balance.IsZero(), "user balance should be zero after BurnAll")
+
+	// Verify TotalSupply reduced by 500
+	updatedToken, found := k.GetToken(ctx, denom)
+	require.True(t, found)
+	require.Equal(t, math.NewInt(500), updatedToken.TotalSupply)
+}
+
+func TestBurnToken_BurnAllWithAmount_Rejected(t *testing.T) {
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	denom := "MYTOKEN_0"
+
+	// BurnAll=true AND Amount=100 → should fail at ValidateBasic
+	// ValidateBasic is called by ante handler, not by MsgServer, so we test it directly.
+	msg := &types.MsgBurnToken{
+		Creator: creator,
+		Amount:  math.NewInt(100),
+		Denom:   denom,
+		BurnAll: true,
+	}
+	err := msg.ValidateBasic()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot set both burn_all=true and a specific amount")
+}
+
+func TestBurnToken_ZeroAmount(t *testing.T) {
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	denom := "MYTOKEN_0"
+
+	// BurnAll=false, Amount=0 → should fail at ValidateBasic
+	// ValidateBasic is called by ante handler, not by MsgServer, so we test it directly.
+	msg := &types.MsgBurnToken{
+		Creator: creator,
+		Amount:  math.ZeroInt(),
+		Denom:   denom,
+		BurnAll: false,
+	}
+	err := msg.ValidateBasic()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "burn amount must be positive")
+}
+
+func TestBurnToken_ExceedsTotalSupply(t *testing.T) {
+	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	denom := "MYTOKEN_0"
+
+	token := types.Token{
+		Id:              denom,
+		Name:            "My Token",
+		Symbol:          "MYT",
+		Decimals:        6,
+		Logo:            "https://example.com/logo.png",
+		InitialSupply:   math.NewInt(1000),
+		TotalSupply:     math.NewInt(1000),
+		RemainingSupply: math.ZeroInt(),
+		MinimalDenom:    denom,
+		Creator:         creator,
+		Unlimited:       false,
+	}
+	require.NoError(t, k.SetToken(ctx, token))
+
+	// User has 1500 (more than TotalSupply tracks)
+	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(1500)))
+
+	// Try to burn 1500 → exceeds TotalSupply of 1000
+	_, err := ms.BurnToken(ctx, &types.MsgBurnToken{
+		Creator: creator,
+		Amount:  math.NewInt(1500),
+		Denom:   denom,
+		BurnAll: false,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "burn amount")
+	require.Contains(t, err.Error(), "exceeds tracked total supply")
+}
+
+func TestBurnToken_BurnAllZeroBalance(t *testing.T) {
+	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	denom := "MYTOKEN_0"
+
+	token := types.Token{
+		Id:              denom,
+		Name:            "My Token",
+		Symbol:          "MYT",
+		Decimals:        6,
+		Logo:            "https://example.com/logo.png",
+		InitialSupply:   math.NewInt(1000),
+		TotalSupply:     math.NewInt(1000),
+		RemainingSupply: math.ZeroInt(),
+		MinimalDenom:    denom,
+		Creator:         creator,
+		Unlimited:       false,
+	}
+	require.NoError(t, k.SetToken(ctx, token))
+
+	// Set balance to 0
+	mockBank.Balances[creator] = sdk.NewCoins()
+
+	// BurnAll=true with zero balance → should fail
+	_, err := ms.BurnToken(ctx, &types.MsgBurnToken{
+		Creator: creator,
+		Amount:  math.ZeroInt(),
+		Denom:   denom,
+		BurnAll: true,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no tokens remaining")
+}
+
+func TestBurnToken_RemainingSupplyAdjusted(t *testing.T) {
+	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	denom := "MYTOKEN_0"
+	moduleAddr := authtypes.NewModuleAddress(types.ModuleName)
+
+	token := types.Token{
+		Id:              denom,
+		Name:            "My Token",
+		Symbol:          "MYT",
+		Decimals:        6,
+		Logo:            "https://example.com/logo.png",
+		InitialSupply:   math.NewInt(1000),
+		TotalSupply:     math.NewInt(1000),
+		RemainingSupply: math.NewInt(800),
+		MinimalDenom:    denom,
+		Creator:         creator,
+		Unlimited:       false,
+	}
+	require.NoError(t, k.SetToken(ctx, token))
+
+	// User has 300, module has 800
+	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(300)))
+	mockBank.Balances[moduleAddr.String()] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(800)))
+
+	// Burn 300 from user
+	// After burn: TotalSupply = 1000 - 300 = 700
+	// RemainingSupply was 800, which is > new TotalSupply 700
+	// excess = 800 - 700 = 100
+	// moduleBalance = 800 (mock BurnCoins is no-op, so module balance stays)
+	// actualBurnable = min(100, 800) = 100
+	// RemainingSupply = 800 - 100 = 700
+	resp, err := ms.BurnToken(ctx, &types.MsgBurnToken{
+		Creator: creator,
+		Amount:  math.NewInt(300),
+		Denom:   denom,
+		BurnAll: false,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.Success)
+
+	updatedToken, found := k.GetToken(ctx, denom)
+	require.True(t, found)
+	require.Equal(t, math.NewInt(700), updatedToken.TotalSupply, "TotalSupply should be 700")
+	require.Equal(t, math.NewInt(700), updatedToken.RemainingSupply, "RemainingSupply should be adjusted to 700")
 }

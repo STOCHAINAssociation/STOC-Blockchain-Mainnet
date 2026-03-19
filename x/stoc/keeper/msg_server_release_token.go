@@ -12,10 +12,10 @@ import (
 func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTokens) (*types.MsgReleaseTokensResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Get token info
-	token, found := k.GetToken(ctx, msg.Symbol)
-	if !found {
-		return nil, sdkerrors.Wrapf(types.ErrTokenNotFound, "token %s does not exist", msg.Symbol)
+	// Get token info — supports both minimalDenom ("SYMBOL_0") and symbol ("SYMBOL")
+	token, err := k.FindToken(ctx, msg.Symbol)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if caller is creator

@@ -33,23 +33,12 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 		return next(ctx, tx, simulate, success)
 	}
 
-	// Use cache context so tax failures don't revert the entire transaction
-	cacheCtx, writeCache := ctx.CacheContext()
-
-	taxErr := tpd.applyTaxes(cacheCtx, tx)
+	// Apply taxes — if tax collection fails, the transaction MUST fail.
+	// Allowing token transfers without tax would violate securities compliance.
+	// Each message is processed independently to prevent cross-message interference.
+	taxErr := tpd.applyTaxes(ctx, tx)
 	if taxErr != nil {
-		// Log the error but don't revert the transaction
-		ctx.Logger().Error("Tax application failed, skipping tax", "error", taxErr)
-		// Emit event so tax failures are observable and monitorable
-		ctx.EventManager().EmitEvent(
-			sdk.NewEvent(
-				"token_tax_failed",
-				sdk.NewAttribute("error", taxErr.Error()),
-			),
-		)
-	} else {
-		// Commit tax state changes (writeCache also propagates events to parent in SDK v0.53)
-		writeCache()
+		return ctx, fmt.Errorf("tax enforcement failed, transaction rejected: %w", taxErr)
 	}
 
 	return next(ctx, tx, simulate, success)
@@ -61,23 +50,33 @@ func (tpd TaxPostDecorator) applyTaxes(ctx sdk.Context, tx sdk.Tx) error {
 }
 
 // applyTaxesForMsgs processes tax for a list of messages, supporting recursive authz MsgExec unwrapping.
+// Each top-level message uses its own cache context to prevent cross-message tax interference.
 func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, depth int) error {
 	for _, msg := range msgs {
 		switch m := msg.(type) {
 		case *types.MsgSend:
-			if err := tpd.applyTaxForRecipient(ctx, m.ToAddress, m.Amount); err != nil {
+			// Use cache context per message so one message's tax state
+			// does not leak into another message's balance checks
+			cacheCtx, writeCache := ctx.CacheContext()
+			if err := tpd.applyTaxForRecipient(cacheCtx, m.ToAddress, m.Amount); err != nil {
 				return err
 			}
+			writeCache()
 		case *types.MsgMultiSend:
-			// Reject MsgMultiSend with too many outputs to prevent DoS and tax bypass
+			// Reject MsgMultiSend with too many inputs or outputs to prevent DoS
+			if len(m.Inputs) > stoctypes.MaxMultiSendOutputs {
+				return fmt.Errorf("MsgMultiSend has too many inputs (%d > %d)", len(m.Inputs), stoctypes.MaxMultiSendOutputs)
+			}
 			if len(m.Outputs) > stoctypes.MaxMultiSendOutputs {
 				return fmt.Errorf("MsgMultiSend has too many outputs (%d > %d)", len(m.Outputs), stoctypes.MaxMultiSendOutputs)
 			}
+			cacheCtx, writeCache := ctx.CacheContext()
 			for _, output := range m.Outputs {
-				if err := tpd.applyTaxForRecipient(ctx, output.Address, output.Coins); err != nil {
+				if err := tpd.applyTaxForRecipient(cacheCtx, output.Address, output.Coins); err != nil {
 					return err
 				}
 			}
+			writeCache()
 		case *authz.MsgExec:
 			if depth >= maxAuthzUnwrapDepth {
 				return fmt.Errorf("authz MsgExec nesting depth exceeded (%d), rejecting to prevent tax evasion", depth)
@@ -122,14 +121,24 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			taxPercent = stoctypes.MaxTaxPercent
 		}
 
-		// calculate tax — enforce minimum 1 unit to prevent tax evasion via transaction splitting
+		// Skip zero-amount transfers (no-op)
+		if coin.Amount.IsZero() {
+			continue
+		}
+
+		// Calculate tax — enforce minimum 1 unit to prevent tax evasion via transaction splitting,
+		// but cap at half the transfer amount to avoid confiscatory taxation on micro-transfers
 		taxAmount := coin.Amount.ToLegacyDec().Mul(taxPercent).TruncateInt()
 		if taxAmount.IsZero() {
 			taxAmount = math.OneInt()
 		}
-		// Skip only if transfer amount itself is zero (no-op)
-		if coin.Amount.IsZero() {
-			continue
+		// Prevent confiscation: tax must not exceed half the transfer amount
+		halfAmount := coin.Amount.Quo(math.NewInt(2))
+		if halfAmount.IsZero() {
+			halfAmount = math.OneInt()
+		}
+		if taxAmount.GT(halfAmount) {
+			taxAmount = halfAmount
 		}
 
 		taxRecipientAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)

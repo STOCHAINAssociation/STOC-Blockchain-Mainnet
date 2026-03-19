@@ -128,6 +128,11 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		}
 
 		if amount.IsZero() {
+			// Warn: distribution entry results in 0 tokens due to rounding.
+			// This is not an error — the last recipient absorbs the remainder.
+			ctx.Logger().Warn("Distribution entry results in 0 tokens due to rounding",
+				"address", dist.Address, "percent", dist.Percent,
+				"initial_supply", initialSupply.String())
 			continue
 		}
 		totalMinted = totalMinted.Add(amount)
