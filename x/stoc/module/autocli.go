@@ -32,11 +32,8 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					Use:       "tokens-by-symbol [symbol]",
 					Short:     "Query tokens by symbol (e.g. MYTOKEN)",
 				},
-				{
-					RpcMethod: "BalancesWithMetadata",
-					Use:       "balances [address]",
-					Short:     "Query token balances with metadata for an address",
-				},
+				// NOTE: BalancesWithMetadata is implemented in keeper but not yet in the
+				// generated api/ service descriptor. Run `make proto-gen` to add it to autocli.
 				// this line is used by ignite scaffolding # autocli/query
 			},
 		},
