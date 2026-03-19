@@ -17,6 +17,12 @@ import (
 // 1. Tax enforcement cannot be applied on other chains
 // 2. Token metadata/rules are lost when crossing chains
 // 3. Returning tokens via IBC would bypass tax on the outgoing path
+//
+// IBC is ONLY allowed for native chain denoms (detected dynamically via sdk.DefaultBondDenom):
+//   - Mainnet: ustoc, astoc, stoc
+//   - Testnet: utstoc, atstoc, tstoc
+//
+// All tokens created via x/stoc module (e.g., MYTOKEN_0) are blocked from IBC.
 type IBCCustomTokenRestriction struct {
 	k keeper.Keeper
 }

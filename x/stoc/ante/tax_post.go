@@ -96,7 +96,8 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 
 // applyTaxForRecipient deducts tax from recipient for each taxable coin and sends it to the tax recipient.
 // NOTE: Tax applies to MsgSend/MsgMultiSend including those wrapped in authz MsgExec.
-// IBC transfers and other transfer mechanisms still bypass this tax by design.
+// IBC transfers bypass this tax by design — custom tokens are blocked from IBC entirely
+// (see IBCCustomTokenRestriction), so tax evasion via IBC is not possible.
 func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddress string, coins sdk.Coins) error {
 	recipientAddr, err := sdk.AccAddressFromBech32(recipientAddress)
 	if err != nil {
