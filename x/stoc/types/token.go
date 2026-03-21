@@ -127,7 +127,10 @@ func ValidateState(token Token) error {
 		if token.Tax.Percent.IsNegative() || token.Tax.Percent.GT(MaxTaxPercent) {
 			return fmt.Errorf("tax percentage must be between 0 and %s (50%%)", MaxTaxPercent.String())
 		}
-		if token.Tax.Percent.GT(math.LegacyZeroDec()) && token.Tax.RecipientAddress != "" {
+		if token.Tax.Percent.GT(math.LegacyZeroDec()) {
+			if token.Tax.RecipientAddress == "" {
+				return fmt.Errorf("tax enabled but recipient address missing")
+			}
 			if _, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress); err != nil {
 				return fmt.Errorf("invalid tax recipient address in state: %s", err)
 			}
@@ -231,6 +234,9 @@ func Validate(token Token) error {
 		}
 
 		if token.Tax.Percent.GT(math.LegacyZeroDec()) {
+			if token.Tax.RecipientAddress == "" {
+				return fmt.Errorf("tax enabled but recipient address missing")
+			}
 			if _, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress); err != nil {
 				return fmt.Errorf("invalid tax recipient address: %s", err)
 			}

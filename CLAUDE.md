@@ -12,21 +12,37 @@ STOC is a Cosmos SDK-based blockchain with EVM compatibility, built using Cosmos
 
 ## Common Development Commands
 
-### Build & Test
+### Build & Run
 
-- `make install` - Build and install the stocd binary
+- `ignite chain build` - Build the blockchain binary
+- `ignite chain serve --reset-once` - Start dev chain with state reset (test/verify changes)
+- `ignite chain serve` - Start dev chain with hot reload (keeps state)
+
+### Test
+
 - `make test` - Run full test suite (unit tests, vet, vulnerability checks)
 - `make test-unit` - Run unit tests only
 - `make test-race` - Run tests with race condition detection
 - `make test-cover` - Generate test coverage reports
+
+### Lint
+
 - `make lint` - Run golangci-lint (15min timeout)
 - `make lint-fix` - Auto-fix linting issues
 
-### Development Workflow
+### Proto & API Generation
 
-- `ignite chain serve` - Start development blockchain with hot reload
 - `ignite generate proto-go --yes` - Generate Go code from protobuf definitions
 - `make proto-gen` - Generate protobuf code using Ignite CLI
+
+### OpenAPI Generation (Docker)
+
+```bash
+docker build --platform linux/amd64 -f Dockerfile.openapi -t stoc-openapi .
+docker run --rm --platform linux/amd64 -v $(pwd)/docs/static:/app/docs/static stoc-openapi
+```
+
+This runs `ignite generate openapi` inside a Docker container to produce OpenAPI specs in `docs/static/`.
 
 ### Running a Single Test
 

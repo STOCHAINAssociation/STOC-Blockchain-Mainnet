@@ -73,7 +73,10 @@ func (m *mockBankKeeper) SendCoinsFromModuleToAccount(_ context.Context, _ strin
 }
 func (m *mockBankKeeper) SendCoinsFromAccountToModule(_ context.Context, sender sdk.AccAddress, _ string, amt sdk.Coins) error {
 	senderBal := m.balances[sender.String()]
-	newBal, _ := senderBal.SafeSub(amt...)
+	newBal, hasNeg := senderBal.SafeSub(amt...)
+	if hasNeg {
+		return fmt.Errorf("insufficient funds")
+	}
 	m.balances[sender.String()] = newBal
 	return nil
 }
@@ -447,8 +450,8 @@ func TestTaxPostDecorator_MicroTransferCap(t *testing.T) {
 	}
 	require.NoError(t, k.SetToken(ctx, token))
 
-	// Send 1 token: 0.1% of 1 = 0 → minimum 1, but half of 1 = max(1/2, 1) = 1
-	// So tax = min(1, 1) = 1
+	// Send 1 token: 0.1% of 1 = 0 → minimum 1, but recipient must retain at least 1 unit
+	// So tax = 0 on 1-unit transfers (recipient retains full amount)
 	mockBank.balances[recipient.String()] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(1)))
 
 	msg := &banktypes.MsgSend{
@@ -463,13 +466,12 @@ func TestTaxPostDecorator_MicroTransferCap(t *testing.T) {
 	_, err := decorator.PostHandle(ctx, tx, false, true, noopPostHandler)
 	require.NoError(t, err)
 
-	// Tax = 1 (minimum), capped at half = max(1/2=0, 1) = 1
-	// So tax is 1, recipient has 0, tax collector has 1
+	// Tax = 0 on 1-unit transfers (recipient always retains at least 1 unit)
 	recipientBal := mockBank.balances[recipient.String()].AmountOf(denom)
 	taxCollectorBal := mockBank.balances[taxCollector.String()].AmountOf(denom)
 
-	require.Equal(t, math.ZeroInt(), recipientBal)
-	require.Equal(t, math.NewInt(1), taxCollectorBal)
+	require.Equal(t, math.NewInt(1), recipientBal)
+	require.Equal(t, math.ZeroInt(), taxCollectorBal)
 }
 
 func TestTaxPostDecorator_TaxFailRevertsTx(t *testing.T) {

@@ -73,6 +73,9 @@ func (k Keeper) GetTokenCounter(ctx sdk.Context) (uint64, error) {
 	if bz == nil {
 		return 0, nil
 	}
+	if len(bz) != 8 {
+		return 0, fmt.Errorf("corrupted token counter: expected 8 bytes, got %d", len(bz))
+	}
 	return binary.BigEndian.Uint64(bz), nil
 }
 

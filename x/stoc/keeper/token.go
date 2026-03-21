@@ -188,7 +188,7 @@ func (k Keeper) FindToken(ctx sdk.Context, symbolOrDenom string) (types.Token, e
 			"token %q not found by minimalDenom or symbol", symbolOrDenom)
 	}
 	if len(tokens) > 1 {
-		return types.Token{}, sdkerrors.Wrapf(types.ErrTokenNotFound,
+		return types.Token{}, sdkerrors.Wrapf(types.ErrAmbiguousSymbol,
 			"symbol %q matches %d tokens — use minimalDenom (e.g., %q) for disambiguation",
 			symbolOrDenom, len(tokens), tokens[0].MinimalDenom)
 	}

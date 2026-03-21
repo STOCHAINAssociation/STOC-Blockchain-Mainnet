@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -15,7 +16,7 @@ func (m *MsgCreateToken) Type() string  { return "create_token" }
 func (m *MsgCreateToken) GetSigners() []sdk.AccAddress {
 	creator, err := sdk.AccAddressFromBech32(m.Creator)
 	if err != nil {
-		return []sdk.AccAddress{}
+		panic(fmt.Sprintf("invalid creator address %q in MsgCreateToken.GetSigners: %v", m.Creator, err))
 	}
 	return []sdk.AccAddress{creator}
 }
@@ -102,7 +103,7 @@ func (m *MsgCreateToken) ValidateBasic() error {
 		seenAddrs := make(map[string]bool, len(m.Distributions))
 		for _, dist := range m.Distributions {
 			if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
-				return errorsmod.Wrapf(ErrInvalidCreatorAddress, "invalid distribution address: %s", err)
+				return errorsmod.Wrapf(ErrInvalidAddress, "invalid distribution address: %s", err)
 			}
 			if seenAddrs[dist.Address] {
 				return errorsmod.Wrap(ErrInvalidToken, "duplicate distribution address")
@@ -127,8 +128,11 @@ func (m *MsgCreateToken) ValidateBasic() error {
 			return errorsmod.Wrapf(ErrInvalidToken, "tax percentage cannot exceed %s (50%%)", MaxTaxPercent.String())
 		}
 		if m.Tax.Percent.IsPositive() {
+			if m.Tax.RecipientAddress == "" {
+				return errorsmod.Wrap(ErrInvalidTaxRecipient, "tax recipient address is required when tax > 0")
+			}
 			if _, err := sdk.AccAddressFromBech32(m.Tax.RecipientAddress); err != nil {
-				return errorsmod.Wrap(ErrInvalidCreatorAddress, "tax recipient address is required when tax > 0")
+				return errorsmod.Wrapf(ErrInvalidTaxRecipient, "invalid tax recipient address: %s", err)
 			}
 		}
 	}

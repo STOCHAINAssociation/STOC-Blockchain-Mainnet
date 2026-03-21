@@ -11,6 +11,9 @@ import (
 )
 
 func TestGetCosmosDenom_ReturnsDefaultBondDenom(t *testing.T) {
+	orig := sdk.DefaultBondDenom
+	t.Cleanup(func() { sdk.DefaultBondDenom = orig })
+
 	sdk.DefaultBondDenom = "ustoc"
 	require.Equal(t, "ustoc", types.GetCosmosDenom())
 
@@ -19,11 +22,17 @@ func TestGetCosmosDenom_ReturnsDefaultBondDenom(t *testing.T) {
 }
 
 func TestGetEvmDenom_MainnetConversion(t *testing.T) {
+	orig := sdk.DefaultBondDenom
+	t.Cleanup(func() { sdk.DefaultBondDenom = orig })
+
 	sdk.DefaultBondDenom = "ustoc"
 	require.Equal(t, "astoc", types.GetEvmDenom())
 }
 
 func TestGetEvmDenom_TestnetConversion(t *testing.T) {
+	orig := sdk.DefaultBondDenom
+	t.Cleanup(func() { sdk.DefaultBondDenom = orig })
+
 	sdk.DefaultBondDenom = "utstoc"
 	require.Equal(t, "atstoc", types.GetEvmDenom())
 }

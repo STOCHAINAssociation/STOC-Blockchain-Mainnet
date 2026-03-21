@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -13,7 +15,7 @@ func (m *MsgReleaseTokens) Type() string  { return "release_tokens" }
 func (m *MsgReleaseTokens) GetSigners() []sdk.AccAddress {
 	creator, err := sdk.AccAddressFromBech32(m.Creator)
 	if err != nil {
-		return []sdk.AccAddress{}
+		panic(fmt.Sprintf("invalid creator address %q in MsgReleaseTokens.GetSigners: %v", m.Creator, err))
 	}
 	return []sdk.AccAddress{creator}
 }

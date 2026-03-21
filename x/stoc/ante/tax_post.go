@@ -128,18 +128,23 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 		}
 
 		// Calculate tax — enforce minimum 1 unit to prevent tax evasion via transaction splitting,
-		// but cap at half the transfer amount to avoid confiscatory taxation on micro-transfers
+		// but ensure recipient always retains at least 1 unit on micro-transfers.
 		taxAmount := coin.Amount.ToLegacyDec().Mul(taxPercent).TruncateInt()
 		if taxAmount.IsZero() {
 			taxAmount = math.OneInt()
 		}
-		// Prevent confiscation: tax must not exceed half the transfer amount
+		// Prevent confiscation: tax must not exceed half the transfer amount (true integer half)
 		halfAmount := coin.Amount.Quo(math.NewInt(2))
-		if halfAmount.IsZero() {
-			halfAmount = math.OneInt()
-		}
 		if taxAmount.GT(halfAmount) {
 			taxAmount = halfAmount
+		}
+		// Ensure recipient retains at least 1 unit — skip tax on 1-unit transfers
+		if coin.Amount.Sub(taxAmount).LT(math.OneInt()) {
+			if coin.Amount.LTE(math.OneInt()) {
+				taxAmount = math.ZeroInt()
+			} else {
+				taxAmount = coin.Amount.Sub(math.OneInt())
+			}
 		}
 
 		taxRecipientAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)

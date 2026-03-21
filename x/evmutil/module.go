@@ -92,13 +92,16 @@ func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 func (am AppModule) RegisterServices(cfg module.Configurator) {}
 
 // InitGenesis performs genesis initialization for the evmutil module. It returns no validator updates.
+// The evmutil module has no persistent genesis state — it derives EVM denom conversion
+// rules from sdk.DefaultBondDenom at runtime. The genesis data is unmarshaled only for validation.
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) {
 	var gs types.GenesisState
 	cdc.MustUnmarshalJSON(data, &gs)
-	// No initialization needed for evmutil
 }
 
 // ExportGenesis returns the exported genesis state as raw bytes for the evmutil module.
+// The evmutil module has no persistent state — denomination conversion is derived at runtime
+// from sdk.DefaultBondDenom, so DefaultGenesisState is always returned.
 func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.RawMessage {
 	gs := types.DefaultGenesisState()
 	return cdc.MustMarshalJSON(gs)

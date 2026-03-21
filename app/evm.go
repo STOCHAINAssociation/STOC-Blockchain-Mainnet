@@ -272,7 +272,7 @@ func getCustomEVMActivators() map[int]func(*gethvm.JumpTable) {
 // Priority:
 //  1. Explicit "evm.evm-chain-id" in app.toml (for existing chains that can't change their cosmos chain-id)
 //  2. Parsed from cosmos chain-id format "name_EVMID-version" (e.g. stoc_1306-1)
-//  3. FNV-1a hash of cosmos chain-id string (fallback)
+//  3. Panics if chain-id cannot be parsed (requires explicit configuration to prevent chain ID collisions)
 func getEVMChainID(appOpts servertypes.AppOptions) (uint64, error) {
 	// Priority 1: explicit EVM chain ID from app.toml [evm] section
 	// Key matches cosmos/evm config mapstructure tag: evm-chain-id under [evm] section

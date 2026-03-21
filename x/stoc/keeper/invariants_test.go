@@ -112,16 +112,13 @@ func TestSupplyInvariant_ModuleBalanceMismatch(t *testing.T) {
 	require.Contains(t, msg, "module balance")
 }
 
-func TestSupplyInvariant_RemainingExceedsTotal(t *testing.T) {
+func TestSupplyInvariant_MultipleMismatches(t *testing.T) {
 	k, _, ctx, mockBank := setupMsgServerWithMock(t)
 
 	moduleAddr := authtypes.NewModuleAddress(types.ModuleName)
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
 	denom := "MYTOKEN_0"
 
-	// RemainingSupply (1500) > TotalSupply (1000)
-	// We need to bypass SetToken validation, so set bank balances to match
-	// the token fields to avoid other invariant checks triggering first.
 	token := types.Token{
 		Id:              denom,
 		Name:            "My Token",
@@ -137,26 +134,12 @@ func TestSupplyInvariant_RemainingExceedsTotal(t *testing.T) {
 	}
 	require.NoError(t, k.SetToken(ctx, token))
 
-	// Now manually update RemainingSupply to exceed TotalSupply
-	// Since SetToken validates, we first set a valid token then corrupt it
-	token.RemainingSupply = math.NewInt(1500)
-	// Use SetToken again — this might fail validation, so let's set balances to match
-	// and accept that this specific invariant test may also trigger other checks.
-	// Actually, SetToken will reject RemainingSupply > TotalSupply via ValidateState.
-	// We need to directly write to the store. Let's just set the balances so bank checks pass
-	// but the token itself has RemainingSupply > TotalSupply in the invariant output.
-
-	// Since we cannot bypass SetToken validation, we test with matching bank balances
-	// for a token where remaining <= total, but ensure the invariant logic works
-	// by setting module balance = 1500 to match a hypothetical corrupted state.
-	// The bank supply check will also break, so both checks fire.
+	// Bank state deliberately mismatched:
+	// Check 1: bank supply (1500) != TotalSupply (1000) -> broken
+	// Check 2: module balance (1500) != RemainingSupply (300) -> broken
 	mockBank.Balances[creatorAddr.String()] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(0)))
 	mockBank.Balances[moduleAddr.String()] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(1500)))
 
-	// With the valid token (TotalSupply=1000, RemainingSupply=300):
-	// Check 1: bank supply (1500) != TotalSupply (1000) -> broken
-	// Check 2: module balance (1500) != RemainingSupply (300) -> broken
-	// This validates the invariant detects mismatches.
 	invariant := keeper.SupplyInvariant(k)
 	msg, broken := invariant(ctx)
 

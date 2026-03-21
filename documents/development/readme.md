@@ -4,9 +4,8 @@ Development documentation for building on and contributing to STOC Chain.
 
 ## Prerequisites
 
-- Go 1.24.3+
+- Go 1.24+
 - Ignite CLI
-- Buf CLI (for protobuf generation)
 - Git
 
 ## Development Setup
@@ -131,7 +130,7 @@ func (k msgServer) HandleMessage(ctx context.Context, msg *types.MsgX) (*types.M
 - **Dual Denomination**: `ustoc` (6 dec, Cosmos) ↔ `astoc` (18 dec, EVM)
 - **Conversion**: 1 ustoc = 10^12 astoc, handled by `EvmBankKeeper`
 - **Custom Tokens**: Cosmos-only, NOT accessible from EVM side
-- **Gas Multipliers**: CREATE/CREATE2/CALL at 10x, SSTORE at 2100
+- **Gas Multipliers**: CREATE/CREATE2/CALL at 10x; SSTORE fixed cost: 2100 gas (EIP-2929 warm access)
 
 ### Test EVM Locally
 
@@ -236,7 +235,7 @@ const balance = await provider.getBalance(address);
 
 ## Code Quality
 
-- golangci-lint v1.61.0 with 15-minute timeout
+- golangci-lint v1.64.8 with 15-minute timeout
 - govulncheck for security scanning
 - Always run `make test` before commits
 - Follow conventional commits: `feat(module):`, `fix(keeper):`, `chore(proto):`

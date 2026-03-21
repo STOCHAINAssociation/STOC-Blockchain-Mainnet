@@ -21,9 +21,9 @@ STOC Chain is a high-performance blockchain with full EVM (Ethereum Virtual Mach
 | Min Gas Price | `0.001ustoc` | `0.0001ustoc` |
 | RPC | https://rpc-stoc-mainnet.stochainscan.io/ | http://localhost:26657 |
 | REST API | https://api-stoc-mainnet.stochainscan.io | http://localhost:1317 |
-| gRPC | — | http://localhost:9090 |
-| JSON-RPC (EVM) | — | http://localhost:8545 |
-| WebSocket (EVM) | — | http://localhost:8546 |
+| gRPC | Not publicly exposed | http://localhost:9090 |
+| JSON-RPC (EVM) | Not publicly exposed | http://localhost:8545 |
+| WebSocket (EVM) | Not publicly exposed | http://localhost:8546 |
 | Block Explorer | https://stochainscan.io | — |
 
 ## Quick Start

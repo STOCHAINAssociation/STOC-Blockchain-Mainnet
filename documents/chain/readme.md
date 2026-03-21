@@ -160,6 +160,20 @@ stocd start
 
 ### Systemd Service (Recommended for Production)
 
+Create a dedicated system user and install the binary:
+
+```bash
+# Create system user for running the node
+sudo useradd -m -s /bin/bash stoc
+
+# Copy built binary to system path
+sudo cp $(go env GOPATH)/bin/stocd /usr/local/bin/
+sudo chown root:root /usr/local/bin/stocd
+
+# Ensure data directory is owned by stoc user
+sudo chown -R stoc:stoc /home/stoc/.stoc
+```
+
 Create `/etc/systemd/system/stocd.service`:
 
 ```ini
@@ -328,7 +342,7 @@ stocd status | jq
 stocd status | jq '.SyncInfo'
 
 # Peer count
-stocd status | jq '.NodeInfo.other.tx_index'
+stocd net_info | jq '.n_peers'
 
 # Account balance
 stocd query bank balances <address>
