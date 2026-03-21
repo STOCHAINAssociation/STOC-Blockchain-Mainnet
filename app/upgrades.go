@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	erc20types "github.com/cosmos/evm/x/erc20/types"
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
@@ -23,7 +25,25 @@ func (app *App) RegisterUpgradeHandlers() {
 	app.UpgradeKeeper.SetUpgradeHandler(
 		UpgradeName,
 		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-			return app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
+			// Run module migrations first (initializes EVM, feemarket, erc20, evmutil stores)
+			vm, err := app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
+			if err != nil {
+				return vm, err
+			}
+
+			// Set feemarket params: disable dynamic base fee for initial EVM deployment.
+			// This ensures existing gas price config (0.01 ustoc) in wallets/FE remains valid.
+			// Can be re-enabled later via governance proposal once ecosystem is ready.
+			sdkCtx := sdk.UnwrapSDKContext(ctx)
+			feemarketParams := feemarkettypes.DefaultParams()
+			feemarketParams.NoBaseFee = true
+			feemarketParams.BaseFee = math.LegacyZeroDec()
+			feemarketParams.MinGasPrice = math.LegacyZeroDec()
+			if err := app.FeeMarketKeeper.SetParams(sdkCtx, feemarketParams); err != nil {
+				return vm, fmt.Errorf("failed to set feemarket params: %w", err)
+			}
+
+			return vm, nil
 		},
 	)
 

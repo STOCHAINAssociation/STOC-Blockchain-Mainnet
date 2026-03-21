@@ -28,6 +28,14 @@ genesis:
     staking:
       params:
         bond_denom: ustoc
+    feemarket:
+      params:
+        no_base_fee: true
+        base_fee: "0"
+        min_gas_price: "0.000000000000000000"
+        min_gas_multiplier: "0.500000000000000000"
+        base_fee_change_denominator: 8
+        elasticity_multiplier: 2
 validators:
   - name: validator1
     bonded: 10000000000ustoc
