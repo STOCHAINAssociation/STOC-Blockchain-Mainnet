@@ -147,6 +147,11 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			}
 		}
 
+		// Early exit: micro-transfer protection set tax to zero
+		if taxAmount.IsZero() {
+			continue
+		}
+
 		taxRecipientAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
 		if err != nil {
 			ctx.Logger().Error("Invalid tax recipient address", "address", token.Tax.RecipientAddress, "error", err)

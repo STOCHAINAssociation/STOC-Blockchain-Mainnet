@@ -151,6 +151,10 @@ func Validate(token Token) error {
 	if !TokenSymbolRegex.MatchString(token.Symbol) {
 		return fmt.Errorf("token symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
+	// Block native denom symbols to prevent confusion (mirrors ValidateState check)
+	if isNative := safeIsNativeDenom(token.Symbol); isNative {
+		return fmt.Errorf("token symbol %q conflicts with native chain denom", token.Symbol)
+	}
 
 	if token.Decimals > 18 {
 		return fmt.Errorf("decimals must be between 0 and 18")
@@ -158,6 +162,13 @@ func Validate(token Token) error {
 
 	if token.Logo == "" {
 		return fmt.Errorf("logo cannot be empty")
+	}
+	if len(token.Logo) > 256 {
+		return fmt.Errorf("logo too long (max 256 characters)")
+	}
+	// Validate logo URL scheme to prevent persisting malicious payloads (XSS/SSRF defense)
+	if !strings.HasPrefix(token.Logo, "https://") && !strings.HasPrefix(token.Logo, "ipfs://") {
+		return fmt.Errorf("logo must be a valid URL (https:// or ipfs://)")
 	}
 
 	if token.InitialSupply.IsNil() {

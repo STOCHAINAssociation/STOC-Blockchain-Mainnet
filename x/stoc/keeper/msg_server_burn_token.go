@@ -49,9 +49,13 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount, "burn amount %s exceeds tracked total supply %s — state may be corrupted", amountToBurn.String(), token.TotalSupply.String())
 		}
 
-		// Pre-validate: ensure post-burn state will pass SetToken validation BEFORE any bank mutations.
+		// Pre-validate: ensure post-burn TotalSupply will pass basic validation BEFORE any bank mutations.
+		// Note: RemainingSupply adjustment depends on module balance (computed post-burn),
+		// so full state validation is deferred to SetToken after all mutations.
 		preValidateToken := token
 		preValidateToken.TotalSupply = token.TotalSupply.Sub(amountToBurn)
+		// Use conservative estimate: if remaining > new total, clamp to new total
+		// (actual clamp uses min of excess and module balance, which may be less)
 		if preValidateToken.RemainingSupply.GT(preValidateToken.TotalSupply) {
 			preValidateToken.RemainingSupply = preValidateToken.TotalSupply
 		}

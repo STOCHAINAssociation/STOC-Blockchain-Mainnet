@@ -20,7 +20,7 @@ type StocAnteOptions struct {
 // NewAnteHandler returns an ante handler responsible for attempting to route an
 // Ethereum or SDK transaction to an internal ante handler for performing
 // transaction-level processing (e.g. fee payment, signature verification) before
-// being passed onto it's respective handler.
+// being passed onto its respective handler.
 func NewAnteHandler(options StocAnteOptions) sdk.AnteHandler {
 	return func(
 		ctx sdk.Context, tx sdk.Tx, sim bool,

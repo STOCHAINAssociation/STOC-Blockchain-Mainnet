@@ -141,14 +141,14 @@ tracer = ""
 
 [json-rpc]
 enable = true
-address = "0.0.0.0:8545"
-ws-address = "0.0.0.0:8546"
+address = "127.0.0.1:8545"  # Use "0.0.0.0:8545" only with proper firewall/ACL rules
+ws-address = "127.0.0.1:8546"
 allow-unprotected-txs = false
 enable-unsafe = false
 api = ["eth", "net", "web3", "txpool"]
 ```
 
-**Note**: If you're running a public-facing node, restrict `address` to `127.0.0.1:8545` and use a reverse proxy.
+**Warning**: Setting `address` to `0.0.0.0:8545` exposes JSON-RPC on all interfaces. Only do this explicitly with appropriate firewall/ACL rules in production. The default `127.0.0.1:8545` restricts access to localhost — use a reverse proxy to expose it publicly.
 
 ## 8. Start the Node
 
@@ -169,6 +169,9 @@ sudo useradd -m -s /bin/bash stoc
 # Copy built binary to system path
 sudo cp $(go env GOPATH)/bin/stocd /usr/local/bin/
 sudo chown root:root /usr/local/bin/stocd
+
+# Copy initialized data to the stoc user's home (stocd init writes to ~/.stoc)
+sudo cp -r ~/.stoc /home/stoc/.stoc
 
 # Ensure data directory is owned by stoc user
 sudo chown -R stoc:stoc /home/stoc/.stoc
@@ -316,11 +319,21 @@ pruning = "nothing"
 
 ### Firewall Setup
 
+#### Validator Nodes (Ubuntu/Debian — UFW)
+
 ```bash
-# P2P (required for all nodes)
+# P2P only (validators should NOT expose API/RPC publicly)
+sudo ufw allow 26656/tcp
+sudo ufw enable
+```
+
+#### Indexer / Public Nodes (Ubuntu/Debian — UFW)
+
+```bash
+# P2P (required)
 sudo ufw allow 26656/tcp
 
-# RPC/API (for indexer/public nodes)
+# RPC/API (for public-facing nodes)
 sudo ufw allow 26657/tcp
 sudo ufw allow 1317/tcp
 sudo ufw allow 9090/tcp
@@ -328,6 +341,22 @@ sudo ufw allow 8545/tcp
 sudo ufw allow 8546/tcp
 
 sudo ufw enable
+```
+
+#### CentOS / RHEL (firewalld)
+
+```bash
+# Validator: P2P only
+sudo firewall-cmd --permanent --add-port=26656/tcp
+sudo firewall-cmd --reload
+
+# Indexer / Public: add API/RPC ports
+sudo firewall-cmd --permanent --add-port=26657/tcp
+sudo firewall-cmd --permanent --add-port=1317/tcp
+sudo firewall-cmd --permanent --add-port=9090/tcp
+sudo firewall-cmd --permanent --add-port=8545/tcp
+sudo firewall-cmd --permanent --add-port=8546/tcp
+sudo firewall-cmd --reload
 ```
 
 ---

@@ -200,7 +200,11 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 	// update bond intra-tx counters.
 	store := ctx.KVStore(app.GetKey(stakingtypes.StoreKey))
 	iter := storetypes.KVStoreReversePrefixIterator(store, stakingtypes.ValidatorsKey)
-	defer iter.Close()
+	defer func() {
+		if err := iter.Close(); err != nil {
+			ctx.Logger().Error("failed to close validator iterator", "error", err)
+		}
+	}()
 	counter := int16(0)
 
 	for ; iter.Valid(); iter.Next() {

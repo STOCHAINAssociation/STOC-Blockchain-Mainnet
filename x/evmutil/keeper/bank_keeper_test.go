@@ -177,9 +177,11 @@ func (m *mockBankKeeper) setBalance(addr sdk.AccAddress, coins sdk.Coins) {
 }
 
 // Setup helpers
-func setup() (keeper.EvmBankKeeper, *mockBankKeeper) {
-	// Ensure DefaultBondDenom is set for tests
+func setup(t *testing.T) (keeper.EvmBankKeeper, *mockBankKeeper) {
+	t.Helper()
+	old := sdk.DefaultBondDenom
 	sdk.DefaultBondDenom = "ustoc"
+	t.Cleanup(func() { sdk.DefaultBondDenom = old })
 
 	mock := newMockBankKeeper()
 	ebk := keeper.NewEvmBankKeeper(mock)
@@ -197,7 +199,7 @@ func testAddr2() sdk.AccAddress {
 // ===================== GetBalance Tests =====================
 
 func TestGetBalance_EvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(100))))
 
@@ -208,7 +210,7 @@ func TestGetBalance_EvmDenom(t *testing.T) {
 }
 
 func TestGetBalance_CosmosDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(500))))
 
@@ -218,7 +220,7 @@ func TestGetBalance_CosmosDenom(t *testing.T) {
 }
 
 func TestGetBalance_CustomToken_ReturnsZero(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(sdk.NewCoin("MYTOKEN_0", math.NewInt(1000))))
 
@@ -228,7 +230,7 @@ func TestGetBalance_CustomToken_ReturnsZero(t *testing.T) {
 }
 
 func TestGetBalance_ZeroBalance(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 	addr := testAddr()
 
 	result := ebk.GetBalance(context.Background(), addr, "astoc")
@@ -239,7 +241,7 @@ func TestGetBalance_ZeroBalance(t *testing.T) {
 // ===================== SendCoins Tests =====================
 
 func TestSendCoins_EvmDenom_ConvertsToCosmosAndSends(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	from, to := testAddr(), testAddr2()
 
 	// Send 1 astoc (10^12 wei) = 1 ustoc
@@ -253,7 +255,7 @@ func TestSendCoins_EvmDenom_ConvertsToCosmosAndSends(t *testing.T) {
 }
 
 func TestSendCoins_CosmosDenom_PassesThrough(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	from, to := testAddr(), testAddr2()
 
 	amt := sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(50)))
@@ -263,7 +265,7 @@ func TestSendCoins_CosmosDenom_PassesThrough(t *testing.T) {
 }
 
 func TestSendCoins_CustomToken_Blocked(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 	from, to := testAddr(), testAddr2()
 
 	amt := sdk.NewCoins(sdk.NewCoin("MYTOKEN_0", math.NewInt(100)))
@@ -274,7 +276,7 @@ func TestSendCoins_CustomToken_Blocked(t *testing.T) {
 }
 
 func TestSendCoins_DustAmount_ReturnsError(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 	from, to := testAddr(), testAddr2()
 
 	// Send 1 wei (too small to convert to 1 ustoc) — rejected by dust remainder check
@@ -285,7 +287,7 @@ func TestSendCoins_DustAmount_ReturnsError(t *testing.T) {
 }
 
 func TestSendCoins_MixedEvmAndCosmos(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	from, to := testAddr(), testAddr2()
 
 	amt := sdk.NewCoins(
@@ -301,7 +303,7 @@ func TestSendCoins_MixedEvmAndCosmos(t *testing.T) {
 // ===================== MintCoins Tests =====================
 
 func TestMintCoins_EvmDenom_ConvertsToCosmosAndMints(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 
 	evmAmount := types.ConversionMultiplier.MulRaw(10) // 10 ustoc worth
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", evmAmount))
@@ -311,7 +313,7 @@ func TestMintCoins_EvmDenom_ConvertsToCosmosAndMints(t *testing.T) {
 }
 
 func TestMintCoins_CosmosDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 
 	amt := sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(100)))
 	err := ebk.MintCoins(context.Background(), "evm", amt)
@@ -320,7 +322,7 @@ func TestMintCoins_CosmosDenom(t *testing.T) {
 }
 
 func TestMintCoins_CustomToken_Blocked(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	amt := sdk.NewCoins(sdk.NewCoin("MYTOKEN_0", math.NewInt(100)))
 	err := ebk.MintCoins(context.Background(), "evm", amt)
@@ -329,7 +331,7 @@ func TestMintCoins_CustomToken_Blocked(t *testing.T) {
 }
 
 func TestMintCoins_DustAmount_ReturnsError(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(1)))
 	err := ebk.MintCoins(context.Background(), "evm", amt)
@@ -340,7 +342,7 @@ func TestMintCoins_DustAmount_ReturnsError(t *testing.T) {
 // ===================== BurnCoins Tests =====================
 
 func TestBurnCoins_EvmDenom_ConvertsAndBurns(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 
 	evmAmount := types.ConversionMultiplier.MulRaw(5) // 5 ustoc worth
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", evmAmount))
@@ -350,7 +352,7 @@ func TestBurnCoins_EvmDenom_ConvertsAndBurns(t *testing.T) {
 }
 
 func TestBurnCoins_DustAmount_ReturnsError(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	// Not divisible by conversion multiplier
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(999)))
@@ -360,7 +362,7 @@ func TestBurnCoins_DustAmount_ReturnsError(t *testing.T) {
 }
 
 func TestBurnCoins_CustomToken_Blocked(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	amt := sdk.NewCoins(sdk.NewCoin("MYTOKEN_0", math.NewInt(100)))
 	err := ebk.BurnCoins(context.Background(), "evm", amt)
@@ -369,7 +371,7 @@ func TestBurnCoins_CustomToken_Blocked(t *testing.T) {
 }
 
 func TestBurnCoins_CosmosDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 
 	amt := sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(50)))
 	err := ebk.BurnCoins(context.Background(), "evm", amt)
@@ -380,7 +382,7 @@ func TestBurnCoins_CosmosDenom(t *testing.T) {
 // ===================== SpendableCoins Tests =====================
 
 func TestSpendableCoins_ReturnsOnlyEvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(
 		sdk.NewCoin("ustoc", math.NewInt(100)),
@@ -395,7 +397,7 @@ func TestSpendableCoins_ReturnsOnlyEvmDenom(t *testing.T) {
 }
 
 func TestSpendableCoins_ZeroBalance_ReturnsEmpty(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 	addr := testAddr()
 
 	result := ebk.SpendableCoins(context.Background(), addr)
@@ -405,7 +407,7 @@ func TestSpendableCoins_ZeroBalance_ReturnsEmpty(t *testing.T) {
 // ===================== SpendableCoin Tests =====================
 
 func TestSpendableCoin_EvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(50))))
 
@@ -415,7 +417,7 @@ func TestSpendableCoin_EvmDenom(t *testing.T) {
 }
 
 func TestSpendableCoin_CustomToken_ReturnsZero(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(sdk.NewCoin("MYTOKEN_0", math.NewInt(999))))
 
@@ -425,7 +427,7 @@ func TestSpendableCoin_CustomToken_ReturnsZero(t *testing.T) {
 }
 
 func TestSpendableCoin_CosmosDenom_PassesThrough(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(200))))
 
@@ -437,7 +439,7 @@ func TestSpendableCoin_CosmosDenom_PassesThrough(t *testing.T) {
 // ===================== GetAllBalances Tests =====================
 
 func TestGetAllBalances_ReturnsOnlyEvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(
 		sdk.NewCoin("ustoc", math.NewInt(100)),
@@ -451,7 +453,7 @@ func TestGetAllBalances_ReturnsOnlyEvmDenom(t *testing.T) {
 }
 
 func TestGetAllBalances_ZeroBalance(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 	addr := testAddr()
 
 	result := ebk.GetAllBalances(context.Background(), addr)
@@ -461,7 +463,7 @@ func TestGetAllBalances_ZeroBalance(t *testing.T) {
 // ===================== GetSupply Tests =====================
 
 func TestGetSupply_EvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.supply = sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(1000)))
 
 	result := ebk.GetSupply(context.Background(), "astoc")
@@ -470,7 +472,7 @@ func TestGetSupply_EvmDenom(t *testing.T) {
 }
 
 func TestGetSupply_CosmosDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.supply = sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(1000)))
 
 	result := ebk.GetSupply(context.Background(), "ustoc")
@@ -479,7 +481,7 @@ func TestGetSupply_CosmosDenom(t *testing.T) {
 }
 
 func TestGetSupply_CustomToken_ReturnsZero(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.supply = sdk.NewCoins(sdk.NewCoin("MYTOKEN_0", math.NewInt(5000)))
 
 	result := ebk.GetSupply(context.Background(), "MYTOKEN_0")
@@ -490,7 +492,7 @@ func TestGetSupply_CustomToken_ReturnsZero(t *testing.T) {
 // ===================== IsSendEnabledCoin Tests =====================
 
 func TestIsSendEnabledCoin_EvmDenom_ChecksCosmosDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.sendEnabled["ustoc"] = true
 
 	result := ebk.IsSendEnabledCoin(context.Background(), sdk.NewCoin("astoc", math.NewInt(100)))
@@ -498,7 +500,7 @@ func TestIsSendEnabledCoin_EvmDenom_ChecksCosmosDenom(t *testing.T) {
 }
 
 func TestIsSendEnabledCoin_EvmDenom_Disabled(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.sendEnabled["ustoc"] = false
 
 	result := ebk.IsSendEnabledCoin(context.Background(), sdk.NewCoin("astoc", math.NewInt(100)))
@@ -506,14 +508,14 @@ func TestIsSendEnabledCoin_EvmDenom_Disabled(t *testing.T) {
 }
 
 func TestIsSendEnabledCoin_CustomToken_AlwaysFalse(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	result := ebk.IsSendEnabledCoin(context.Background(), sdk.NewCoin("MYTOKEN_0", math.NewInt(100)))
 	require.False(t, result)
 }
 
 func TestIsSendEnabledCoin_CosmosDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.sendEnabled["ustoc"] = true
 
 	result := ebk.IsSendEnabledCoin(context.Background(), sdk.NewCoin("ustoc", math.NewInt(100)))
@@ -523,7 +525,7 @@ func TestIsSendEnabledCoin_CosmosDenom(t *testing.T) {
 // ===================== IsSendEnabledCoins Tests =====================
 
 func TestIsSendEnabledCoins_EvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.sendEnabled["ustoc"] = true
 
 	err := ebk.IsSendEnabledCoins(context.Background(), sdk.NewCoin("astoc", math.NewInt(100)))
@@ -531,7 +533,7 @@ func TestIsSendEnabledCoins_EvmDenom(t *testing.T) {
 }
 
 func TestIsSendEnabledCoins_CustomToken_ReturnsError(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	err := ebk.IsSendEnabledCoins(context.Background(), sdk.NewCoin("MYTOKEN_0", math.NewInt(100)))
 	require.Error(t, err)
@@ -539,7 +541,7 @@ func TestIsSendEnabledCoins_CustomToken_ReturnsError(t *testing.T) {
 }
 
 func TestIsSendEnabledCoins_Mixed_WithCustomToken_ReturnsError(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	err := ebk.IsSendEnabledCoins(context.Background(),
 		sdk.NewCoin("astoc", math.NewInt(100)),
@@ -552,7 +554,7 @@ func TestIsSendEnabledCoins_Mixed_WithCustomToken_ReturnsError(t *testing.T) {
 // ===================== GetDenomMetaData Tests =====================
 
 func TestGetDenomMetaData_EvmDenom(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	md, found := ebk.GetDenomMetaData(context.Background(), "astoc")
 	require.True(t, found)
@@ -565,7 +567,7 @@ func TestGetDenomMetaData_EvmDenom(t *testing.T) {
 }
 
 func TestGetDenomMetaData_CosmosDenom_DelegatesToBank(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	expected := banktypes.Metadata{Base: "ustoc", Display: "stoc"}
 	mock.denomMetadata["ustoc"] = expected
 
@@ -577,7 +579,7 @@ func TestGetDenomMetaData_CosmosDenom_DelegatesToBank(t *testing.T) {
 // ===================== SetDenomMetaData Tests =====================
 
 func TestSetDenomMetaData_EvmDenom_NotStored(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	md := banktypes.Metadata{Base: "astoc"}
 	ebk.SetDenomMetaData(context.Background(), md)
 
@@ -586,7 +588,7 @@ func TestSetDenomMetaData_EvmDenom_NotStored(t *testing.T) {
 }
 
 func TestSetDenomMetaData_CosmosDenom_Stored(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	md := banktypes.Metadata{Base: "ustoc"}
 	ebk.SetDenomMetaData(context.Background(), md)
 
@@ -598,7 +600,7 @@ func TestSetDenomMetaData_CosmosDenom_Stored(t *testing.T) {
 // ===================== BlockedAddr Tests =====================
 
 func TestBlockedAddr_DelegatesToBank(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.blockedAddrs[addr.String()] = true
 
@@ -609,7 +611,7 @@ func TestBlockedAddr_DelegatesToBank(t *testing.T) {
 // ===================== SendCoinsFromModuleToAccount Tests =====================
 
 func TestSendCoinsFromModuleToAccount_EvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 
 	evmAmount := types.ConversionMultiplier.MulRaw(7)
@@ -620,7 +622,7 @@ func TestSendCoinsFromModuleToAccount_EvmDenom(t *testing.T) {
 }
 
 func TestSendCoinsFromModuleToAccount_CustomToken_Blocked(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 	addr := testAddr()
 
 	amt := sdk.NewCoins(sdk.NewCoin("MYTOKEN_0", math.NewInt(100)))
@@ -632,7 +634,7 @@ func TestSendCoinsFromModuleToAccount_CustomToken_Blocked(t *testing.T) {
 // ===================== SendCoinsFromAccountToModule Tests =====================
 
 func TestSendCoinsFromAccountToModule_EvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 
 	evmAmount := types.ConversionMultiplier.MulRaw(3)
@@ -643,7 +645,7 @@ func TestSendCoinsFromAccountToModule_EvmDenom(t *testing.T) {
 }
 
 func TestSendCoinsFromAccountToModule_CustomToken_Blocked(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 	addr := testAddr()
 
 	amt := sdk.NewCoins(sdk.NewCoin("MYTOKEN_0", math.NewInt(100)))
@@ -655,7 +657,7 @@ func TestSendCoinsFromAccountToModule_CustomToken_Blocked(t *testing.T) {
 // ===================== SendCoinsFromModuleToModule Tests =====================
 
 func TestSendCoinsFromModuleToModule_EvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 
 	evmAmount := types.ConversionMultiplier.MulRaw(2)
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", evmAmount))
@@ -665,7 +667,7 @@ func TestSendCoinsFromModuleToModule_EvmDenom(t *testing.T) {
 }
 
 func TestSendCoinsFromModuleToModule_CustomToken_Blocked(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	amt := sdk.NewCoins(sdk.NewCoin("MYTOKEN_0", math.NewInt(100)))
 	err := ebk.SendCoinsFromModuleToModule(context.Background(), "evm", "fee_collector", amt)
@@ -676,7 +678,7 @@ func TestSendCoinsFromModuleToModule_CustomToken_Blocked(t *testing.T) {
 // ===================== IterateAccountBalances Tests =====================
 
 func TestIterateAccountBalances_OnlyEmitsEvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(
 		sdk.NewCoin("ustoc", math.NewInt(100)),
@@ -697,7 +699,7 @@ func TestIterateAccountBalances_OnlyEmitsEvmDenom(t *testing.T) {
 // ===================== IterateAllBalances Tests =====================
 
 func TestIterateAllBalances_OnlyEmitsEvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 	mock.setBalance(addr, sdk.NewCoins(
 		sdk.NewCoin("ustoc", math.NewInt(50)),
@@ -717,7 +719,7 @@ func TestIterateAllBalances_OnlyEmitsEvmDenom(t *testing.T) {
 // ===================== IterateTotalSupply Tests =====================
 
 func TestIterateTotalSupply_OnlyEmitsEvmDenom(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.supply = sdk.NewCoins(
 		sdk.NewCoin("ustoc", math.NewInt(1000)),
 		sdk.NewCoin("MYTOKEN_0", math.NewInt(5000)),
@@ -811,7 +813,7 @@ func TestConvertEvmAmountToCosmosAmount(t *testing.T) {
 // ===================== Edge Cases & Security Tests =====================
 
 func TestSendCoins_LargeAmount_NoOverflow(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	from, to := testAddr(), testAddr2()
 
 	// Large amount: 10^18 ustoc worth of astoc = 10^30 astoc
@@ -824,7 +826,7 @@ func TestSendCoins_LargeAmount_NoOverflow(t *testing.T) {
 }
 
 func TestConvertAndValidateCoins_EmptyCoins(t *testing.T) {
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 
 	// Empty coins should work (pass through to bank keeper)
 	amt := sdk.NewCoins()
@@ -833,7 +835,7 @@ func TestConvertAndValidateCoins_EmptyCoins(t *testing.T) {
 }
 
 func TestGetBalance_ExactConversion(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	addr := testAddr()
 
 	// Set specific amounts and verify exact conversion
@@ -855,7 +857,7 @@ func TestGetDenomMetaData_EvmDenom_TestnetDenom(t *testing.T) {
 	sdk.DefaultBondDenom = "utstoc"
 	defer func() { sdk.DefaultBondDenom = "ustoc" }()
 
-	ebk, _ := setup()
+	ebk, _ := setup(t)
 	// Need to reset the denom after setup since setup sets it to ustoc
 	sdk.DefaultBondDenom = "utstoc"
 
@@ -869,7 +871,7 @@ func TestGetDenomMetaData_EvmDenom_TestnetDenom(t *testing.T) {
 // ===================== BankKeeper Error Propagation Tests =====================
 
 func TestSendCoins_BankKeeperError_Propagated(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.sendCoinsErr = fmt.Errorf("insufficient funds")
 
 	amt := sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(100)))
@@ -879,7 +881,7 @@ func TestSendCoins_BankKeeperError_Propagated(t *testing.T) {
 }
 
 func TestMintCoins_BankKeeperError_Propagated(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.mintCoinsErr = fmt.Errorf("mint error")
 
 	amt := sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(100)))
@@ -889,7 +891,7 @@ func TestMintCoins_BankKeeperError_Propagated(t *testing.T) {
 }
 
 func TestBurnCoins_BankKeeperError_Propagated(t *testing.T) {
-	ebk, mock := setup()
+	ebk, mock := setup(t)
 	mock.burnCoinsErr = fmt.Errorf("burn error")
 
 	amt := sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(100)))

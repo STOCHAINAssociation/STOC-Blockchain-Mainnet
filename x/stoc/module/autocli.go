@@ -21,6 +21,9 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					RpcMethod: "Token",
 					Use:       "token [minimal_denom]",
 					Short:     "Query a token by its minimal denom (e.g. MYTOKEN_0)",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "minimal_denom"},
+					},
 				},
 				{
 					RpcMethod: "Tokens",
@@ -31,6 +34,9 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					RpcMethod: "TokensBySymbol",
 					Use:       "tokens-by-symbol [symbol]",
 					Short:     "Query tokens by symbol (e.g. MYTOKEN)",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "symbol"},
+					},
 				},
 				// NOTE: BalancesWithMetadata is implemented in keeper but not yet in the
 				// generated api/ service descriptor. Run `make proto-gen` to add it to autocli.

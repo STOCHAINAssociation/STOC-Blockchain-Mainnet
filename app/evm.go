@@ -230,8 +230,16 @@ func (app *App) SetClientCtx(ctx client.Context) {
 
 // GetMempool returns the mempool of the app.
 // It is required by the EVM application interface.
+// Returns the base app's mempool as ExtMempool fallback when EVM mempool is not initialized.
 func (app *App) GetMempool() sdkmempool.ExtMempool {
-	return app.EVMMempool
+	if app.EVMMempool != nil {
+		return app.EVMMempool
+	}
+	// Fallback: try base app's mempool if it implements ExtMempool
+	if mp, ok := app.BaseApp.Mempool().(sdkmempool.ExtMempool); ok {
+		return mp
+	}
+	return nil
 }
 
 // Custom EVM activator IDs for gas multiplier overrides.

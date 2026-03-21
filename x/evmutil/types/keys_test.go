@@ -38,11 +38,11 @@ func TestGetEvmDenom_TestnetConversion(t *testing.T) {
 }
 
 func TestGetEvmDenom_FallbackNoUPrefix_Panics(t *testing.T) {
-	sdk.DefaultBondDenom = "stoc"
+	orig := sdk.DefaultBondDenom
 	defer func() {
-		// Restore before asserting
-		sdk.DefaultBondDenom = "ustoc"
+		sdk.DefaultBondDenom = orig
 	}()
+	sdk.DefaultBondDenom = "stoc"
 	require.Panics(t, func() {
 		types.GetEvmDenom()
 	}, "GetEvmDenom should panic when DefaultBondDenom doesn't start with 'u'")
