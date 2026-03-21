@@ -5,6 +5,8 @@ go 1.24.0
 toolchain go1.24.3
 
 replace (
+	// fix GetBlock panic on fullnodes — cosmos/evm panics when LegacyPool detects header hash mismatch
+	github.com/cosmos/evm => github.com/MinhAnh-Corp/evm v1.0.0-rc2.0.20260321193006-20ab5d07b2e1
 	// replace with cosmos fork for EVM compatibility
 	github.com/ethereum/go-ethereum => github.com/cosmos/go-ethereum v1.16.2-cosmos-1
 	// fix upstream GHSA-h395-qcrw-5vmq vulnerability.
