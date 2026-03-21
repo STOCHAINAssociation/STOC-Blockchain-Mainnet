@@ -1,11 +1,7 @@
 package app
 
 import (
-	"encoding/json"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
 
 	_ "cosmossdk.io/api/cosmos/tx/config/v1" // import for side-effects
 	clienthelpers "cosmossdk.io/client/v2/helpers"
@@ -185,58 +181,16 @@ type App struct {
 }
 
 func init() {
+	// Set default bond denom to ustoc (must be set before EVM modules use it)
+	// This is used by evm.go coinInfoMap and evmutil GetCosmosDenom()/GetEvmDenom()
+	sdk.DefaultBondDenom = "ustoc"
+
 	var err error
 	clienthelpers.EnvPrefix = Name
 	DefaultNodeHome, err = clienthelpers.GetNodeHomeDirectory("." + Name)
 	if err != nil {
 		panic(err)
 	}
-
-	// Set default bond denom from genesis staking params.
-	// Must be set before EVM modules use it (evm.go coinInfoMap, evmutil GetEvmDenom()).
-	// Reads genesis to support both mainnet (ustoc) and testnet (utstoc).
-	sdk.DefaultBondDenom = detectBondDenomFromGenesis(DefaultNodeHome)
-}
-
-// detectBondDenomFromGenesis reads bond_denom from genesis file.
-// For fresh nodes (no genesis yet), derives denom from chain-id in config.toml
-// or falls back based on DefaultNodeHome convention.
-// Supports: mainnet "ustoc", testnet "utstoc"
-func detectBondDenomFromGenesis(homeDir string) string {
-	// Try genesis first (most reliable source)
-	genesisPath := filepath.Join(homeDir, "config", "genesis.json")
-	data, err := os.ReadFile(genesisPath)
-	if err == nil {
-		var genesis struct {
-			AppState struct {
-				Staking struct {
-					Params struct {
-						BondDenom string `json:"bond_denom"`
-					} `json:"params"`
-				} `json:"staking"`
-			} `json:"app_state"`
-		}
-		if err := json.Unmarshal(data, &genesis); err == nil {
-			if genesis.AppState.Staking.Params.BondDenom != "" {
-				return genesis.AppState.Staking.Params.BondDenom
-			}
-		}
-	}
-
-	// No genesis available (fresh node). Try to detect from config.toml chain-id.
-	configPath := filepath.Join(homeDir, "config", "config.toml")
-	configData, err := os.ReadFile(configPath)
-	if err == nil {
-		// Simple scan for chain_id in TOML — look for moniker or proxy_app hints
-		configStr := string(configData)
-		// If config contains testnet indicators, use testnet denom
-		if strings.Contains(configStr, "tstoc") || strings.Contains(configStr, "testnet") {
-			return "utstoc"
-		}
-	}
-
-	// Final fallback: mainnet denom (safe default for ignite chain serve)
-	return "ustoc"
 }
 
 // getGovProposalHandlers return the chain proposal handlers.

@@ -1,8 +1,6 @@
 package types
 
 import (
-	"fmt"
-
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -28,32 +26,26 @@ var (
 // GetCosmosDenom returns the Cosmos token denom with 6 decimals
 // This is dynamically determined from sdk.DefaultBondDenom which is set from genesis staking params
 // Examples:
-//   - sdk.DefaultBondDenom = "ustoc" → returns "ustoc"
-//   - sdk.DefaultBondDenom = "utstoc" → returns "utstoc"
+//   - Mainnet: sdk.DefaultBondDenom = "ustoc" → returns "ustoc"
+//   - Testnet: sdk.DefaultBondDenom = "utstoc" → returns "utstoc"
 func GetCosmosDenom() string {
 	return sdk.DefaultBondDenom
 }
 
-// SafeGetEvmDenom returns the EVM token denom with 18 decimals, or an error.
-// Use this in runtime code (queries, tx processing) to avoid panics.
-func SafeGetEvmDenom() (string, error) {
-	cosmosDenom := sdk.DefaultBondDenom
-	if len(cosmosDenom) < 2 || cosmosDenom[0] != 'u' {
-		return "", fmt.Errorf("evmutil: DefaultBondDenom must start with 'u' (e.g. 'ustoc'), got: %q", cosmosDenom)
-	}
-	return "a" + cosmosDenom[1:], nil
-}
-
-// GetEvmDenom returns the EVM token denom with 18 decimals.
-// Panics if DefaultBondDenom is misconfigured. Use only during init/startup.
-// For runtime code, use SafeGetEvmDenom() instead.
+// GetEvmDenom returns the EVM token denom with 18 decimals
+// This is automatically derived by replacing 'u' prefix with 'a' prefix
 // Examples:
-//   - sdk.DefaultBondDenom = "ustoc" → returns "astoc"
-//   - sdk.DefaultBondDenom = "utstoc" → returns "atstoc"
+//   - Mainnet: sdk.DefaultBondDenom = "ustoc" → returns "astoc"
+//   - Testnet: sdk.DefaultBondDenom = "utstoc" → returns "atstoc"
 func GetEvmDenom() string {
-	denom, err := SafeGetEvmDenom()
-	if err != nil {
-		panic(err)
+	cosmosDenom := sdk.DefaultBondDenom
+	if len(cosmosDenom) > 1 && cosmosDenom[0] == 'u' {
+		// Replace 'u' prefix with 'a' prefix
+		// "ustoc" -> "astoc", "utstoc" -> "atstoc"
+		return "a" + cosmosDenom[1:]
 	}
-	return denom
+	// Fail loudly: the EVM denom derivation requires a 'u'-prefixed cosmos denom.
+	// A misconfigured DefaultBondDenom would silently produce wrong EVM denoms,
+	// leading to fund loss. Panic so operators notice immediately.
+	panic("evmutil: DefaultBondDenom must start with 'u' prefix (e.g. 'ustoc'), got: " + cosmosDenom)
 }

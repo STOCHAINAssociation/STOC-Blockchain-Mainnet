@@ -196,10 +196,9 @@ func (app *App) blockPrecompileTransfers() {
 // it is required for the ethereum json rpc server to work
 func (app *App) setEVMMempool() {
 	if evmtypes.GetChainConfig() != nil {
-		// NOTE: MaxTx limit is not available in EVMMempoolConfig for cosmos/evm v1.0.0-rc2.
-		// DoS mitigation: minimum gas price (validator config) + ante handler gas validation.
-		// BlockGasLimit 100M is standard for Cosmos EVM chains (similar to Evmos).
-		// TODO: Add MaxTx when cosmos/evm supports it, or implement custom mempool wrapper.
+		// NOTE: MaxTx limit is not available in EVMMempoolConfig for this EVM version
+		// Consider implementing custom mempool wrapper or upgrading EVM module for DoS protection
+		// Current mitigation: Rely on minimum gas price and ante handler validation
 		mempoolConfig := &evmmempool.EVMMempoolConfig{
 			AnteHandler:   app.BaseApp.AnteHandler(),
 			BlockGasLimit: 100_000_000,
@@ -309,7 +308,7 @@ func getEVMChainID(appOpts servertypes.AppOptions) (uint64, error) {
 		}
 	}
 
-	return cosmosChainIDToEVMChainID(chainID)
+	return cosmosChainIDToEVMChainID(chainID), nil
 }
 
 // cosmosChainIDToEVMChainID converts a Cosmos chain ID to an EVM chain ID.
@@ -317,7 +316,7 @@ func getEVMChainID(appOpts servertypes.AppOptions) (uint64, error) {
 // Supports two formats:
 //   - "name_EVMID-version" (e.g. stoc_1306-1) → extracts 1306
 //   - Any other string → FNV-1a hash (backward compatible)
-func cosmosChainIDToEVMChainID(chainID string) (uint64, error) {
+func cosmosChainIDToEVMChainID(chainID string) uint64 {
 	// Try to parse "name_EVMID-version" format (e.g. stoc_1306-1, stoc_1999-1)
 	if idx := strings.LastIndex(chainID, "_"); idx != -1 {
 		suffix := chainID[idx+1:] // "1306-1"
@@ -326,15 +325,17 @@ func cosmosChainIDToEVMChainID(chainID string) (uint64, error) {
 			evmPart = suffix[:dashIdx] // "1306"
 		}
 		if evmID, err := strconv.ParseUint(evmPart, 10, 64); err == nil && evmID > 0 {
-			return evmID, nil
+			return evmID
 		}
 	}
 
-	return 0, fmt.Errorf(
+	// No fallback — require explicit configuration to prevent chain ID collisions.
+	// A colliding EVM chain ID enables cross-chain transaction replay attacks.
+	panic(fmt.Sprintf(
 		"cannot derive EVM chain ID from cosmos chain-id %q: expected format 'name_EVMID-version' (e.g. stoc_1306-1) "+
 			"or set 'evm.evm-chain-id' in app.toml explicitly",
 		chainID,
-	)
+	))
 }
 
 // RegisterEVM Since the EVM modules don't support dependency injection,

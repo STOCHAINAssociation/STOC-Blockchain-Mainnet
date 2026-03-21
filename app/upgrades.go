@@ -18,9 +18,6 @@ import (
 const (
 	// UpgradeName defines the on-chain upgrade name for the STOC upgrade to add EVM support
 	UpgradeName = "v2-evm"
-	// UpgradeNameFixEVMDenom fixes the EVM denom from default "atest" to correct value
-	// derived from staking bond_denom (e.g. "ustoc" → "astoc", "utstoc" → "atstoc")
-	UpgradeNameFixEVMDenom = "v3-fix-evm-denom"
 )
 
 // RegisterUpgradeHandlers registers the upgrade handlers for the app.
@@ -46,31 +43,6 @@ func (app *App) RegisterUpgradeHandlers() {
 				return vm, fmt.Errorf("failed to set feemarket params: %w", err)
 			}
 
-			// Fix EVM denom: sdk.DefaultBondDenom may not be set during upgrade init,
-			// causing default "atest" instead of correct denom.
-			// Derive from staking bond_denom (already loaded from genesis).
-			if err := setEvmDenomFromStaking(app, sdkCtx); err != nil {
-				return vm, err
-			}
-
-			return vm, nil
-		},
-	)
-
-	// v3-fix-evm-denom: fix EVM denom from default "atest" to correct value
-	app.UpgradeKeeper.SetUpgradeHandler(
-		UpgradeNameFixEVMDenom,
-		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-			vm, err := app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
-			if err != nil {
-				return vm, err
-			}
-
-			sdkCtx := sdk.UnwrapSDKContext(ctx)
-			if err := setEvmDenomFromStaking(app, sdkCtx); err != nil {
-				return vm, err
-			}
-
 			return vm, nil
 		},
 	)
@@ -93,36 +65,4 @@ func (app *App) RegisterUpgradeHandlers() {
 		// Configure store loader that checks if version == upgradeHeight and applies store upgrades
 		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
 	}
-
-	// v3-fix-evm-denom: no new stores needed, only param update
-}
-
-// setEvmDenomFromStaking derives and sets evm_denom from staking bond_denom.
-// "ustoc" → "astoc" (mainnet), "utstoc" → "atstoc" (testnet)
-func setEvmDenomFromStaking(app *App, sdkCtx sdk.Context) error {
-	if app.StakingKeeper == nil {
-		return fmt.Errorf("staking keeper not initialized during upgrade")
-	}
-	if app.EVMKeeper == nil {
-		return fmt.Errorf("evm keeper not initialized during upgrade")
-	}
-
-	stakingParams, err := app.StakingKeeper.GetParams(sdkCtx)
-	if err != nil {
-		return fmt.Errorf("failed to get staking params: %w", err)
-	}
-
-	bondDenom := stakingParams.BondDenom
-	if len(bondDenom) < 2 || bondDenom[0] != 'u' {
-		return fmt.Errorf("invalid bond_denom %q: must start with 'u' (e.g. 'ustoc', 'utstoc')", bondDenom)
-	}
-	evmDenom := "a" + bondDenom[1:] // "ustoc" → "astoc", "utstoc" → "atstoc"
-
-	evmParams := app.EVMKeeper.GetParams(sdkCtx)
-	evmParams.EvmDenom = evmDenom
-	if err := app.EVMKeeper.SetParams(sdkCtx, evmParams); err != nil {
-		return fmt.Errorf("failed to set evm_denom to %s: %w", evmDenom, err)
-	}
-
-	return nil
 }
