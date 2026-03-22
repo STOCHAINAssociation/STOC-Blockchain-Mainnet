@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -32,20 +34,26 @@ func GetCosmosDenom() string {
 	return sdk.DefaultBondDenom
 }
 
-// GetEvmDenom returns the EVM token denom with 18 decimals
-// This is automatically derived by replacing 'u' prefix with 'a' prefix
+// SafeGetEvmDenom returns the EVM token denom with 18 decimals, or an error.
+// Use this in runtime code (queries, tx processing) to avoid panics.
+func SafeGetEvmDenom() (string, error) {
+	cosmosDenom := sdk.DefaultBondDenom
+	if len(cosmosDenom) < 2 || cosmosDenom[0] != 'u' {
+		return "", fmt.Errorf("evmutil: DefaultBondDenom must start with 'u' (e.g. 'ustoc'), got: %q", cosmosDenom)
+	}
+	return "a" + cosmosDenom[1:], nil
+}
+
+// GetEvmDenom returns the EVM token denom with 18 decimals.
+// Panics if DefaultBondDenom is misconfigured. Use only during init/startup.
+// For runtime code, use SafeGetEvmDenom() instead.
 // Examples:
 //   - Mainnet: sdk.DefaultBondDenom = "ustoc" → returns "astoc"
 //   - Testnet: sdk.DefaultBondDenom = "utstoc" → returns "atstoc"
 func GetEvmDenom() string {
-	cosmosDenom := sdk.DefaultBondDenom
-	if len(cosmosDenom) > 1 && cosmosDenom[0] == 'u' {
-		// Replace 'u' prefix with 'a' prefix
-		// "ustoc" -> "astoc", "utstoc" -> "atstoc"
-		return "a" + cosmosDenom[1:]
+	denom, err := SafeGetEvmDenom()
+	if err != nil {
+		panic(err)
 	}
-	// Fail loudly: the EVM denom derivation requires a 'u'-prefixed cosmos denom.
-	// A misconfigured DefaultBondDenom would silently produce wrong EVM denoms,
-	// leading to fund loss. Panic so operators notice immediately.
-	panic("evmutil: DefaultBondDenom must start with 'u' prefix (e.g. 'ustoc'), got: " + cosmosDenom)
+	return denom
 }

@@ -49,17 +49,8 @@ func (app *App) RegisterUpgradeHandlers() {
 			// Fix EVM denom: sdk.DefaultBondDenom may not be set during upgrade init,
 			// causing default "atest" instead of correct denom.
 			// Derive from staking bond_denom (already loaded from genesis).
-			stakingParams, err := app.StakingKeeper.GetParams(sdkCtx)
-			if err != nil {
-				return vm, fmt.Errorf("failed to get staking params: %w", err)
-			}
-			bondDenom := stakingParams.BondDenom // "ustoc" or "utstoc"
-			evmDenom := "a" + bondDenom[1:]      // "ustoc" -> "astoc", "utstoc" -> "atstoc"
-
-			evmParams := app.EVMKeeper.GetParams(sdkCtx)
-			evmParams.EvmDenom = evmDenom
-			if err := app.EVMKeeper.SetParams(sdkCtx, evmParams); err != nil {
-				return vm, fmt.Errorf("failed to set evm params: %w", err)
+			if err := setEvmDenomFromStaking(app, sdkCtx); err != nil {
+				return vm, err
 			}
 
 			return vm, nil
@@ -76,21 +67,8 @@ func (app *App) RegisterUpgradeHandlers() {
 			}
 
 			sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-			// Fix EVM denom: v2-evm upgrade initialized with default "atest"
-			// because sdk.DefaultBondDenom was not set during module init.
-			// Derive correct denom from staking bond_denom.
-			stakingParams, err := app.StakingKeeper.GetParams(sdkCtx)
-			if err != nil {
-				return vm, fmt.Errorf("failed to get staking params: %w", err)
-			}
-			bondDenom := stakingParams.BondDenom // "ustoc" or "utstoc"
-			evmDenom := "a" + bondDenom[1:]      // "ustoc" -> "astoc", "utstoc" -> "atstoc"
-
-			evmParams := app.EVMKeeper.GetParams(sdkCtx)
-			evmParams.EvmDenom = evmDenom
-			if err := app.EVMKeeper.SetParams(sdkCtx, evmParams); err != nil {
-				return vm, fmt.Errorf("failed to set evm params with denom %s: %w", evmDenom, err)
+			if err := setEvmDenomFromStaking(app, sdkCtx); err != nil {
+				return vm, err
 			}
 
 			return vm, nil
@@ -117,4 +95,34 @@ func (app *App) RegisterUpgradeHandlers() {
 	}
 
 	// v3-fix-evm-denom: no new stores needed, only param update
+}
+
+// setEvmDenomFromStaking derives and sets evm_denom from staking bond_denom.
+// "ustoc" → "astoc" (mainnet), "utstoc" → "atstoc" (testnet)
+func setEvmDenomFromStaking(app *App, sdkCtx sdk.Context) error {
+	if app.StakingKeeper == nil {
+		return fmt.Errorf("staking keeper not initialized during upgrade")
+	}
+	if app.EVMKeeper == nil {
+		return fmt.Errorf("evm keeper not initialized during upgrade")
+	}
+
+	stakingParams, err := app.StakingKeeper.GetParams(sdkCtx)
+	if err != nil {
+		return fmt.Errorf("failed to get staking params: %w", err)
+	}
+
+	bondDenom := stakingParams.BondDenom
+	if len(bondDenom) < 2 || bondDenom[0] != 'u' {
+		return fmt.Errorf("invalid bond_denom %q: must start with 'u' (e.g. 'ustoc', 'utstoc')", bondDenom)
+	}
+	evmDenom := "a" + bondDenom[1:] // "ustoc" → "astoc", "utstoc" → "atstoc"
+
+	evmParams := app.EVMKeeper.GetParams(sdkCtx)
+	evmParams.EvmDenom = evmDenom
+	if err := app.EVMKeeper.SetParams(sdkCtx, evmParams); err != nil {
+		return fmt.Errorf("failed to set evm_denom to %s: %w", evmDenom, err)
+	}
+
+	return nil
 }

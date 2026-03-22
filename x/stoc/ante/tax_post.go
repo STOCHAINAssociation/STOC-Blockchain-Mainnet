@@ -38,6 +38,10 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 	// Each message is processed independently to prevent cross-message interference.
 	taxErr := tpd.applyTaxes(ctx, tx)
 	if taxErr != nil {
+		ctx.Logger().Error("Tax enforcement failed",
+			"error", taxErr,
+			"height", ctx.BlockHeight(),
+		)
 		return ctx, fmt.Errorf("tax enforcement failed, transaction rejected: %w", taxErr)
 	}
 
