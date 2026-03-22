@@ -18,6 +18,9 @@ import (
 const (
 	// UpgradeName defines the on-chain upgrade name for the STOC upgrade to add EVM support
 	UpgradeName = "v2-evm"
+	// UpgradeNameFixEVMDenom fixes the EVM denom from default "atest" to correct value
+	// derived from staking bond_denom (e.g. "ustoc" → "astoc", "utstoc" → "atstoc")
+	UpgradeNameFixEVMDenom = "v3-fix-evm-denom"
 )
 
 // RegisterUpgradeHandlers registers the upgrade handlers for the app.
@@ -43,6 +46,53 @@ func (app *App) RegisterUpgradeHandlers() {
 				return vm, fmt.Errorf("failed to set feemarket params: %w", err)
 			}
 
+			// Fix EVM denom: sdk.DefaultBondDenom may not be set during upgrade init,
+			// causing default "atest" instead of correct denom.
+			// Derive from staking bond_denom (already loaded from genesis).
+			stakingParams, err := app.StakingKeeper.GetParams(sdkCtx)
+			if err != nil {
+				return vm, fmt.Errorf("failed to get staking params: %w", err)
+			}
+			bondDenom := stakingParams.BondDenom // "ustoc" or "utstoc"
+			evmDenom := "a" + bondDenom[1:]      // "ustoc" -> "astoc", "utstoc" -> "atstoc"
+
+			evmParams := app.EVMKeeper.GetParams(sdkCtx)
+			evmParams.EvmDenom = evmDenom
+			if err := app.EVMKeeper.SetParams(sdkCtx, evmParams); err != nil {
+				return vm, fmt.Errorf("failed to set evm params: %w", err)
+			}
+
+			return vm, nil
+		},
+	)
+
+	// v3-fix-evm-denom: fix EVM denom from default "atest" to correct value
+	app.UpgradeKeeper.SetUpgradeHandler(
+		UpgradeNameFixEVMDenom,
+		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
+			vm, err := app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
+			if err != nil {
+				return vm, err
+			}
+
+			sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+			// Fix EVM denom: v2-evm upgrade initialized with default "atest"
+			// because sdk.DefaultBondDenom was not set during module init.
+			// Derive correct denom from staking bond_denom.
+			stakingParams, err := app.StakingKeeper.GetParams(sdkCtx)
+			if err != nil {
+				return vm, fmt.Errorf("failed to get staking params: %w", err)
+			}
+			bondDenom := stakingParams.BondDenom // "ustoc" or "utstoc"
+			evmDenom := "a" + bondDenom[1:]      // "ustoc" -> "astoc", "utstoc" -> "atstoc"
+
+			evmParams := app.EVMKeeper.GetParams(sdkCtx)
+			evmParams.EvmDenom = evmDenom
+			if err := app.EVMKeeper.SetParams(sdkCtx, evmParams); err != nil {
+				return vm, fmt.Errorf("failed to set evm params with denom %s: %w", evmDenom, err)
+			}
+
 			return vm, nil
 		},
 	)
@@ -65,4 +115,6 @@ func (app *App) RegisterUpgradeHandlers() {
 		// Configure store loader that checks if version == upgradeHeight and applies store upgrades
 		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
 	}
+
+	// v3-fix-evm-denom: no new stores needed, only param update
 }
