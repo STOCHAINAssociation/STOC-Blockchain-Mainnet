@@ -25,7 +25,9 @@ type BankKeeper interface {
 	BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error
 	GetAllBalances(ctx context.Context, addr sdk.AccAddress) sdk.Coins
 	GetBalance(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin
+	GetSupply(ctx context.Context, denom string) sdk.Coin
 	SetDenomMetaData(ctx context.Context, denomMetaData banktypes.Metadata)
+	IterateAccountBalances(ctx context.Context, addr sdk.AccAddress, cb func(coin sdk.Coin) bool)
 }
 
 // ParamSubspace defines the expected Subspace interface for parameters.

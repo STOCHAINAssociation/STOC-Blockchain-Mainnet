@@ -19,5 +19,13 @@ func (k msgServer) UpdateParams(goCtx context.Context, req *types.MsgUpdateParam
 		return nil, err
 	}
 
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			"update_params",
+			sdk.NewAttribute("module", types.ModuleName),
+			sdk.NewAttribute("authority", req.Authority),
+		),
+	)
+
 	return &types.MsgUpdateParamsResponse{}, nil
 }

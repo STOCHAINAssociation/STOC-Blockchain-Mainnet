@@ -348,7 +348,7 @@ func writeFile(file, dir string, contents []byte) error {
 		return fmt.Errorf("could not create directory %q: %w", dir, err)
 	}
 
-	if err := os.WriteFile(file, contents, 0o644); err != nil {
+	if err := os.WriteFile(file, contents, 0o600); err != nil {
 		return err
 	}
 

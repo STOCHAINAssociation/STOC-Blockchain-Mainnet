@@ -1,0 +1,465 @@
+package types_test
+
+import (
+	"strings"
+	"testing"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/require"
+
+	"stoc/x/stoc/types"
+)
+
+func TestMsgCreateToken_ValidateBasic(t *testing.T) {
+	// Set DefaultBondDenom to "ustoc" so IsNativeDenom doesn't panic via GetEvmDenom()
+	oldBondDenom := sdk.DefaultBondDenom
+	sdk.DefaultBondDenom = "ustoc"
+	defer func() { sdk.DefaultBondDenom = oldBondDenom }()
+
+	creator := sdk.AccAddress([]byte("creator_address_123")).String()
+	creator2 := sdk.AccAddress([]byte("creator_address_456")).String()
+
+	tests := []struct {
+		name    string
+		msg     types.MsgCreateToken
+		wantErr bool
+	}{
+		{
+			name: "valid message",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+				Distributions: []types.WalletDistribution{
+					{Address: creator, Percent: 100},
+				},
+				Tax: types.TokenTax{
+					Percent:          math.LegacyNewDecWithPrec(1, 1),
+					RecipientAddress: creator,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid creator address",
+			msg: types.MsgCreateToken{
+				Creator:       "invalid_address",
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty name",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "name too long (65 chars)",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          strings.Repeat("A", 65),
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty symbol",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid symbol starts with number",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "1MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid logo no https",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "http://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative initial supply",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(-1),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "total supply less than initial supply",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(1000),
+				TotalSupply:   math.NewInt(500),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero total supply non-unlimited (dead token)",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.ZeroInt(),
+				TotalSupply:   math.ZeroInt(),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "distribution percentages do not sum to 100",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+				Distributions: []types.WalletDistribution{
+					{Address: creator, Percent: 50},
+					{Address: creator2, Percent: 30},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "duplicate distribution address",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+				Distributions: []types.WalletDistribution{
+					{Address: creator, Percent: 50},
+					{Address: creator, Percent: 50},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "tax exceeds 50%",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+				Tax: types.TokenTax{
+					Percent:          math.LegacyNewDecWithPrec(6, 1), // 0.6 = 60%
+					RecipientAddress: creator,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "tax positive but no recipient",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+				Tax: types.TokenTax{
+					Percent:          math.LegacyNewDecWithPrec(1, 1), // 10%
+					RecipientAddress: "",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "decimals exceeds 18",
+			msg: types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "My Token",
+				Symbol:        "MYT",
+				Decimals:      19,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(500),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMsgMintTokens_ValidateBasic(t *testing.T) {
+	creator := sdk.AccAddress([]byte("creator_address_123")).String()
+
+	tests := []struct {
+		name    string
+		msg     types.MsgMintTokens
+		wantErr bool
+	}{
+		{
+			name: "valid message",
+			msg: types.MsgMintTokens{
+				Creator: creator,
+				Symbol:  "MYT_0",
+				Amount:  math.NewInt(1000),
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty symbol",
+			msg: types.MsgMintTokens{
+				Creator: creator,
+				Symbol:  "",
+				Amount:  math.NewInt(1000),
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero amount",
+			msg: types.MsgMintTokens{
+				Creator: creator,
+				Symbol:  "MYT_0",
+				Amount:  math.ZeroInt(),
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative amount",
+			msg: types.MsgMintTokens{
+				Creator: creator,
+				Symbol:  "MYT_0",
+				Amount:  math.NewInt(-100),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMsgReleaseTokens_ValidateBasic(t *testing.T) {
+	creator := sdk.AccAddress([]byte("creator_address_123")).String()
+	recipient := sdk.AccAddress([]byte("recipient_addr_1234")).String()
+
+	tests := []struct {
+		name    string
+		msg     types.MsgReleaseTokens
+		wantErr bool
+	}{
+		{
+			name: "valid message",
+			msg: types.MsgReleaseTokens{
+				Creator:   creator,
+				Symbol:    "MYT_0",
+				Amount:    math.NewInt(100),
+				Recipient: recipient,
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty symbol",
+			msg: types.MsgReleaseTokens{
+				Creator:   creator,
+				Symbol:    "",
+				Amount:    math.NewInt(100),
+				Recipient: recipient,
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero amount",
+			msg: types.MsgReleaseTokens{
+				Creator:   creator,
+				Symbol:    "MYT_0",
+				Amount:    math.ZeroInt(),
+				Recipient: recipient,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid recipient",
+			msg: types.MsgReleaseTokens{
+				Creator:   creator,
+				Symbol:    "MYT_0",
+				Amount:    math.NewInt(100),
+				Recipient: "invalid_recipient",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMsgBurnToken_ValidateBasic(t *testing.T) {
+	creator := sdk.AccAddress([]byte("creator_address_123")).String()
+
+	tests := []struct {
+		name    string
+		msg     types.MsgBurnToken
+		wantErr bool
+	}{
+		{
+			name: "valid message burn specific amount",
+			msg: types.MsgBurnToken{
+				Creator: creator,
+				Denom:   "MYT_0",
+				Amount:  math.NewInt(100),
+				BurnAll: false,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid message burn all",
+			msg: types.MsgBurnToken{
+				Creator: creator,
+				Denom:   "MYT_0",
+				BurnAll: true,
+			},
+			wantErr: false,
+		},
+		{
+			name: "burn all with amount set",
+			msg: types.MsgBurnToken{
+				Creator: creator,
+				Denom:   "MYT_0",
+				Amount:  math.NewInt(100),
+				BurnAll: true,
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty denom",
+			msg: types.MsgBurnToken{
+				Creator: creator,
+				Denom:   "",
+				Amount:  math.NewInt(100),
+				BurnAll: false,
+			},
+			wantErr: true,
+		},
+		{
+			name: "burn all false zero amount",
+			msg: types.MsgBurnToken{
+				Creator: creator,
+				Denom:   "MYT_0",
+				Amount:  math.ZeroInt(),
+				BurnAll: false,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

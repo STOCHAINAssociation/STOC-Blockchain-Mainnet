@@ -17,6 +17,29 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					Use:       "params",
 					Short:     "Shows the parameters of the module",
 				},
+				{
+					RpcMethod: "Token",
+					Use:       "token [minimal_denom]",
+					Short:     "Query a token by its minimal denom (e.g. MYTOKEN_0)",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "minimal_denom"},
+					},
+				},
+				{
+					RpcMethod: "Tokens",
+					Use:       "tokens",
+					Short:     "List all tokens with pagination",
+				},
+				{
+					RpcMethod: "TokensBySymbol",
+					Use:       "tokens-by-symbol [symbol]",
+					Short:     "Query tokens by symbol (e.g. MYTOKEN)",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "symbol"},
+					},
+				},
+				// NOTE: BalancesWithMetadata is implemented in keeper but not yet in the
+				// generated api/ service descriptor. Run `make proto-gen` to add it to autocli.
 				// this line is used by ignite scaffolding # autocli/query
 			},
 		},
