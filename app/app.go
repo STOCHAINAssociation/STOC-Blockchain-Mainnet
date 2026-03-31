@@ -1,11 +1,12 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	_ "cosmossdk.io/api/cosmos/tx/config/v1" // import for side-effects
 	clienthelpers "cosmossdk.io/client/v2/helpers"
@@ -90,6 +91,7 @@ import (
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 
 	stocmodulekeeper "stoc/x/stoc/keeper"
+	stoctypes "stoc/x/stoc/types"
 	// this line is used by starport scaffolding # stargate/app/moduleImport
 
 	"stoc/docs"
@@ -223,19 +225,11 @@ func detectBondDenomFromGenesis(homeDir string) string {
 		}
 	}
 
-	// No genesis available (fresh node). Try to detect from config.toml chain-id.
-	configPath := filepath.Join(homeDir, "config", "config.toml")
-	configData, err := os.ReadFile(configPath)
-	if err == nil {
-		// Simple scan for chain_id in TOML — look for moniker or proxy_app hints
-		configStr := string(configData)
-		// If config contains testnet indicators, use testnet denom
-		if strings.Contains(configStr, "tstoc") || strings.Contains(configStr, "testnet") {
-			return "utstoc"
-		}
-	}
-
-	// Final fallback: mainnet denom (safe default for ignite chain serve)
+	// No genesis yet (fresh node, e.g. ignite chain serve).
+	// Default to mainnet denom — Ignite will generate genesis with the correct denom shortly.
+	// Previous heuristic (scanning config.toml for "tstoc"/"testnet") was removed because
+	// substring matching could trigger on unrelated content (moniker, comments), causing
+	// a mainnet node to use the wrong denom.
 	return "ustoc"
 }
 
@@ -375,6 +369,12 @@ func New(
 	// so precompile hex addresses must be blocked via SendRestriction instead.
 	app.blockPrecompileTransfers()
 
+	// Block custom token IBC transfers at the bank module level.
+	// This is the primary enforcement — catches ALL execution paths including
+	// ICA host, x/group proposals, and x/gov proposals that bypass ante handlers.
+	// The ante handler (IBCCustomTokenRestriction) remains for early rejection and user-facing errors.
+	app.blockCustomTokenIBCTransfers()
+
 	// register streaming services
 	if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {
 		return nil, err
@@ -403,8 +403,12 @@ func New(
 	})
 
 	// create options for AnteHandler
-	// MaxTxGasWanted caps per-tx gas; 0 = no cap (mitigated by min gas price + block gas limit)
+	// MaxTxGasWanted caps per-tx gas to prevent single-tx block monopolization.
+	// Default 50M = half of BlockGasLimit (100M), allowing other txs in the same block.
 	maxGasWanted := cast.ToUint64(appOpts.Get("gas-wanted"))
+	if maxGasWanted == 0 {
+		maxGasWanted = 50_000_000
+	}
 
 	anteOptions := stocappante.StocAnteOptions{
 		HandlerOptions: evmante.HandlerOptions{
@@ -552,6 +556,62 @@ func GetMaccPerms() map[string][]string {
 		dup[perms.Account] = perms.Permissions
 	}
 	return dup
+}
+
+// blockCustomTokenIBCTransfers registers a bank SendRestriction that prevents
+// custom tokens (created via x/stoc) from being escrowed by IBC transfer.
+// Unlike the ante handler (which only catches user-submitted txs), this restriction
+// is enforced at the bank module level and catches ALL execution paths:
+// - Direct user MsgTransfer
+// - ICA host message execution (bypasses ante handlers)
+// - x/group proposal execution (bypasses ante handlers)
+// - x/gov proposal execution (bypasses ante handlers)
+func (app *App) blockCustomTokenIBCTransfers() {
+	stocKeeper := app.StocKeeper
+	ibcKeeper := app.IBCKeeper
+
+	app.BankKeeper.AppendSendRestriction(func(ctx context.Context, fromAddr, toAddr sdk.AccAddress, amt sdk.Coins) (sdk.AccAddress, error) {
+		sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+		// Fast path: skip if no custom tokens in the amount
+		var customDenom string
+		for _, coin := range amt {
+			if stoctypes.IsNativeDenom(coin.Denom) {
+				continue
+			}
+			if stocKeeper.HasToken(sdkCtx, coin.Denom) {
+				customDenom = coin.Denom
+				break
+			}
+		}
+		if customDenom == "" {
+			return toAddr, nil
+		}
+
+		// Check if toAddr is an IBC transfer escrow address.
+		// Escrow addresses are per-channel, derived from SHA256("ics20-1\0" + portID + "/" + channelID).
+		// We iterate all known channels and check each escrow address.
+		channels := ibcKeeper.ChannelKeeper.GetAllChannels(sdkCtx)
+		for _, ch := range channels {
+			if ch.PortId != ibctransfertypes.PortID {
+				continue
+			}
+			escrowAddr := ibctransfertypes.GetEscrowAddress(ch.PortId, ch.ChannelId)
+			if toAddr.Equals(escrowAddr) {
+				sdkCtx.Logger().Warn("Blocked IBC escrow of custom token via SendRestriction",
+					"denom", customDenom,
+					"channel", ch.ChannelId,
+					"from", fromAddr.String(),
+				)
+				return toAddr, fmt.Errorf(
+					"IBC transfer of custom token %q is not allowed: custom tokens created via x/stoc are Cosmos-only and cannot be transferred cross-chain",
+					customDenom,
+				)
+			}
+		}
+
+		return toAddr, nil
+	})
 }
 
 // BlockedAddresses returns all the app's blocked account addresses.
