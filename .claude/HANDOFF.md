@@ -1,144 +1,202 @@
 # HANDOFF
 
-> 2026-03-31 16:00
+> 2026-03-31 17:00
 
 ## CURRENT REQUEST
 
-1. Audit source code, so sanh voi PR #73, tim CRITICAL/HIGH issues
-2. Fix all audit issues
-3. Migrate cosmos/evm tu v1.0.0-rc2 sang v0.6.0 (branch rieng)
+Migrate cosmos/evm từ v1.0.0-rc2 (dead-end) sang v0.6.0 (latest stable).
+Chain history: no EVM → EVM v1.0.0-rc2 → EVM v0.6.0
 
-## PLAN
+## CONTEXT
 
-- [x] Audit song song (4 agents): keeper, ante/types, app/evmutil, IBC bypass vectors
-- [x] Fix CRITICAL: BankKeeper SendRestriction block custom token IBC escrow
-- [x] Fix MEDIUM: Remove config.toml heuristic in detectBondDenomFromGenesis
-- [x] Fix MEDIUM: Default MaxTxGasWanted = 50M
-- [x] Fix MEDIUM: Guard CreateToken negative remainder panic
-- [x] Commit + push `feat/evm` → `f032b64`
-- [x] Create branch `fix/evm-from-v1.0.0-to-v0.6.0` → pushed to remote
-- [ ] Migrate cosmos/evm v1.0.0-rc2 → v0.6.0 <- NEXT
+- Branch: `fix/evm-from-v1.0.0-to-v0.6.0` (created from `feat/evm`, pushed)
+- `feat/evm` đã deploy security fixes (`f032b64`) — deploy trên VPS trước
+- v1.0.0-rc line đã bị skip/abandoned. Chỉ STOC + 1 chain khác dùng
+- v0.6.0 là stable line đang active, được nhiều chain adopt (Warden, BitBadges, Qorechain, KiiChain, XRP EVM...)
 
-## KEY NUMBERS
+## REFERENCE REPOS (clone để tham khảo)
 
-- 2 CRITICAL bypass vectors fixed (ICA Host, x/group)
-- 1 HIGH bypass vector fixed (x/gov)
-- 3 MEDIUM issues fixed
-- MaxTxGasWanted default: 50,000,000 (50M = half of BlockGasLimit 100M)
-- Build: OK, Tests: OK (only pre-existing protobuf issue in stoc/module)
+```bash
+# 1. cosmos/evm official example app (evmd)
+git clone --branch v0.6.0 --depth 1 https://github.com/cosmos/evm.git ~/refs/cosmos-evm-v0.6.0
+# Key dir: evmd/app.go, evmd/mempool.go, evmd/upgrades.go
 
-## DECISIONS
+# 2. Warden Protocol — cleanest v0.6.0 integration (no fork)
+git clone --depth 1 https://github.com/warden-protocol/wardenprotocol.git ~/refs/wardenprotocol
+# Key dir: warden/app/
+```
 
-- **SendRestriction over middleware**: Ante handler only catches user-submitted txs. ICA/Group/Gov execute via MsgServiceRouter, bypassing ante. BankKeeper.SendRestriction catches ALL paths because IBC escrow always calls BankKeeper.SendCoins(). (app/app.go:blockCustomTokenIBCTransfers)
-- **Keep ante handler + add SendRestriction**: Ante handler stays for early rejection + user-facing errors. SendRestriction is the enforcement layer. Defense in depth.
-- **Iterate channels per send**: GetAllChannels() called on each custom token send to check escrow addresses. O(channels) per send, typically <100 channels. Acceptable for blockchain.
-- **Remove config.toml heuristic**: Substring matching "tstoc"/"testnet" could trigger on moniker/comments → wrong denom on mainnet. Genesis is the only reliable source. (app/app.go:detectBondDenomFromGenesis)
-- **cosmos/evm v0.6.0 over v1.0.0-rc2**: User confirmed v1.0.0-rc line was skipped/abandoned. v0.6.0 is latest stable with active bug fixes.
+## VERSION COMPATIBILITY
 
-## COSMOS/EVM MIGRATION: v1.0.0-rc2 → v0.6.0
+| Component | STOC hiện tại | Target (v0.6.0) | Notes |
+|-----------|--------------|-----------------|-------|
+| cosmos/evm | v1.0.0-rc2 | **v0.6.0** | Main change |
+| Cosmos SDK | v0.53.4 | **v0.53.6** | Minor bump |
+| IBC-go | v10.2.0 | **v10.3.1+** | Minor bump |
+| CometBFT | v0.38.21 | v0.38.21 | No change |
+| go-ethereum | cosmos/go-ethereum | cosmos/go-ethereum **v1.16.2-cosmos-1** | Check replace directive |
+| Go | 1.24.x | 1.23.8+ | Compatible |
 
-### Branch: `fix/evm-from-v1.0.0-to-v0.6.0` (created from `feat/evm`)
+## FULL MIGRATION PLAN
 
-### Version Compatibility Matrix
+v1.0.0-rc2 → v0.6.0 không có official migration guide. Phải follow composite path:
+v1.0.0-rc2 ≈ pre-v0.4 feature set → cần apply tất cả breaking changes v0.4→v0.5→v0.6.
 
-| Component | Current (v1.0.0-rc2) | Target (v0.6.0) | Your project |
-|-----------|---------------------|-----------------|--------------|
-| Cosmos SDK | v0.53.0 | **v0.53.6** | v0.53.4 |
-| CometBFT | v0.38.17 | v0.38.21 | v0.38.21 |
-| IBC-go | v10 | v10.3.1 | v10.2.0 |
+### Phase 1: Preparation
 
-### Migration Steps (TODO)
+- [ ] Clone reference repos (cosmos/evm evmd + wardenprotocol)
+- [ ] Read cosmos/evm migration docs:
+  - `docs/protocol/migration/v0.3-v0.4.md`
+  - `docs/protocol/migration/v0.4-v0.5.md`
+  - `docs/protocol/migration/v0.5-v0.6.md`
+- [ ] Check if GetBlock panic fix (MinhAnh-Corp/evm fork) was upstreamed in v0.6.0
+  - If yes → remove fork replace directive
+  - If no → rebase patch onto v0.6.0 tag
 
-1. **Bump cosmos/evm**: `go.mod` change `github.com/cosmos/evm` from v1.0.0-rc2 → v0.6.0
-2. **Bump Cosmos SDK**: v0.53.4 → v0.53.6 (v0.6.0 requires it)
-3. **Bump IBC-go**: v10.2.0 → v10.3.1 (v0.6.0 requires it)
-4. **Rebase fork patch**: `github.com/MinhAnh-Corp/evm` replace directive — rebase GetBlock panic fix onto v0.6.0
-5. **API changes to handle**:
-   - StateDB is now a parameter to internal EVM calls (check `app/evm.go` usage)
-   - IBC Transfer wrapper removed — users must use precompile directly for ERC20
-   - Check if `EVMMempoolConfig` API changed
-   - Check if keeper constructor signatures changed
-6. **Update upgrade handler**: Add `v4-evm-upgrade` (or similar) with store migrations if needed
-7. **Fix compilation errors**: Adapt to any renamed/moved types
-8. **Run tests**: `make test-unit`
-9. **Test on devnet**: `ignite chain serve --reset-once`
+### Phase 2: Dependency Bumps (`go.mod`)
 
-### Known Risks
+- [ ] Change `github.com/cosmos/evm` v1.0.0-rc2 → v0.6.0
+- [ ] Bump `github.com/cosmos/cosmos-sdk` v0.53.4 → v0.53.6
+- [ ] Bump `github.com/cosmos/ibc-go/v10` v10.2.0 → v10.3.1+
+- [ ] Update `github.com/cosmos/go-ethereum` replace → v1.16.2-cosmos-1
+- [ ] Update MinhAnh-Corp/evm fork replace (rebase or remove)
+- [ ] Run `go mod tidy`
 
-- **Fork rebase**: `MinhAnh-Corp/evm` patches GetBlock panic. Must rebase onto v0.6.0 tag. Check if fix was upstreamed.
-- **Store migration**: If v0.6.0 changed store schemas, need upgrade handler. Check cosmos/evm CHANGELOG.
-- **ERC20 IBC middleware**: v0.6.0 removed IBC Transfer wrapper. `app/ibc.go` uses `ibctransferevm.NewIBCModule()` — verify this still exists or find replacement.
+### Phase 3: Breaking Changes — `app/evm.go`
 
-### Files to Modify
+Đối chiếu với `evmd/app.go` (v0.6.0 tag) và wardenprotocol.
 
-| File | Reason |
-|------|--------|
-| `go.mod` | Version bumps |
-| `go.sum` | Auto-updated |
-| `app/evm.go` | Keeper constructors, StateDB param, mempool config |
-| `app/ibc.go` | IBC transfer module integration changes |
-| `app/app.go` | Any import path changes |
-| `app/ante/evm_handler.go` | EVM ante handler API changes |
-| `app/upgrades.go` | New upgrade handler for v0.6.0 migration |
-| `x/evmutil/keeper/bank_keeper.go` | If EvmBankKeeper interface changed |
+#### 3a. Import Path Changes (v0.4→v0.5)
+- [ ] `github.com/cosmos/evm/types` → split thành:
+  - `github.com/cosmos/evm/ante/types`
+  - `github.com/cosmos/evm/encoding/address`
+  - `github.com/cosmos/evm/utils`
+  - `github.com/cosmos/evm/crypto/hd`
+- [ ] Update all import paths in `app/`, `cmd/`, `x/evmutil/`
 
-## AUDIT FINDINGS (Session 2026-03-31)
+#### 3b. EVM Keeper Constructor Changes
+- [ ] Check if `evmkeeper.NewKeeper()` signature changed
+- [ ] Check if `feemarketkeeper.NewKeeper()` signature changed
+- [ ] Check if `erc20keeper.NewKeeper()` signature changed
+- [ ] `StateDB` is now a parameter to `CallEVM`, `CallEVMWithData`, `ApplyMessage`
+  - Search codebase for these calls and add StateDB param
 
-### Fixed This Session
+#### 3c. Mempool Changes (v0.5)
+- [ ] `EVMMempoolConfig` API may have changed — new `cosmosPoolMaxTx` parameter
+- [ ] Compare `app/evm.go:setEVMMempool()` with `evmd/mempool.go`
 
-| # | Severity | Issue | Commit |
-|---|----------|-------|--------|
-| 1 | CRITICAL | ICA Host bypasses ante → custom tokens escape via IBC | `f032b64` |
-| 2 | CRITICAL | x/group proposals bypass ante → same vector | `f032b64` |
-| 3 | HIGH | x/gov proposals bypass ante → same vector (requires vote) | `f032b64` |
-| 4 | MEDIUM | detectBondDenomFromGenesis config.toml heuristic → wrong denom | `f032b64` |
-| 5 | MEDIUM | MaxTxGasWanted=0 → single-tx block monopolization | `f032b64` |
-| 6 | MEDIUM | CreateToken negative remainder → sdk.NewCoin panic | `f032b64` |
+#### 3d. EVM Chain ID (v0.5→v0.6)
+- [ ] Chain ID now from `appOpts`, not function parameter
+- [ ] Compare `app/evm.go:getEVMChainID()` with evmd pattern
 
-### Not Fixed (LOW / future risk)
+#### 3e. Denom Config Changes (v0.6)
+- [ ] `EvmAppOptions` calls may be removed — denom configs moved to state/genesis
+- [ ] `EvmAppOptionsWithConfig()` → check if still exists or replaced
+- [ ] `InitEvmCoinInfo` must be called in upgrade handler
 
-| # | Severity | Issue | Status |
-|---|----------|-------|--------|
-| 7 | HIGH (future) | ICS-20 v2 MsgSendPacket not covered by ante | Will be addressed in v0.6.0 migration |
-| 8 | LOW | Validate() missing creator required check | Non-exploitable (MsgCreateToken.ValidateBasic covers it) |
-| 9 | LOW | GetSigners() inconsistency across message types | Maintenance hazard only |
-| 10 | LOW | EVM mempool no MaxTx limit | Economic barrier (min gas price) mitigates |
+#### 3f. Precompile Registration
+- [ ] `DefaultStaticPrecompiles` now requires `clientKeeper` parameter
+- [ ] Compare precompile setup with evmd
 
-### Verified CLEAN Areas
+### Phase 4: Breaking Changes — `app/ibc.go`
 
-- CEI pattern ✓, Supply invariant ✓, Authz unwrap ✓, EVM isolation ✓
-- Precompile blocking ✓, Tax enforcement ✓, Query DoS protection ✓
-- Counter overflow ✓, Genesis duplicate check ✓, Nil pointer safety ✓
+#### 4a. IBC Transfer Keeper (v0.6 CRITICAL)
+- [ ] **IBC Transfer wrapper removed** — `cosmos/evm/x/ibc/transfer` may not exist in v0.6.0
+- [ ] Check if `ibctransferevm.NewIBCModule()` still exists
+- [ ] If removed → switch to standard ibc-go transfer keeper + ERC20 precompile
+- [ ] Compare with wardenprotocol's IBC setup
 
-## FILES MODIFIED (this session)
+#### 4b. ERC20 IBC Middleware
+- [ ] `erc20.NewIBCMiddleware()` — verify still exists
+- [ ] Transfer stack may need restructuring
 
-| File | Status | Notes |
-|------|--------|-------|
-| `app/app.go` | modified | SendRestriction, detectBondDenom fix, MaxTxGasWanted default |
-| `x/stoc/keeper/msg_server_create_token.go` | modified | IsNegative guard for distribution remainder |
+### Phase 5: Breaking Changes — `app/ante/`
+
+- [ ] EVM ante handler imports — check path changes
+- [ ] `evmante.HandlerOptions` struct — check if fields changed
+- [ ] `cosmosevmante.NewDynamicFeeChecker` — verify exists
+- [ ] Compare with evmd ante handler setup
+
+### Phase 6: Breaking Changes — `x/evmutil/`
+
+- [ ] `EvmBankKeeper` — check if cosmos/evm's bank keeper interface changed
+- [ ] `evmtypes.EvmCoinInfo` struct — verify fields
+- [ ] `evmutiltypes.GetEvmDenom()` — verify still works with new config approach
+
+### Phase 7: Upgrade Handler
+
+- [ ] Create `v4-evm-v060` upgrade in `app/upgrades.go`
+- [ ] Call `InitEvmCoinInfo` in upgrade handler (required by v0.6.0)
+- [ ] Add store migrations if cosmos/evm v0.6.0 changed store schemas
+- [ ] Check evmd/upgrades.go for reference
+
+### Phase 8: Build & Test
+
+- [ ] `go build ./...` — fix all compilation errors
+- [ ] `make test-unit` — all tests pass
+- [ ] `ignite chain serve --reset-once` — devnet starts OK
+- [ ] Test EVM functionality: deploy contract, send ETH tx
+- [ ] Test custom token: create, transfer, tax works
+- [ ] Test IBC restriction: custom tokens blocked from IBC
+- [ ] Test denomination conversion: ustoc ↔ astoc
+
+### Phase 9: Deploy
+
+- [ ] Deploy on testnet first
+- [ ] Submit upgrade proposal with correct height
+- [ ] Validators upgrade binary at proposal height
+- [ ] Verify post-upgrade: EVM, custom tokens, IBC all work
+
+## KEY BREAKING CHANGES SUMMARY
+
+| Change | Source | Impact |
+|--------|--------|--------|
+| Import paths split | v0.4→v0.5 | All EVM imports in app/, cmd/ |
+| StateDB param added | v0.5→v0.6 | Any direct EVM call |
+| IBC Transfer wrapper removed | v0.6 | app/ibc.go completely |
+| Denom config → state/genesis | v0.6 | app/evm.go, upgrade handler |
+| DefaultStaticPrecompiles needs clientKeeper | v0.6 | app/evm.go precompile setup |
+| InitEvmCoinInfo in upgrade | v0.6 | app/upgrades.go |
+| Mempool config changes | v0.5 | app/evm.go mempool setup |
+
+## FILES TO MODIFY
+
+| File | Changes | Reference |
+|------|---------|-----------|
+| `go.mod` | Version bumps | — |
+| `app/evm.go` | Keeper constructors, precompiles, mempool, denom config | `evmd/app.go` |
+| `app/ibc.go` | IBC transfer keeper, middleware stack | wardenprotocol |
+| `app/app.go` | Import paths, any wiring changes | `evmd/app.go` |
+| `app/ante/ante.go` | StocAnteOptions fields | `evmd/app.go` ante section |
+| `app/ante/evm_handler.go` | EVM ante imports | evmd |
+| `app/ante/cosmos_handler.go` | Cosmos ante imports | evmd |
+| `app/upgrades.go` | New v4 upgrade handler | `evmd/upgrades.go` |
+| `app/config.go` | EVM config changes | evmd |
+| `cmd/stocd/cmd/root.go` | EVM server/key imports | evmd/cmd |
+| `cmd/stocd/cmd/commands.go` | Server command changes | evmd/cmd |
+| `x/evmutil/keeper/bank_keeper.go` | If EVM bank interface changed | — |
+| `x/evmutil/types/keys.go` | If denom derivation changed | — |
+
+## PREVIOUS SESSION AUDIT (for context)
+
+Security fixes already deployed on `feat/evm` (`f032b64`):
+- CRITICAL: BankKeeper SendRestriction blocks ICA/Group/Gov IBC bypass
+- MEDIUM: detectBondDenom heuristic removed
+- MEDIUM: MaxTxGasWanted default 50M
+- MEDIUM: CreateToken negative remainder guard
 
 ## DO NOT RE-READ
 
-- All files from previous audit rounds (see previous HANDOFF section)
-- `app/ante/cosmos_handler.go` — verified, ante handler chain correct
-- `x/stoc/ante/ibc_restriction.go` — verified, kept as defense-in-depth
-- `x/evmutil/keeper/bank_keeper.go` — verified, EVM isolation solid
-- `app/evm.go` — verified, precompile blocking correct
-
-## NEXT SESSION LOAD
-
-- `go.mod` — version bumps needed for v0.6.0
-- `app/evm.go` — keeper constructors will change
-- `app/ibc.go` — IBC transfer wrapper may be removed
-- `app/upgrades.go` — new upgrade handler needed
-- cosmos/evm v0.6.0 CHANGELOG — check breaking changes
+- `x/stoc/` module — fully audited, no changes needed for migration
+- `x/stoc/ante/` — tax + IBC restriction verified, defense-in-depth
+- `app/export.go` — no EVM migration impact
+- `documents/` — docs only
 
 ## NEXT ACTIONS
 
-1. Switch to branch `fix/evm-from-v1.0.0-to-v0.6.0`
-2. Check if GetBlock panic fix was upstreamed in v0.6.0 (if yes, remove fork)
-3. Bump `go.mod`: cosmos/evm v0.6.0, cosmos-sdk v0.53.6, ibc-go v10.3.1
-4. Fix compilation errors from API changes
-5. Add upgrade handler
-6. Test build + unit tests
-7. Create PR → `feat/evm`
+1. `git checkout fix/evm-from-v1.0.0-to-v0.6.0`
+2. Clone reference repos (see REFERENCE REPOS section)
+3. Start Phase 1: read migration docs from cosmos/evm
+4. Start Phase 2: bump go.mod dependencies
+5. Work through Phase 3-7 systematically, comparing with evmd + wardenprotocol
+6. Phase 8: build + test
