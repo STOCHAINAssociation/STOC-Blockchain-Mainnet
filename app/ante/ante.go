@@ -40,10 +40,10 @@ func NewAnteHandler(options StocAnteOptions) sdk.AnteHandler {
 				switch typeURL := opts[0].GetTypeUrl(); typeURL {
 				case "/cosmos.evm.vm.v1.ExtensionOptionsEthereumTx":
 					// handle as *evmtypes.MsgEthereumTx
-					anteHandler = newMonoEVMAnteHandler(options)
-				case "/cosmos.evm.types.v1.ExtensionOptionDynamicFeeTx":
-					// cosmos-sdk tx with dynamic fee extension
-					anteHandler = newCosmosAnteHandler(options)
+					anteHandler = newMonoEVMAnteHandler(ctx, options)
+				case "/cosmos.evm.ante.v1.ExtensionOptionDynamicFeeTx":
+					// cosmos-sdk tx with dynamic fee extension — v0.6.0: path changed from types.v1 to ante.v1
+					anteHandler = newCosmosAnteHandler(ctx, options)
 				default:
 					return ctx, errorsmod.Wrapf(
 						errortypes.ErrUnknownExtensionOptions,
@@ -56,7 +56,7 @@ func NewAnteHandler(options StocAnteOptions) sdk.AnteHandler {
 		}
 
 		// handle as totally normal Cosmos SDK tx (no EVM extension options)
-		anteHandler = newCosmosAnteHandler(options)
+		anteHandler = newCosmosAnteHandler(ctx, options)
 		return anteHandler(ctx, tx, sim)
 	}
 }

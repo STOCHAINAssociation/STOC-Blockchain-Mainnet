@@ -12,8 +12,6 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	erc20 "github.com/cosmos/evm/x/erc20"
-	ibctransferevm "github.com/cosmos/evm/x/ibc/transfer"
-	ibctransferkeeper "github.com/cosmos/evm/x/ibc/transfer/keeper"
 	icamodule "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts"
 	icacontroller "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller"
 	icacontrollerkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller/keeper"
@@ -23,6 +21,7 @@ import (
 	icahosttypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/host/types"
 	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
 	ibctransfer "github.com/cosmos/ibc-go/v10/modules/apps/transfer"
+	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	ibc "github.com/cosmos/ibc-go/v10/modules/core"
 	ibcclienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types" // nolint:staticcheck // Deprecated: params key table is needed for params migration
@@ -69,7 +68,7 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 		govModuleAddr,
 	)
 
-	// Create IBC transfer keeper
+	// Create IBC transfer keeper — v0.6.0: use standard ibc-go transfer keeper (EVM wrapper removed)
 	app.TransferKeeper = ibctransferkeeper.NewKeeper(
 		app.appCodec,
 		runtime.NewKVStoreService(app.GetKey(ibctransfertypes.StoreKey)),
@@ -79,7 +78,6 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 		app.MsgServiceRouter(),
 		app.AccountKeeper,
 		app.BankKeeper,
-		&app.Erc20Keeper,
 		govModuleAddr,
 	)
 
@@ -107,13 +105,14 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 	)
 
 	// create IBC module from bottom to top of stack
+	// v0.6.0: use standard ibc-go transfer module (EVM IBC wrapper removed)
 	var (
-		transferStack      porttypes.IBCModule = ibctransferevm.NewIBCModule(app.TransferKeeper)
+		transferStack      porttypes.IBCModule = ibctransfer.NewIBCModule(app.TransferKeeper)
 		icaControllerStack porttypes.IBCModule = icacontroller.NewIBCMiddleware(app.ICAControllerKeeper)
 		icaHostStack       porttypes.IBCModule = icahost.NewIBCModule(app.ICAHostKeeper)
 	)
 
-	// add evm capabilities
+	// add evm ERC20 middleware capabilities
 	transferStack = erc20.NewIBCMiddleware(&app.Erc20Keeper, transferStack)
 
 	// create static IBC router, add transfer route, then set it on the keeper
@@ -136,9 +135,10 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 	clientKeeper.AddRoute(solomachine.ModuleName, &soloLightClientModule)
 
 	// register IBC modules
+	// v0.6.0: use standard ibc-go transfer AppModule
 	if err := app.RegisterModules(
 		ibc.NewAppModule(app.IBCKeeper),
-		ibctransferevm.NewAppModule(app.TransferKeeper), // ibc transfer evm compatible
+		ibctransfer.NewAppModule(app.TransferKeeper),
 		icamodule.NewAppModule(&app.ICAControllerKeeper, &app.ICAHostKeeper),
 		ibctm.NewAppModule(tmLightClientModule),
 		solomachine.NewAppModule(soloLightClientModule),
@@ -166,9 +166,8 @@ func RegisterIBC(cdc codec.Codec) map[string]appmodule.AppModule {
 		}
 	}
 
-	ibcTransferModuleBasic := ibctransferevm.AppModuleBasic{
-		AppModuleBasic: &ibctransfer.AppModuleBasic{},
-	}
+	// v0.6.0: use standard ibc-go transfer module basic
+	ibcTransferModuleBasic := ibctransfer.AppModuleBasic{}
 	ibcTransferModuleBasic.RegisterInterfaces(cdc.InterfaceRegistry())
 
 	return modules

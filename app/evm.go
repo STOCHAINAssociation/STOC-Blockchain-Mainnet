@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,10 +26,10 @@ import (
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	"github.com/spf13/cast"
 
-	evmconfig "github.com/cosmos/evm/config"
 	evmmempool "github.com/cosmos/evm/mempool"
 	"github.com/cosmos/evm/precompiles/bech32"
 	"github.com/cosmos/evm/precompiles/p256"
+	precompiletypes "github.com/cosmos/evm/precompiles/types"
 	srvflags "github.com/cosmos/evm/server/flags"
 	erc20 "github.com/cosmos/evm/x/erc20"
 	erc20keeper "github.com/cosmos/evm/x/erc20/keeper"
@@ -42,7 +41,6 @@ import (
 	evmkeeper "github.com/cosmos/evm/x/vm/keeper"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
 	"github.com/ethereum/go-ethereum/common"
-	gethvm "github.com/ethereum/go-ethereum/core/vm"
 
 	evmutil "stoc/x/evmutil"
 	evmutilkeeper "stoc/x/evmutil/keeper"
@@ -51,27 +49,15 @@ import (
 
 // registerEVMModules register EVM keepers and non dependency inject modules.
 func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
-	// chain config
-	chainID, err := getEVMChainID(appOpts)
-	if err != nil {
-		return fmt.Errorf("failed to get EVM chain ID: %w", err)
-	}
-	coinInfoMap := map[uint64]evmtypes.EvmCoinInfo{
-		chainID: evmtypes.EvmCoinInfo{
-			Denom:         sdk.DefaultBondDenom,                       // "ustoc" — base cosmos denom for fee payment
-			ExtendedDenom: evmutiltypes.GetEvmDenom(),                 // "astoc" — 18-decimal EVM representation
-			DisplayDenom:  strings.TrimPrefix(sdk.DefaultBondDenom, "u"), // "stoc" — human-readable display name
-			Decimals:      evmtypes.SixDecimals,                       // 6 decimals — cosmos/evm applies ConversionFactor(10^12) internally
-		},
-	}
-
-	// configure evm modules
-	if err := evmconfig.EvmAppOptionsWithConfig(
-		chainID,
-		coinInfoMap,
-		getCustomEVMActivators(),
-	); err != nil {
-		return err
+	// chain config — v0.6.0: EVM chain ID from appOpts, denom config moved to state/genesis
+	evmChainID := cast.ToUint64(appOpts.Get(srvflags.EVMChainID))
+	if evmChainID == 0 {
+		// fallback: parse from cosmos chain-id format "name_EVMID-version"
+		var err error
+		evmChainID, err = getEVMChainID(appOpts)
+		if err != nil {
+			return fmt.Errorf("failed to get EVM chain ID: %w", err)
+		}
 	}
 
 	// set up non depinject support modules store keys
@@ -119,8 +105,18 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 		app.FeeMarketKeeper,
 		&app.ConsensusParamsKeeper,
 		&app.Erc20Keeper,
+		evmChainID, // v0.6.0: EVM chain ID is now a constructor parameter
 		tracer,
 	)
+
+	// Set default EVM coin info as fallback for early RPC requests before InitGenesis.
+	// For 6-decimal chains: Denom=ustoc (Cosmos), ExtendedDenom=astoc (18-dec EVM).
+	app.EVMKeeper.WithDefaultEvmCoinInfo(evmtypes.EvmCoinInfo{
+		Denom:         sdk.DefaultBondDenom,            // "ustoc" / "utstoc" / "udstoc"
+		ExtendedDenom: evmutiltypes.GetEvmDenom(),      // "astoc" / "atstoc" / "adstoc"
+		DisplayDenom:  sdk.DefaultBondDenom[1:],        // "stoc" / "tstoc" / "dstoc"
+		Decimals:      evmtypes.SixDecimals.Uint32(),   // 6
+	})
 
 	app.Erc20Keeper = erc20keeper.NewKeeper(
 		app.GetKey(erc20types.StoreKey),
@@ -136,7 +132,7 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 	// register evm modules
 	if err := app.RegisterModules(
 		evmutil.NewAppModule(app.EvmutilKeeper),
-		vm.NewAppModule(app.EVMKeeper, app.AccountKeeper, app.AccountKeeper.AddressCodec()),
+		vm.NewAppModule(app.EVMKeeper, app.AccountKeeper, evmBankKeeper, app.AccountKeeper.AddressCodec()),
 		feemarket.NewAppModule(app.FeeMarketKeeper),
 		erc20.NewAppModule(app.Erc20Keeper, app.AccountKeeper),
 	); err != nil {
@@ -147,7 +143,7 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 }
 
 func (app *App) postRegisterEVMModules() error {
-	// register precompiles on EVMKeeper
+	// v0.6.0: Use DefaultStaticPrecompiles with custom bech32 + p256 precompiles
 	const bech32PrecompileBaseGas = 6_000
 
 	// secp256r1 precompile as per EIP-7212
@@ -158,18 +154,28 @@ func (app *App) postRegisterEVMModules() error {
 		return fmt.Errorf("failed to instantiate bech32 precompile: %w", err)
 	}
 
-	// Safe to use maps.Clone: WithStaticPrecompiles uses map lookups (not iteration) in consensus paths
-	precompiles := maps.Clone(gethvm.PrecompiledContractsPrague)
-	precompiles[bech32Precompile.Address()] = bech32Precompile
-	precompiles[p256Precompile.Address()] = p256Precompile
+	// v0.6.0: DefaultStaticPrecompiles takes keeper refs + codec
+	defaultPrecompiles := precompiletypes.DefaultStaticPrecompiles(
+		*app.StakingKeeper,
+		app.DistrKeeper,
+		app.EvmutilKeeper.GetEvmBankKeeper(), // Use EvmBankKeeper (PreciseBankKeeper equivalent for STOC)
+		&app.Erc20Keeper,
+		&app.TransferKeeper,
+		app.IBCKeeper.ChannelKeeper,
+		*app.GovKeeper,
+		app.SlashingKeeper,
+		app.appCodec,
+	)
 
-	// add more stateful precompiles here, if needed.
+	// Merge default precompiles with custom ones (bech32 + p256)
+	defaultPrecompiles[bech32Precompile.Address()] = bech32Precompile
+	defaultPrecompiles[p256Precompile.Address()] = p256Precompile
 
-	app.EVMKeeper.WithStaticPrecompiles(precompiles)
+	app.EVMKeeper.WithStaticPrecompiles(defaultPrecompiles)
 
 	// Build precompile address blocklist for bank SendRestriction
-	blockedPrecompiles := make(map[string]bool, len(precompiles))
-	for addr := range precompiles {
+	blockedPrecompiles := make(map[string]bool, len(defaultPrecompiles))
+	for addr := range defaultPrecompiles {
 		blockedPrecompiles[sdk.AccAddress(addr.Bytes()).String()] = true
 	}
 	app.blockedPrecompileAddrs = blockedPrecompiles
@@ -205,7 +211,8 @@ func (app *App) setEVMMempool() {
 			BlockGasLimit: 100_000_000,
 		}
 
-		evmMempool := evmmempool.NewExperimentalEVMMempool(app.CreateQueryContext, app.Logger(), app.EVMKeeper, app.FeeMarketKeeper, app.txConfig, app.clientCtx, mempoolConfig)
+		// v0.6.0: cosmosPoolMaxTx parameter added (0 = unbounded)
+		evmMempool := evmmempool.NewExperimentalEVMMempool(app.CreateQueryContext, app.Logger(), app.EVMKeeper, app.FeeMarketKeeper, app.txConfig, app.clientCtx, mempoolConfig, 0)
 		app.EVMMempool = evmMempool
 
 		app.SetMempool(evmMempool)
@@ -241,39 +248,6 @@ func (app *App) GetMempool() sdkmempool.ExtMempool {
 		return mp
 	}
 	return nil
-}
-
-// Custom EVM activator IDs for gas multiplier overrides.
-const (
-	activatorCreateGasMultiplier = 0 // Multiplies CREATE/CREATE2 constant gas by 10x
-	activatorCallGasMultiplier   = 1 // Multiplies CALL constant gas by 10x
-	activatorSstoreFixedGas      = 2 // Sets SSTORE constant gas to 2100 (EIP-2929 warm access cost)
-)
-
-// getCustomEVMActivators defines a map of opcode modifiers associated
-// with a key defining the corresponding activator ID.
-func getCustomEVMActivators() map[int]func(*gethvm.JumpTable) {
-	var (
-		multiplier        = uint64(10)
-		sstoreConstantGas = uint64(2100) // EIP-2929 warm access cost — prevents state bloat from cheap storage writes
-	)
-
-	return map[int]func(*gethvm.JumpTable){
-		activatorCreateGasMultiplier: func(jt *gethvm.JumpTable) {
-			currentValCreate := jt[gethvm.CREATE].GetConstantGas()
-			jt[gethvm.CREATE].SetConstantGas(currentValCreate * multiplier)
-
-			currentValCreate2 := jt[gethvm.CREATE2].GetConstantGas()
-			jt[gethvm.CREATE2].SetConstantGas(currentValCreate2 * multiplier)
-		},
-		activatorCallGasMultiplier: func(jt *gethvm.JumpTable) {
-			currentVal := jt[gethvm.CALL].GetConstantGas()
-			jt[gethvm.CALL].SetConstantGas(currentVal * multiplier)
-		},
-		activatorSstoreFixedGas: func(jt *gethvm.JumpTable) {
-			jt[gethvm.SSTORE].SetConstantGas(sstoreConstantGas)
-		},
-	}
 }
 
 // getEVMChainID returns the EVM chain ID from the app options.
@@ -342,7 +316,7 @@ func cosmosChainIDToEVMChainID(chainID string) (uint64, error) {
 // This needs to be removed after EVM supports App Wiring.
 func RegisterEVM(cdc codec.Codec, interfaceRegistry codectypes.InterfaceRegistry) map[string]appmodule.AppModule {
 	modules := map[string]appmodule.AppModule{
-		evmtypes.ModuleName:       vm.NewAppModule(nil, authkeeper.AccountKeeper{}, interfaceRegistry.SigningContext().AddressCodec()),
+		evmtypes.ModuleName:       vm.NewAppModule(nil, authkeeper.AccountKeeper{}, nil, interfaceRegistry.SigningContext().AddressCodec()),
 		erc20types.ModuleName:     erc20.NewAppModule(erc20keeper.Keeper{}, authkeeper.AccountKeeper{}),
 		feemarkettypes.ModuleName: feemarket.NewAppModule(feemarketkeeper.Keeper{}),
 	}

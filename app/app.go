@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	_ "cosmossdk.io/api/cosmos/tx/config/v1" // import for side-effects
 	clienthelpers "cosmossdk.io/client/v2/helpers"
@@ -85,7 +86,7 @@ import (
 	icacontrollerkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller/keeper"
 	icahostkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/host/keeper"
 	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
-	ibctransferkeeper "github.com/cosmos/evm/x/ibc/transfer/keeper"
+	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
@@ -100,10 +101,10 @@ import (
 	// EVM imports
 	sdkmempool "github.com/cosmos/cosmos-sdk/types/mempool"
 	evmante "github.com/cosmos/evm/ante"
-	cosmosevmante "github.com/cosmos/evm/ante/evm"
-	cosmosevmtypes "github.com/cosmos/evm/types"
+	antetypes "github.com/cosmos/evm/ante/types"
 	erc20keeper "github.com/cosmos/evm/x/erc20/keeper"
 	evmkeeper "github.com/cosmos/evm/x/vm/keeper"
+	evmtypes "github.com/cosmos/evm/x/vm/types"
 	feemarketkeeper "github.com/cosmos/evm/x/feemarket/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	stocappante "stoc/app/ante"
@@ -342,9 +343,9 @@ func New(
 		panic(err)
 	}
 
-	// add to default baseapp options
-	// enable optimistic execution
-	baseAppOptions = append(baseAppOptions, baseapp.SetOptimisticExecution())
+	// Optimistic execution disabled — experimental SDK feature that risks state divergence
+	// when combined with state-modifying PostHandler (tax). Re-enable when SDK matures.
+	// baseAppOptions = append(baseAppOptions, baseapp.SetOptimisticExecution())
 
 	// build app
 	app.App = appBuilder.Build(db, traceStore, baseAppOptions...)
@@ -418,8 +419,8 @@ func New(
 			SignModeHandler:        app.txConfig.SignModeHandler(),
 			FeegrantKeeper:         app.FeeGrantKeeper,
 			SigGasConsumer:         evmante.SigVerificationGasConsumer,
-			ExtensionOptionChecker: cosmosevmtypes.HasDynamicFeeExtensionOption,
-			TxFeeChecker:           cosmosevmante.NewDynamicFeeChecker(app.FeeMarketKeeper),
+			ExtensionOptionChecker: antetypes.HasDynamicFeeExtensionOption,
+			DynamicFeeChecker:      true, // v0.6.0: replaces TxFeeChecker with boolean flag
 			EvmKeeper:              app.EVMKeeper,
 			FeeMarketKeeper:        &app.FeeMarketKeeper,
 			MaxTxGasWanted:         maxGasWanted,
@@ -570,6 +571,13 @@ func (app *App) blockCustomTokenIBCTransfers() {
 	stocKeeper := app.StocKeeper
 	ibcKeeper := app.IBCKeeper
 
+	// Cached escrow addresses with mutex protection.
+	// SendRestriction is called from both DeliverTx (serial) and CheckTx (concurrent),
+	// so the cache MUST be protected against concurrent access.
+	var mu sync.RWMutex
+	var escrowAddrs map[string]string // bech32 addr → channelId
+	var cacheHeight int64
+
 	app.BankKeeper.AppendSendRestriction(func(ctx context.Context, fromAddr, toAddr sdk.AccAddress, amt sdk.Coins) (sdk.AccAddress, error) {
 		sdkCtx := sdk.UnwrapSDKContext(ctx)
 
@@ -588,30 +596,70 @@ func (app *App) blockCustomTokenIBCTransfers() {
 			return toAddr, nil
 		}
 
-		// Check if toAddr is an IBC transfer escrow address.
-		// Escrow addresses are per-channel, derived from SHA256("ics20-1\0" + portID + "/" + channelID).
-		// We iterate all known channels and check each escrow address.
-		channels := ibcKeeper.ChannelKeeper.GetAllChannels(sdkCtx)
-		for _, ch := range channels {
-			if ch.PortId != ibctransfertypes.PortID {
-				continue
+		// Rebuild escrow address cache every 100 blocks to pick up new channels
+		currentHeight := sdkCtx.BlockHeight()
+		mu.RLock()
+		needRebuild := escrowAddrs == nil || currentHeight-cacheHeight >= 100
+		mu.RUnlock()
+
+		if needRebuild {
+			mu.Lock()
+			// Double-check after acquiring write lock
+			if escrowAddrs == nil || currentHeight-cacheHeight >= 100 {
+				newCache := make(map[string]string)
+				channels := ibcKeeper.ChannelKeeper.GetAllChannels(sdkCtx)
+				for _, ch := range channels {
+					if ch.PortId == ibctransfertypes.PortID {
+						addr := ibctransfertypes.GetEscrowAddress(ch.PortId, ch.ChannelId)
+						newCache[addr.String()] = ch.ChannelId
+					}
+				}
+				escrowAddrs = newCache
+				cacheHeight = currentHeight
 			}
-			escrowAddr := ibctransfertypes.GetEscrowAddress(ch.PortId, ch.ChannelId)
-			if toAddr.Equals(escrowAddr) {
-				sdkCtx.Logger().Warn("Blocked IBC escrow of custom token via SendRestriction",
-					"denom", customDenom,
-					"channel", ch.ChannelId,
-					"from", fromAddr.String(),
-				)
-				return toAddr, fmt.Errorf(
-					"IBC transfer of custom token %q is not allowed: custom tokens created via x/stoc are Cosmos-only and cannot be transferred cross-chain",
-					customDenom,
-				)
-			}
+			mu.Unlock()
+		}
+
+		// O(1) lookup with read lock
+		mu.RLock()
+		channelId, blocked := escrowAddrs[toAddr.String()]
+		mu.RUnlock()
+
+		if blocked {
+			sdkCtx.Logger().Warn("Blocked IBC escrow of custom token via SendRestriction",
+				"denom", customDenom,
+				"channel", channelId,
+				"from", fromAddr.String(),
+			)
+			return toAddr, fmt.Errorf(
+				"IBC transfer of custom token %q is not allowed: custom tokens created via x/stoc are Cosmos-only and cannot be transferred cross-chain",
+				customDenom,
+			)
 		}
 
 		return toAddr, nil
 	})
+}
+
+// DefaultGenesis returns default genesis state with STOC-specific EVM denom configuration.
+// Overrides cosmos/evm defaults ("aatom") with denoms derived from bond_denom.
+func (app *App) DefaultGenesis() map[string]json.RawMessage {
+	genesis := app.App.DefaultGenesis()
+
+	// Override EVM module genesis: set correct denoms for 6-decimal chain
+	bondDenom := sdk.DefaultBondDenom
+	extendedDenom := "a" + bondDenom[1:] // "ustoc" → "astoc"
+
+	evmGenState := evmtypes.DefaultGenesisState()
+	evmGenState.Params.EvmDenom = bondDenom
+	evmGenState.Params.ExtendedDenomOptions = &evmtypes.ExtendedDenomOptions{
+		ExtendedDenom: extendedDenom,
+	}
+	evmGenState.Params.ActiveStaticPrecompiles = evmtypes.AvailableStaticPrecompiles
+	evmGenState.Preinstalls = evmtypes.DefaultPreinstalls
+	genesis[evmtypes.ModuleName] = app.appCodec.MustMarshalJSON(evmGenState)
+
+	return genesis
 }
 
 // BlockedAddresses returns all the app's blocked account addresses.

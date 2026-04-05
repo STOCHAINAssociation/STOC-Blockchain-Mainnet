@@ -1,0 +1,36 @@
+# Dockerfile.stocd — Build stocd binary for Linux (Ubuntu VPS) from macOS
+#
+# Usage:
+#   # Build from current branch:
+#   docker build --platform linux/amd64 -f Dockerfile.stocd -t stoc-build .
+#   docker run --rm -v /tmp:/output stoc-build
+#   # Binary at: /tmp/stocd
+#
+#   # Build with custom output name:
+#   docker run --rm -v /tmp:/output -e BINARY_NAME=stoc_fixed_evm_d stoc-build
+#
+#   # One-liner (no image cache):
+#   docker run --rm --platform linux/amd64 -v "$(pwd):/app" -v "/tmp:/output" -w /app \
+#     golang:1.24.3 sh -c 'go build -o /output/stocd ./cmd/stocd'
+#
+#   # SCP to VPS:
+#   scp -i vps-ssh-key/dev-net/devnet /tmp/stocd root@<VPS_IP>:/root/go/bin/stocd
+
+FROM --platform=linux/amd64 golang:1.24.3 AS builder
+
+WORKDIR /app
+
+# Cache dependencies first (layer caching)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source and build
+COPY . .
+RUN go build -o /stocd ./cmd/stocd
+
+# Output stage — copy binary to mounted volume
+FROM --platform=linux/amd64 ubuntu:22.04
+COPY --from=builder /stocd /stocd
+
+# Default: copy binary to /output volume with configurable name
+ENTRYPOINT ["sh", "-c", "cp /stocd /output/${BINARY_NAME:-stocd} && echo \"Built: /output/${BINARY_NAME:-stocd}\" && ls -lh /output/${BINARY_NAME:-stocd}"]

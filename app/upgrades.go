@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	erc20types "github.com/cosmos/evm/x/erc20/types"
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
@@ -57,7 +59,7 @@ func (app *App) RegisterUpgradeHandlers() {
 		},
 	)
 
-	// v3-fix-evm-denom: fix EVM denom from default "atest" to correct value
+	// v3-fix-evm-denom: fix EVM denom and MinGasPrice
 	app.UpgradeKeeper.SetUpgradeHandler(
 		UpgradeNameFixEVMDenom,
 		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
@@ -69,6 +71,16 @@ func (app *App) RegisterUpgradeHandlers() {
 			sdkCtx := sdk.UnwrapSDKContext(ctx)
 			if err := setEvmDenomFromStaking(app, sdkCtx); err != nil {
 				return vm, err
+			}
+
+			// Fix feemarket MinGasPrice: v2-evm set it to 0 allowing free EVM tx spam.
+			// Set 10^9 astoc/gas = 0.001 ustoc/gas = 1 gwei, matching Cosmos min-gas-prices.
+			feemarketParams := feemarkettypes.DefaultParams()
+			feemarketParams.NoBaseFee = true
+			feemarketParams.BaseFee = math.LegacyZeroDec()
+			feemarketParams.MinGasPrice = math.LegacyNewDec(1_000_000_000)
+			if err := app.FeeMarketKeeper.SetParams(sdkCtx, feemarketParams); err != nil {
+				return vm, fmt.Errorf("failed to set feemarket MinGasPrice: %w", err)
 			}
 
 			return vm, nil
@@ -97,8 +109,9 @@ func (app *App) RegisterUpgradeHandlers() {
 	// v3-fix-evm-denom: no new stores needed, only param update
 }
 
-// setEvmDenomFromStaking derives and sets evm_denom from staking bond_denom.
-// "ustoc" → "astoc" (mainnet), "utstoc" → "atstoc" (testnet)
+// setEvmDenomFromStaking derives and sets EVM denom config from staking bond_denom.
+// For 6-decimal chains: evm_denom=ustoc (Cosmos), extended_denom=astoc (18-dec EVM).
+// Also sets bank denom_metadata and initializes EVM coin info in KV store.
 func setEvmDenomFromStaking(app *App, sdkCtx sdk.Context) error {
 	if app.StakingKeeper == nil {
 		return fmt.Errorf("staking keeper not initialized during upgrade")
@@ -116,12 +129,34 @@ func setEvmDenomFromStaking(app *App, sdkCtx sdk.Context) error {
 	if len(bondDenom) < 2 || bondDenom[0] != 'u' {
 		return fmt.Errorf("invalid bond_denom %q: must start with 'u' (e.g. 'ustoc', 'utstoc')", bondDenom)
 	}
-	evmDenom := "a" + bondDenom[1:] // "ustoc" → "astoc", "utstoc" → "atstoc"
+	extendedDenom := "a" + bondDenom[1:] // "ustoc" → "astoc", "utstoc" → "atstoc"
+	displayDenom := bondDenom[1:]        // "ustoc" → "stoc", "utstoc" → "tstoc"
 
+	// Set EVM params: evm_denom = Cosmos base denom, extended_denom = 18-decimal EVM denom
 	evmParams := app.EVMKeeper.GetParams(sdkCtx)
-	evmParams.EvmDenom = evmDenom
+	evmParams.EvmDenom = bondDenom
+	evmParams.ExtendedDenomOptions = &evmtypes.ExtendedDenomOptions{
+		ExtendedDenom: extendedDenom,
+	}
 	if err := app.EVMKeeper.SetParams(sdkCtx, evmParams); err != nil {
-		return fmt.Errorf("failed to set evm_denom to %s: %w", evmDenom, err)
+		return fmt.Errorf("failed to set evm params: %w", err)
+	}
+
+	// Set bank denom_metadata — required for InitEvmCoinInfo to load decimals + display denom
+	app.BankKeeper.SetDenomMetaData(sdkCtx, banktypes.Metadata{
+		Base:    bondDenom,
+		Display: displayDenom,
+		DenomUnits: []*banktypes.DenomUnit{
+			{Denom: bondDenom, Exponent: 0},
+			{Denom: displayDenom, Exponent: 6},
+		},
+		Name:   strings.ToUpper(displayDenom),
+		Symbol: strings.ToUpper(displayDenom),
+	})
+
+	// Initialize EVM coin info from bank metadata + params → stores in KV store
+	if err := app.EVMKeeper.InitEvmCoinInfo(sdkCtx); err != nil {
+		return fmt.Errorf("failed to init evm coin info: %w", err)
 	}
 
 	return nil
