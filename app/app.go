@@ -596,10 +596,10 @@ func (app *App) blockCustomTokenIBCTransfers() {
 			return toAddr, nil
 		}
 
-		// Rebuild escrow address cache every 100 blocks to pick up new channels
+		// Rebuild escrow address cache every 10 blocks to pick up new channels
 		currentHeight := sdkCtx.BlockHeight()
 		mu.RLock()
-		needRebuild := escrowAddrs == nil || currentHeight-cacheHeight >= 100
+		needRebuild := escrowAddrs == nil || currentHeight-cacheHeight >= 10
 		mu.RUnlock()
 
 		if needRebuild {

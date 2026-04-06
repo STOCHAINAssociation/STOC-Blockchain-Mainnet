@@ -231,6 +231,10 @@ func Validate(token Token) error {
 				return fmt.Errorf("distribution percentage must be between 1 and 100")
 			}
 
+			// Overflow check before addition
+			if totalPercent > 100-dist.Percent {
+				return fmt.Errorf("distribution percentages overflow (sum exceeds 100)")
+			}
 			totalPercent += dist.Percent
 		}
 

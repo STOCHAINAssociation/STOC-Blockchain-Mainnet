@@ -114,7 +114,7 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 	app.EVMKeeper.WithDefaultEvmCoinInfo(evmtypes.EvmCoinInfo{
 		Denom:         sdk.DefaultBondDenom,            // "ustoc" / "utstoc" / "udstoc"
 		ExtendedDenom: evmutiltypes.GetEvmDenom(),      // "astoc" / "atstoc" / "adstoc"
-		DisplayDenom:  sdk.DefaultBondDenom[1:],        // "stoc" / "tstoc" / "dstoc"
+		DisplayDenom:  strings.TrimPrefix(sdk.DefaultBondDenom, "u"), // "stoc" / "tstoc" / "dstoc"
 		Decimals:      evmtypes.SixDecimals.Uint32(),   // 6
 	})
 
