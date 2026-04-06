@@ -853,13 +853,13 @@ func TestGetBalance_ExactConversion(t *testing.T) {
 // ===================== getDisplayDenom Tests =====================
 
 func TestGetDenomMetaData_EvmDenom_TestnetDenom(t *testing.T) {
-	// Switch to testnet denom
+	// Construct EvmBankKeeper with testnet denom (cached at construction)
+	old := sdk.DefaultBondDenom
 	sdk.DefaultBondDenom = "utstoc"
-	defer func() { sdk.DefaultBondDenom = "ustoc" }()
+	t.Cleanup(func() { sdk.DefaultBondDenom = old })
 
-	ebk, _ := setup(t)
-	// Need to reset the denom after setup since setup sets it to ustoc
-	sdk.DefaultBondDenom = "utstoc"
+	mock := newMockBankKeeper()
+	ebk := keeper.NewEvmBankKeeper(mock)
 
 	md, found := ebk.GetDenomMetaData(context.Background(), "atstoc")
 	require.True(t, found)

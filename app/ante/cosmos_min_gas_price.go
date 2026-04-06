@@ -79,6 +79,16 @@ func (mpd CosmosMinGasPriceDecorator) AnteHandle(
 			requiredFees)
 	}
 
+	// Reject multi-denom fees and wrong denom (defense-in-depth, matches upstream behavior)
+	if len(feeCoins) > 1 {
+		return ctx, errorsmod.Wrapf(errortypes.ErrInvalidCoins,
+			"expected only one fee coin, got %d: %s", len(feeCoins), feeCoins.String())
+	}
+	if len(feeCoins) == 1 && feeCoins[0].Denom != evmDenom {
+		return ctx, errorsmod.Wrapf(errortypes.ErrInvalidCoins,
+			"expected fee in %s, got %s", evmDenom, feeCoins[0].Denom)
+	}
+
 	if !feeCoins.IsAnyGTE(requiredFees) {
 		return ctx, errorsmod.Wrapf(errortypes.ErrInsufficientFee,
 			"provided fee < minimum global fee (%s < %s). Please increase the gas price.",

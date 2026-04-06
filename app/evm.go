@@ -211,8 +211,8 @@ func (app *App) setEVMMempool() {
 			BlockGasLimit: 100_000_000,
 		}
 
-		// v0.6.0: cosmosPoolMaxTx parameter added (0 = unbounded)
-		evmMempool := evmmempool.NewExperimentalEVMMempool(app.CreateQueryContext, app.Logger(), app.EVMKeeper, app.FeeMarketKeeper, app.txConfig, app.clientCtx, mempoolConfig, 0)
+		// v0.6.0: cosmosPoolMaxTx=5000 limits pending Cosmos txs in EVM mempool (DoS mitigation)
+		evmMempool := evmmempool.NewExperimentalEVMMempool(app.CreateQueryContext, app.Logger(), app.EVMKeeper, app.FeeMarketKeeper, app.txConfig, app.clientCtx, mempoolConfig, 5000)
 		app.EVMMempool = evmMempool
 
 		app.SetMempool(evmMempool)
