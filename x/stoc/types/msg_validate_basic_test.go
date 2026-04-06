@@ -272,6 +272,100 @@ func TestMsgCreateToken_ValidateBasic(t *testing.T) {
 	}
 }
 
+// L17 fix: distribution percent overflow check
+func TestMsgCreateToken_DistributionOverflow(t *testing.T) {
+	oldBondDenom := sdk.DefaultBondDenom
+	sdk.DefaultBondDenom = "ustoc"
+	defer func() { sdk.DefaultBondDenom = oldBondDenom }()
+
+	creator := sdk.AccAddress([]byte("creator_address_123")).String()
+	creator2 := sdk.AccAddress([]byte("creator_address_456")).String()
+
+	tests := []struct {
+		name    string
+		dists   []types.WalletDistribution
+		wantErr bool
+	}{
+		{
+			name: "valid 50+50=100",
+			dists: []types.WalletDistribution{
+				{Address: creator, Percent: 50},
+				{Address: creator2, Percent: 50},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid 33+33+34=100",
+			dists: []types.WalletDistribution{
+				{Address: creator, Percent: 33},
+				{Address: creator2, Percent: 33},
+				{Address: sdk.AccAddress([]byte("creator_address_789")).String(), Percent: 34},
+			},
+			wantErr: false,
+		},
+		{
+			name: "overflow: 100+100 > 100",
+			dists: []types.WalletDistribution{
+				{Address: creator, Percent: 100},
+				{Address: creator2, Percent: 100},
+			},
+			wantErr: true,
+		},
+		{
+			name: "overflow: 60+60 > 100",
+			dists: []types.WalletDistribution{
+				{Address: creator, Percent: 60},
+				{Address: creator2, Percent: 60},
+			},
+			wantErr: true,
+		},
+		{
+			name: "not 100: 30+30=60",
+			dists: []types.WalletDistribution{
+				{Address: creator, Percent: 30},
+				{Address: creator2, Percent: 30},
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero percent rejected",
+			dists: []types.WalletDistribution{
+				{Address: creator, Percent: 0},
+			},
+			wantErr: true,
+		},
+		{
+			name: "single 100%",
+			dists: []types.WalletDistribution{
+				{Address: creator, Percent: 100},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := types.MsgCreateToken{
+				Creator:       creator,
+				Name:          "Test Token",
+				Symbol:        "TST",
+				Decimals:      6,
+				Logo:          "https://example.com/logo.png",
+				InitialSupply: math.NewInt(1000),
+				TotalSupply:   math.NewInt(1000),
+				Unlimited:     false,
+				Distributions: tc.dists,
+			}
+			err := msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err, "expected error for: %s", tc.name)
+			} else {
+				require.NoError(t, err, "unexpected error for: %s", tc.name)
+			}
+		})
+	}
+}
+
 func TestMsgMintTokens_ValidateBasic(t *testing.T) {
 	creator := sdk.AccAddress([]byte("creator_address_123")).String()
 
