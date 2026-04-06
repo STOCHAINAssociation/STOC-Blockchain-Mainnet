@@ -13,6 +13,11 @@ import (
 	stocante "stoc/x/stoc/ante"
 )
 
+// NOTE: We use our custom CosmosMinGasPriceDecorator (cosmos_min_gas_price.go)
+// instead of cosmosante.NewMinGasPriceDecorator because the upstream version
+// does not convert feemarket min_gas_price from 18-decimal EVM scale to
+// Cosmos denom scale, causing Cosmos tx fees to be 10^12x too expensive.
+
 // newCosmosAnteHandler creates the default ante handler for Cosmos transactions
 // v0.6.0: now takes ctx to fetch params from keepers
 func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHandler {
@@ -34,7 +39,7 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
 		stocante.NewIBCCustomTokenRestriction(options.StocKeeper), // block custom token IBC transfers
-		cosmosante.NewMinGasPriceDecorator(&feemarketParams),
+		NewCosmosMinGasPriceDecorator(&feemarketParams),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
 		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeChecker),
 		// SetPubKeyDecorator must be called before all signature verification decorators
