@@ -4,7 +4,8 @@
 # Runs all test suites against current binary via `ignite chain serve --reset-once`
 # Usage: ./run_smoke.sh [--no-chain] [--suite 01,02,03]
 # =============================================================================
-set -euo pipefail
+set -uo pipefail
+# Note: NOT using set -e because test functions handle errors via assertions
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -93,9 +94,9 @@ start_chain() {
             return 0
         fi
         sleep 5
-        ((elapsed += 5))
+        elapsed=$((elapsed + 5))
         # Show progress every 30s
-        if (( elapsed % 30 == 0 )); then
+        if [[ $((elapsed % 30)) -eq 0 ]]; then
             log_info "Still waiting... (${elapsed}s / ${max_wait}s)"
             tail -1 /tmp/stoc_e2e_chain.log 2>/dev/null | head -c 200
             echo ""

@@ -17,7 +17,7 @@ run_token_lifecycle_tests() {
     # T01: Create basic token (all defaults, 100% to creator)
     test_start "Create basic token (ALPHA, unlimited=false)"
     local result
-    result=$(create_token "$WALLET_ADMIN" "Alpha Token" "ALPHA" "1000000" "10000000" 6 "$LOGO" false)
+    result=$(create_token "$WALLET_ADMIN" "AlphaToken" "ALPHA" "1000000" "10000000" 6 "$LOGO" false)
     assert_tx_success "$result"
 
     # T02: Query token by minimal denom
@@ -32,7 +32,7 @@ run_token_lifecycle_tests() {
     t_name=$(echo "$token_json" | jq -r '.token.name')
     t_dec=$(echo "$token_json" | jq -r '.token.decimals')
     t_creator=$(echo "$token_json" | jq -r '.token.creator')
-    if [[ "$t_name" == "Alpha Token" && "$t_dec" == "6" && "$t_creator" == "$ADDR_ADMIN" ]]; then
+    if [[ "$t_name" == "AlphaToken" && "$t_dec" == "6" && "$t_creator" == "$ADDR_ADMIN" ]]; then
         pass
     else
         fail "name=$t_name dec=$t_dec creator=$t_creator"
@@ -53,7 +53,7 @@ run_token_lifecycle_tests() {
     # T06: Verify creation fee deducted (100 STOC = 100_000_000 ustoc)
     test_start "Verify creation fee deducted from admin"
     local admin_bal
-    admin_bal=$(get_balance "$ADDR_ADMIN" "ustoc")
+    admin_bal=$(get_balance "$ADDR_ADMIN" "$DENOM")
     # Admin started with 10_000_000_000_000_000 ustoc, minus 100M fee, minus gas, minus wallet funding
     # Just check it decreased (exact amount depends on gas + funding)
     assert_gt "$admin_bal" "0"
@@ -64,7 +64,7 @@ run_token_lifecycle_tests() {
 
     # T07: Create unlimited token
     test_start "Create unlimited token (BETA)"
-    result=$(create_token "$WALLET_ADMIN" "Beta Token" "BETA" "500000" "500000" 6 "$LOGO" true)
+    result=$(create_token "$WALLET_ADMIN" "BetaToken" "BETA" "500000" "500000" 6 "$LOGO" true)
     assert_tx_success "$result"
 
     # T08: Verify unlimited flag
@@ -74,22 +74,22 @@ run_token_lifecycle_tests() {
 
     # T09: Create token with 0 decimals
     test_start "Create token with 0 decimals (GAMMA)"
-    result=$(create_token "$WALLET_ADMIN" "Gamma Token" "GAMMA" "100" "1000" 0 "$LOGO" false)
+    result=$(create_token "$WALLET_ADMIN" "GammaToken" "GAMMA" "100" "1000" 0 "$LOGO" false)
     assert_tx_success "$result"
 
     # T10: Create token with 18 decimals
     test_start "Create token with 18 decimals (DELTA)"
-    result=$(create_token "$WALLET_ADMIN" "Delta Token" "DELTA" "1000000000000000000" "10000000000000000000" 18 "$LOGO" false)
+    result=$(create_token "$WALLET_ADMIN" "DeltaToken" "DELTA" "1000000000000000000" "10000000000000000000" 18 "$LOGO" false)
     assert_tx_success "$result"
 
     # T11: Create token with IPFS logo
     test_start "Create token with IPFS logo (EPSILON)"
-    result=$(create_token "$WALLET_ADMIN" "Epsilon Token" "EPSILON" "1000" "10000" 6 "$LOGO_IPFS" false)
+    result=$(create_token "$WALLET_ADMIN" "EpsilonToken" "EPSILON" "1000" "10000" 6 "$LOGO_IPFS" false)
     assert_tx_success "$result"
 
     # T12: Create token with 0 initial supply (all in remaining)
     test_start "Create token with 0 initial supply (ZETA)"
-    result=$(create_token "$WALLET_ADMIN" "Zeta Token" "ZETA" "0" "5000000" 6 "$LOGO" false)
+    result=$(create_token "$WALLET_ADMIN" "ZetaToken" "ZETA" "0" "5000000" 6 "$LOGO" false)
     assert_tx_success "$result"
 
     # T13: Verify ZETA remaining = total supply
@@ -100,7 +100,7 @@ run_token_lifecycle_tests() {
 
     # T14: Create token with initial = total (no remaining)
     test_start "Create token initial=total (ETA)"
-    result=$(create_token "$WALLET_ADMIN" "Eta Token" "ETA" "1000000" "1000000" 6 "$LOGO" false)
+    result=$(create_token "$WALLET_ADMIN" "EtaToken" "ETA" "1000000" "1000000" 6 "$LOGO" false)
     assert_tx_success "$result"
 
     # T15: Verify ETA remaining = 0
@@ -115,22 +115,9 @@ run_token_lifecycle_tests() {
 
     # T16: Create token with 5% tax (tax recipient = admin)
     test_start "Create token with 5% tax (TAXED)"
-    result=$(create_token "$WALLET_ADMIN" "Taxed Token" "TAXED" "1000000" "10000000" 6 "$LOGO" false \
-        "--tax '{\"percent\":\"0.050000000000000000\",\"recipient_address\":\"$ADDR_ADMIN\"}'")
-    if echo "$result" | jq -e '.code' >/dev/null 2>&1; then
-        local code
-        code=$(echo "$result" | jq -r '.code')
-        if [[ "$code" == "0" ]]; then
-            pass
-        else
-            # Try alternative flag format
-            result=$(create_token "$WALLET_ADMIN" "Taxed Token" "TAXED" "1000000" "10000000" 6 "$LOGO" false \
-                "--tax.percent 0.050000000000000000 --tax.recipient-address $ADDR_ADMIN")
-            assert_tx_success "$result"
-        fi
-    else
-        fail "unexpected response format"
-    fi
+    result=$(create_token "$WALLET_ADMIN" "TaxedToken" "TAXED" "1000000" "10000000" 6 "$LOGO" false \
+        "$(tax_flag 5 $ADDR_ADMIN)")
+    assert_tx_success "$result"
 
     # T17: Verify tax config
     test_start "Verify TAXED_0 tax percent"
@@ -149,8 +136,8 @@ run_token_lifecycle_tests() {
 
     # T18: Create token with 2-wallet distribution (60/40)
     test_start "Create token with distribution 60/40 (DISTRIB)"
-    result=$(create_token "$WALLET_ADMIN" "Distrib Token" "DISTRIB" "1000000" "10000000" 6 "$LOGO" false \
-        "--distributions '[{\"address\":\"$ADDR_ADMIN\",\"percent\":60},{\"address\":\"$ADDR_EVM1\",\"percent\":40}]'")
+    result=$(create_token "$WALLET_ADMIN" "DistribToken" "DISTRIB" "1000000" "10000000" 6 "$LOGO" false \
+        "--distributions '{\"address\":\"$ADDR_ADMIN\",\"percent\":60}' --distributions '{\"address\":\"$ADDR_EVM1\",\"percent\":40}'")
     if echo "$result" | jq -e '.code' >/dev/null 2>&1; then
         code=$(echo "$result" | jq -r '.code')
         if [[ "$code" == "0" ]]; then
@@ -186,7 +173,7 @@ run_token_lifecycle_tests() {
 
     # T21: Create second token with same symbol ALPHA
     test_start "Create second ALPHA token (counter = 1)"
-    result=$(create_token "$WALLET_ADMIN" "Alpha v2" "ALPHA" "500" "5000" 6 "$LOGO" false)
+    result=$(create_token "$WALLET_ADMIN" "AlphaV2" "ALPHA" "500" "5000" 6 "$LOGO" false)
     assert_tx_success "$result"
 
     # T22: Verify minimal denom is ALPHA_1
@@ -383,10 +370,10 @@ run_token_lifecycle_tests() {
     fi
 
     # T43: Burn native ustoc
-    test_start "Burn 1000 ustoc from admin"
+    test_start "Burn 1000 ${DENOM} from admin"
     local ustoc_before
-    ustoc_before=$(get_balance "$ADDR_ADMIN" "ustoc")
-    result=$(burn_tokens "$WALLET_ADMIN" "ustoc" "1000")
+    ustoc_before=$(get_balance "$ADDR_ADMIN" "$DENOM")
+    result=$(burn_tokens "$WALLET_ADMIN" "$DENOM" "1000")
     assert_tx_success "$result"
 
     # =========================================================================
@@ -409,8 +396,8 @@ run_token_lifecycle_tests() {
     assert_tx_success "$result"
 
     # T47: Transfer ustoc between wallets
-    test_start "Transfer 100000ustoc: admin -> evm_wallet2"
-    result=$(bank_send "$WALLET_ADMIN" "$ADDR_EVM2" "100000ustoc")
+    test_start "Transfer 100000${DENOM}: admin -> evm_wallet2"
+    result=$(bank_send "$WALLET_ADMIN" "$ADDR_EVM2" "100000${DENOM}")
     assert_tx_success "$result"
 
     # T48: Verify all wallet balances after transfers

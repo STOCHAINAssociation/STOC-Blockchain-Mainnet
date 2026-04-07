@@ -83,18 +83,18 @@ run_ibc_restriction_tests() {
 
     # T03: IBC transfer of native ustoc — should NOT be blocked by our restriction
     # (will still fail because no IBC channel exists, but error should be different)
-    test_start "IBC transfer ustoc not blocked by custom token restriction"
-    raw=$(eval "$BINARY tx ibc-transfer transfer transfer channel-0 cosmos1xxxxxxxxx 1000ustoc \
+    test_start "IBC transfer ${DENOM} not blocked by custom token restriction"
+    raw=$(eval "$BINARY tx ibc-transfer transfer transfer channel-0 cosmos1xxxxxxxxx 1000${DENOM} \
         --from $WALLET_ADMIN \
         $(_common_flags) $(_gas_flags) \
         --packet-timeout-height 0-0 --packet-timeout-timestamp 0 \
         --broadcast-mode sync" 2>&1)
     # Check that error is NOT about custom token restriction
     if echo "$raw" | grep -qi "custom token.*not allowed\|Cosmos-only"; then
-        fail "native ustoc should not be blocked by custom token restriction"
+        fail "native ${DENOM} should not be blocked by custom token restriction"
     else
         # Expected: fails for other reason (no channel, etc.)
-        log_info "ustoc IBC not blocked by custom token restriction (fails for: channel/connection)"
+        log_info "${DENOM} IBC not blocked by custom token restriction (fails for: channel/connection)"
         pass
     fi
 

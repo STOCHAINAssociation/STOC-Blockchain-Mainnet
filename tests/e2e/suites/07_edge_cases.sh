@@ -18,7 +18,7 @@ run_edge_case_tests() {
     local raw
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Fake Stoc' --symbol stoc \
+        --name FakeStoc --symbol stoc \
         --initial-supply 1000 --total-supply 10000 \
         --decimals 6 --logo '$LOGO' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -40,10 +40,10 @@ run_edge_case_tests() {
     fi
 
     # T02: Symbol = "ustoc" — REJECTED
-    test_start "Symbol 'ustoc' rejected (native cosmos denom)"
+    test_start "Symbol '${DENOM}' rejected (native cosmos denom)"
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Fake uStoc' --symbol ustoc \
+        --name FakeUStoc --symbol $DENOM \
         --initial-supply 1000 --total-supply 10000 \
         --decimals 6 --logo '$LOGO' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -55,17 +55,17 @@ run_edge_case_tests() {
         if [[ -n "$txhash" ]]; then
             tx_result=$(wait_for_tx "$txhash" 15)
             code=$(echo "$tx_result" | jq -r '.code // "0"')
-            if [[ "$code" != "0" ]]; then pass; else fail "'ustoc' should be rejected"; fi
+            if [[ "$code" != "0" ]]; then pass; else fail "'${DENOM}' should be rejected"; fi
         else
-            fail "'ustoc' should be rejected"
+            fail "'${DENOM}' should be rejected"
         fi
     fi
 
     # T03: Symbol = "astoc" — REJECTED
-    test_start "Symbol 'astoc' rejected (native EVM denom)"
+    test_start "Symbol '${EVM_DENOM}' rejected (native EVM denom)"
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Fake aStoc' --symbol astoc \
+        --name FakeAStoc --symbol $EVM_DENOM \
         --initial-supply 1000 --total-supply 10000 \
         --decimals 6 --logo '$LOGO' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -77,9 +77,9 @@ run_edge_case_tests() {
         if [[ -n "$txhash" ]]; then
             tx_result=$(wait_for_tx "$txhash" 15)
             code=$(echo "$tx_result" | jq -r '.code // "0"')
-            if [[ "$code" != "0" ]]; then pass; else fail "'astoc' should be rejected"; fi
+            if [[ "$code" != "0" ]]; then pass; else fail "'${EVM_DENOM}' should be rejected"; fi
         else
-            fail "'astoc' should be rejected"
+            fail "'${EVM_DENOM}' should be rejected"
         fi
     fi
 
@@ -141,7 +141,7 @@ run_edge_case_tests() {
     test_start "Symbol starting with number rejected"
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Bad Symbol' --symbol '123ABC' \
+        --name BadSymbol --symbol '123ABC' \
         --initial-supply 1000 --total-supply 10000 \
         --decimals 6 --logo '$LOGO' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -165,7 +165,7 @@ run_edge_case_tests() {
     long_sym=$(printf 'A%.0s' {1..33})
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Long Symbol' --symbol '$long_sym' \
+        --name LongSymbol --symbol '$long_sym' \
         --initial-supply 1000 --total-supply 10000 \
         --decimals 6 --logo '$LOGO' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -191,7 +191,7 @@ run_edge_case_tests() {
     test_start "Logo http:// rejected (SSRF prevention)"
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Http Logo' --symbol HTTPLOGO \
+        --name HttpLogo --symbol HTTPLOGO \
         --initial-supply 1000 --total-supply 10000 \
         --decimals 6 --logo 'http://evil.com/logo.png' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -213,7 +213,7 @@ run_edge_case_tests() {
     test_start "Empty logo rejected"
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'No Logo' --symbol NOLOGO \
+        --name NoLogo --symbol NOLOGO \
         --initial-supply 1000 --total-supply 10000 \
         --decimals 6 --logo '' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -239,7 +239,7 @@ run_edge_case_tests() {
     test_start "Decimals 19 rejected"
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Bad Decimals' --symbol BADDEC \
+        --name BadDecimals --symbol BADDEC \
         --initial-supply 1000 --total-supply 10000 \
         --decimals 19 --logo '$LOGO' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -265,7 +265,7 @@ run_edge_case_tests() {
     test_start "Total < initial rejected"
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Bad Supply' --symbol BADSUP \
+        --name BadSupply --symbol BADSUP \
         --initial-supply 10000 --total-supply 1000 \
         --decimals 6 --logo '$LOGO' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -287,7 +287,7 @@ run_edge_case_tests() {
     test_start "Zero total + unlimited=false rejected (dead token)"
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Dead Token' --symbol DEAD \
+        --name DeadToken --symbol DEAD \
         --initial-supply 0 --total-supply 0 \
         --decimals 6 --logo '$LOGO' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -309,7 +309,7 @@ run_edge_case_tests() {
     test_start "Supply > 10^30 rejected"
     raw=$(eval "$BINARY tx stoc create-token \
         --from $WALLET_ADMIN \
-        --name 'Huge Supply' --symbol HUGE \
+        --name HugeSupply --symbol HUGE \
         --initial-supply 999999999999999999999999999999999 --total-supply 999999999999999999999999999999999 \
         --decimals 6 --logo '$LOGO' --unlimited=false \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -338,7 +338,7 @@ run_edge_case_tests() {
         --name 'HighTax' --symbol HITAX \
         --initial-supply 1000 --total-supply 10000 \
         --decimals 6 --logo '$LOGO' --unlimited=false \
-        --tax '{\"percent\":\"0.510000000000000000\",\"recipient_address\":\"$ADDR_ADMIN\"}' \
+        --tax '{\"percent\":\"510000000000000000\",\"recipient_address\":\"$ADDR_ADMIN\"}' \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
     code=$(echo "$raw" | jq -r '.code // "null"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]] || echo "$raw" | grep -qi "exceed\|50%\|error\|invalid"; then
@@ -363,11 +363,11 @@ run_edge_case_tests() {
     test_start "Insufficient funds for creation fee"
     # evm_wallet2 has limited funds, create expensive operation
     local evm2_bal
-    evm2_bal=$(get_balance "$ADDR_EVM2" "ustoc")
+    evm2_bal=$(get_balance "$ADDR_EVM2" "$DENOM")
     if [[ "$evm2_bal" -lt 100000000 ]]; then
         raw=$(eval "$BINARY tx stoc create-token \
             --from $WALLET_EVM2 \
-            --name 'Broke Token' --symbol BROKE \
+            --name BrokeToken --symbol BROKE \
             --initial-supply 100 --total-supply 1000 \
             --decimals 6 --logo '$LOGO' --unlimited=false \
             $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
@@ -385,7 +385,7 @@ run_edge_case_tests() {
             fi
         fi
     else
-        skip "evm_wallet2 has enough funds ($evm2_bal ustoc), test requires poor wallet"
+        skip "evm_wallet2 has enough funds ($evm2_bal $DENOM), test requires poor wallet"
     fi
 
     # =========================================================================
@@ -471,7 +471,7 @@ run_edge_case_tests() {
     # T20: Creating same symbol increments counter
     test_start "Third ALPHA token gets counter _2"
     local result
-    result=$(create_token "$WALLET_ADMIN" "Alpha v3" "ALPHA" "100" "1000" 6 "$LOGO" false)
+    result=$(create_token "$WALLET_ADMIN" "AlphaV3" "ALPHA" "100" "1000" 6 "$LOGO" false)
     assert_tx_success "$result"
 
     test_start "ALPHA_2 exists and is distinct"
@@ -479,7 +479,7 @@ run_edge_case_tests() {
     alpha2=$(query_token "ALPHA_2")
     local alpha2_name
     alpha2_name=$(echo "$alpha2" | jq -r '.token.name')
-    assert_equals "$alpha2_name" "Alpha v3"
+    assert_equals "$alpha2_name" "AlphaV3"
 
     # =========================================================================
     section "Max Supply Boundary"
@@ -524,8 +524,8 @@ run_edge_case_tests() {
     fi
 
     # T25: Native ustoc still works after all operations
-    test_start "Native ustoc transfer still works"
-    result=$(bank_send "$WALLET_ADMIN" "$ADDR_EVM1" "100ustoc")
+    test_start "Native ${DENOM} transfer still works"
+    result=$(bank_send "$WALLET_ADMIN" "$ADDR_EVM1" "100${DENOM}")
     assert_tx_success "$result"
 
     # T26: Staking still works (query validators)

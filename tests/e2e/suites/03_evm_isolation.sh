@@ -55,9 +55,9 @@ run_evm_isolation_tests() {
     # =========================================================================
 
     # T04: Get admin's EVM balance (should be in astoc = ustoc * 10^12)
-    test_start "Admin EVM balance reflects ustoc (as astoc)"
+    test_start "Admin EVM balance reflects ${DENOM} (as ${EVM_DENOM})"
     local admin_cosmos_bal
-    admin_cosmos_bal=$(get_balance "$ADDR_ADMIN" "ustoc")
+    admin_cosmos_bal=$(get_balance "$ADDR_ADMIN" "$DENOM")
     local admin_evm_bal_hex
     # Get admin's hex address first
     local admin_hex_addr
@@ -88,7 +88,7 @@ run_evm_isolation_tests() {
     if [[ -n "$evm1_bal_hex" && "$evm1_bal_hex" != "0x0" ]]; then
         local evm1_bal_dec
         evm1_bal_dec=$(hex_to_dec "$evm1_bal_hex" 2>/dev/null || echo "0")
-        log_info "evm_wallet1 EVM balance: $evm1_bal_hex ($evm1_bal_dec astoc)"
+        log_info "evm_wallet1 EVM balance: $evm1_bal_hex ($evm1_bal_dec $EVM_DENOM)"
         pass
     else
         fail "evm_wallet1 EVM balance is 0"
@@ -114,7 +114,7 @@ run_evm_isolation_tests() {
     # EVM has no concept of custom tokens — eth_getBalance only returns native balance
     # There's no ERC20 contract for custom tokens
     # This is by design: custom tokens are Cosmos-only
-    # We verify by checking that evm_wallet1 has ALPHA_0 on Cosmos but EVM only shows astoc
+    # We verify by checking that evm_wallet1 has ALPHA_0 on Cosmos but EVM only shows $EVM_DENOM
     local cosmos_alpha_bal
     cosmos_alpha_bal=$(get_balance "$ADDR_EVM1" "ALPHA_0")
     if [[ -n "$cosmos_alpha_bal" && "$cosmos_alpha_bal" -gt 0 ]]; then
@@ -127,16 +127,16 @@ run_evm_isolation_tests() {
     fi
 
     # T08: eth_getBalance only returns native denom (not custom tokens)
-    test_start "eth_getBalance returns ONLY native astoc balance"
+    test_start "eth_getBalance returns ONLY native ${EVM_DENOM} balance"
     # There's no way for EVM to query custom token balances
     # eth_getBalance is the only balance query, and it only returns the native currency
     local evm1_cosmos_ustoc
-    evm1_cosmos_ustoc=$(get_balance "$ADDR_EVM1" "ustoc")
+    evm1_cosmos_ustoc=$(get_balance "$ADDR_EVM1" "$DENOM")
     local expected_astoc_approx=$((evm1_cosmos_ustoc))  # in ustoc units
     # EVM balance in astoc = ustoc * 10^12
     evm1_bal_hex=$(evm_get_balance "$EVM_WALLET1_ETH")
     if [[ -n "$evm1_bal_hex" ]]; then
-        log_info "EVM balance is native-only (astoc): $evm1_bal_hex"
+        log_info "EVM balance is native-only ($EVM_DENOM): $evm1_bal_hex"
         pass
     else
         fail "could not get EVM balance"
@@ -154,7 +154,7 @@ run_evm_isolation_tests() {
         privkey=$($BINARY keys export "$WALLET_EVM1" --keyring-backend "$KEYRING_BACKEND" --unarmored-hex --unsafe ${HOME_DIR:+--home $HOME_DIR} 2>/dev/null)
         if [[ -n "$privkey" ]]; then
             local before_evm2_cosmos
-            before_evm2_cosmos=$(get_balance "$ADDR_EVM2" "ustoc")
+            before_evm2_cosmos=$(get_balance "$ADDR_EVM2" "$DENOM")
 
             # Send 1 ustoc worth of astoc (= 10^12 astoc = 1000000000000 wei)
             local tx_result
@@ -167,9 +167,9 @@ run_evm_isolation_tests() {
             if echo "$tx_result" | grep -qi "success\|transactionHash\|0x"; then
                 wait_for_block 1
                 local after_evm2_cosmos
-                after_evm2_cosmos=$(get_balance "$ADDR_EVM2" "ustoc")
+                after_evm2_cosmos=$(get_balance "$ADDR_EVM2" "$DENOM")
                 local increase=$((after_evm2_cosmos - before_evm2_cosmos))
-                log_info "EVM transfer: evm2 cosmos balance increased by $increase ustoc"
+                log_info "EVM transfer: evm2 cosmos balance increased by $increase $DENOM"
                 assert_gte "$increase" "1"
             else
                 fail "cast send failed: $tx_result"
@@ -184,7 +184,7 @@ run_evm_isolation_tests() {
     # T10: Verify Cosmos balance reflects EVM transfer
     test_start "Cosmos balance reflects EVM transfer"
     local evm1_cosmos_bal_after
-    evm1_cosmos_bal_after=$(get_balance "$ADDR_EVM1" "ustoc")
+    evm1_cosmos_bal_after=$(get_balance "$ADDR_EVM1" "$DENOM")
     if [[ -n "$evm1_cosmos_bal_after" && "$evm1_cosmos_bal_after" -ge 0 ]]; then
         pass
     else

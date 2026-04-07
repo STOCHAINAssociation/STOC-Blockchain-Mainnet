@@ -13,33 +13,33 @@ run_denom_conversion_tests() {
     # =========================================================================
 
     # T01: Query EVM params — evm_denom = ustoc
-    test_start "evm_denom = ustoc"
+    test_start "evm_denom = $DENOM"
     local evm_params
     evm_params=$(query_evm_params)
     if [[ -n "$evm_params" ]]; then
         local evm_denom
         evm_denom=$(echo "$evm_params" | jq -r '.params.evm_denom // empty')
-        assert_equals "$evm_denom" "ustoc"
+        assert_equals "$evm_denom" "$DENOM"
     else
         fail "could not query EVM params"
     fi
 
     # T02: Query EVM params — extended_denom
-    test_start "extended_denom = astoc"
+    test_start "extended_denom = $EVM_DENOM"
     local extended_denom
     extended_denom=$(echo "$evm_params" | jq -r '.params.extended_denom_options.extended_denom // empty')
     # Also try alternative JSON path
     if [[ -z "$extended_denom" ]]; then
         extended_denom=$(echo "$evm_params" | jq -r '.params.extended_denom // empty')
     fi
-    if [[ "$extended_denom" == "astoc" ]]; then
+    if [[ "$extended_denom" == "$EVM_DENOM" ]]; then
         pass
     else
         # Check if it's nested differently
         log_info "extended_denom value: '$extended_denom'"
         log_info "Full EVM params: $(echo "$evm_params" | jq '.params' 2>/dev/null | head -20)"
         if [[ -n "$extended_denom" ]]; then
-            assert_equals "$extended_denom" "astoc"
+            assert_equals "$extended_denom" "$EVM_DENOM"
         else
             skip "extended_denom field not found in expected path"
         fi
@@ -102,13 +102,13 @@ run_denom_conversion_tests() {
     # =========================================================================
 
     # T09: Verify bank denom metadata for ustoc
-    test_start "Bank denom metadata for ustoc exists"
+    test_start "Bank denom metadata for ${DENOM} exists"
     local meta
-    meta=$(query_bank_denom_metadata "ustoc")
+    meta=$(query_bank_denom_metadata "$DENOM")
     if [[ -n "$meta" ]]; then
         local base
         base=$(echo "$meta" | jq -r '.metadata.base // empty')
-        if [[ "$base" == "ustoc" ]]; then
+        if [[ "$base" == "$DENOM" ]]; then
             pass
         else
             log_info "denom metadata base: $base"
@@ -138,18 +138,18 @@ run_denom_conversion_tests() {
     # =========================================================================
 
     # T11: Verify 1 ustoc = 10^12 astoc via EVM balance
-    test_start "Conversion: 1 ustoc = 10^12 astoc"
+    test_start "Conversion: 1 ${DENOM} = 10^12 ${EVM_DENOM}"
     if evm_is_available 2>/dev/null; then
         # Get evm_wallet1 cosmos balance and EVM balance
         local cosmos_bal
-        cosmos_bal=$(get_balance "$ADDR_EVM1" "ustoc")
+        cosmos_bal=$(get_balance "$ADDR_EVM1" "$DENOM")
         local evm_bal_hex
         evm_bal_hex=$(evm_get_balance "$EVM_WALLET1_ETH")
         if [[ -n "$evm_bal_hex" && "$evm_bal_hex" != "0x0" ]]; then
             # EVM balance (astoc) should be approximately cosmos_bal * 10^12
             # We can't do exact 256-bit math in bash, so just check it's non-zero
-            log_info "Cosmos: ${cosmos_bal} ustoc, EVM: ${evm_bal_hex} astoc"
-            log_info "Conversion factor: 10^12 (1 ustoc = 1000000000000 astoc)"
+            log_info "Cosmos: ${cosmos_bal} ${DENOM}, EVM: ${evm_bal_hex} ${EVM_DENOM}"
+            log_info "Conversion factor: 10^12 (1 ${DENOM} = 1000000000000 ${EVM_DENOM})"
             pass
         else
             fail "EVM balance is 0"
@@ -159,13 +159,13 @@ run_denom_conversion_tests() {
     fi
 
     # T12: Staking bond_denom = ustoc
-    test_start "Staking bond_denom = ustoc"
+    test_start "Staking bond_denom = $DENOM"
     local staking_params
     staking_params=$($BINARY query staking params --node "$NODE" --output json 2>/dev/null)
     if [[ -n "$staking_params" ]]; then
         local bond_denom
         bond_denom=$(echo "$staking_params" | jq -r '.params.bond_denom // empty')
-        assert_equals "$bond_denom" "ustoc"
+        assert_equals "$bond_denom" "$DENOM"
     else
         fail "could not query staking params"
     fi

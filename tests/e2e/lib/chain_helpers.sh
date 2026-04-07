@@ -13,12 +13,18 @@ NODE="${NODE:-tcp://localhost:26657}"
 KEYRING_BACKEND="${KEYRING_BACKEND:-test}"
 HOME_DIR="${HOME_DIR:-}"
 EVM_RPC="${EVM_RPC:-http://localhost:8545}"
-BLOCK_TIME="${BLOCK_TIME:-6}"  # seconds between blocks
+BLOCK_TIME="${BLOCK_TIME:-6}"
 
-# Gas defaults for normal transactions
-DEFAULT_GAS="auto"
-DEFAULT_GAS_ADJ="1.5"
-DEFAULT_GAS_PRICES="0.001ustoc"
+# Native denom — set per environment (ustoc/udstoc/utstoc)
+DENOM="${DENOM:-ustoc}"
+# EVM extended denom (astoc/adstoc/atstoc)
+EVM_DENOM="${EVM_DENOM:-astoc}"
+
+# Gas: use FIXED gas + explicit fees to avoid --gas auto simulation race condition.
+# The simulation step in --gas auto queries account sequence, creating a race
+# when multiple txs are submitted in quick succession.
+TX_GAS="${TX_GAS:-500000}"
+TX_FEE="${TX_FEE:-5000}"  # fee amount in DENOM units
 
 # ---------------------------------------------------------------------------
 # Internal: build common CLI flags
@@ -30,14 +36,13 @@ _common_flags() {
 }
 
 _gas_flags() {
-    echo "--gas $DEFAULT_GAS --gas-adjustment $DEFAULT_GAS_ADJ --gas-prices $DEFAULT_GAS_PRICES"
+    echo "--gas $TX_GAS --fees ${TX_FEE}${DENOM}"
 }
 
 # ---------------------------------------------------------------------------
 # Chain readiness
 # ---------------------------------------------------------------------------
 
-# Wait until the chain produces blocks. Returns 1 on timeout.
 wait_for_chain() {
     local max_wait=${1:-120}
     local elapsed=0
@@ -47,7 +52,7 @@ wait_for_chain() {
         status_json=$($BINARY status --node "$NODE" 2>/dev/null)
         if [[ $? -eq 0 ]]; then
             local catching_up
-            catching_up=$(echo "$status_json" | jq -r '.sync_info.catching_up // "true"' 2>/dev/null)
+            catching_up=$(echo "$status_json" | jq -r '.sync_info.catching_up | tostring' 2>/dev/null)
             if [[ "$catching_up" == "false" ]]; then
                 local height
                 height=$(echo "$status_json" | jq -r '.sync_info.latest_block_height' 2>/dev/null)
@@ -56,23 +61,22 @@ wait_for_chain() {
             fi
         fi
         sleep 2
-        ((elapsed += 2))
+        elapsed=$((elapsed + 2))
     done
     log_error "Chain not ready after ${max_wait}s"
     return 1
 }
 
-# Wait for at least one new block
 wait_for_block() {
     local blocks=${1:-1}
     local current
     current=$($BINARY status --node "$NODE" 2>/dev/null | jq -r '.sync_info.latest_block_height // "0"' 2>/dev/null)
     local target=$((current + blocks))
-    local max_wait=$((BLOCK_TIME * (blocks + 2)))
+    local max_wait=$((BLOCK_TIME * (blocks + 3)))
     local elapsed=0
     while [[ $elapsed -lt $max_wait ]]; do
         sleep 1
-        ((elapsed++))
+        elapsed=$((elapsed + 1))
         local height
         height=$($BINARY status --node "$NODE" 2>/dev/null | jq -r '.sync_info.latest_block_height // "0"' 2>/dev/null)
         if [[ "$height" -ge "$target" ]]; then
@@ -82,7 +86,6 @@ wait_for_block() {
     return 1
 }
 
-# Get current block height
 get_height() {
     $BINARY status --node "$NODE" 2>/dev/null | jq -r '.sync_info.latest_block_height // "0"' 2>/dev/null
 }
@@ -91,7 +94,6 @@ get_height() {
 # Transaction helpers
 # ---------------------------------------------------------------------------
 
-# Wait for a tx hash to appear on-chain. Echoes the full tx JSON result.
 wait_for_tx() {
     local txhash="$1"
     local max_wait=${2:-30}
@@ -104,15 +106,13 @@ wait_for_tx() {
             return 0
         fi
         sleep 2
-        ((elapsed += 2))
+        elapsed=$((elapsed + 2))
     done
     return 1
 }
 
-# Execute a tx command, wait for confirmation, return JSON result.
-# Usage: result=$(send_tx "stocd tx bank send ...")
-# The command string should NOT include common flags or gas flags — they are appended.
-# Pass CUSTOM_GAS_FLAGS="--fees 100ustoc" to override gas.
+# Execute a tx command, wait for COMMITTED confirmation, then wait 1 extra block.
+# This ensures the next tx sees the updated account sequence.
 send_tx() {
     local cmd="$1"
     local gas="${CUSTOM_GAS_FLAGS:-$(_gas_flags)}"
@@ -121,13 +121,19 @@ send_tx() {
     raw=$(eval "$cmd $(_common_flags) $gas --broadcast-mode sync" 2>&1)
     local ec=$?
 
-    # If the CLI itself fails (bad flags, etc.), return immediately
+    # Handle non-JSON CLI errors (e.g., RPC errors printed as plain text)
+    if ! echo "$raw" | jq -e '.' >/dev/null 2>&1; then
+        # Not JSON — wrap in a fake JSON so assertions work
+        echo "{\"code\":\"99\",\"raw_log\":\"$(echo "$raw" | head -1 | sed 's/"/\\"/g')\"}"
+        return 1
+    fi
+
     if [[ $ec -ne 0 ]]; then
         echo "$raw"
         return $ec
     fi
 
-    # Check for CheckTx failure (code != 0 in sync response)
+    # Check for CheckTx failure
     local code
     code=$(echo "$raw" | jq -r '.code // "null"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]]; then
@@ -149,22 +155,28 @@ send_tx() {
         echo "$tx_result"
         local deliver_code
         deliver_code=$(echo "$tx_result" | jq -r '.code // "0"' 2>/dev/null)
+        # Wait for 1 block after confirmation to ensure sequence is updated
+        wait_for_block 1
         [[ "$deliver_code" != "0" ]] && return 1
         return 0
     fi
 
-    # Fallback: return raw sync response
     echo "$raw"
     return 0
 }
 
-# Send tx expecting failure. Returns the raw output (including error messages).
+# Send tx expecting failure — no block wait needed
 send_tx_expect_fail() {
     local cmd="$1"
     local gas="${CUSTOM_GAS_FLAGS:-$(_gas_flags)}"
     local raw
     raw=$(eval "$cmd $(_common_flags) $gas --broadcast-mode sync" 2>&1)
-    echo "$raw"
+    # Wrap non-JSON output
+    if ! echo "$raw" | jq -e '.' >/dev/null 2>&1; then
+        echo "{\"code\":\"99\",\"raw_log\":\"$(echo "$raw" | head -1 | sed 's/"/\\"/g')\"}"
+    else
+        echo "$raw"
+    fi
     return 0
 }
 
@@ -195,7 +207,6 @@ get_all_balances() {
 # Bank send
 # ---------------------------------------------------------------------------
 
-# bank_send FROM_KEY TO_ADDR AMOUNT_WITH_DENOM
 bank_send() {
     local from_key="$1"
     local to_addr="$2"
@@ -203,7 +214,6 @@ bank_send() {
     send_tx "$BINARY tx bank send $from_key $to_addr $amount"
 }
 
-# bank_send with custom gas/fee flags
 bank_send_custom() {
     local from_key="$1"
     local to_addr="$2"
@@ -231,7 +241,9 @@ query_tokens_by_symbol() {
 }
 
 # create_token FROM_KEY NAME SYMBOL INITIAL_SUPPLY TOTAL_SUPPLY DECIMALS LOGO UNLIMITED [EXTRA_FLAGS]
-# Tax and distributions are passed via EXTRA_FLAGS as JSON
+# Tax: --tax '{"percent":"PROTO_INT","recipient_address":"stoc1..."}'
+#   Proto int for percent: 5% = 50000000000000000 (5 * 10^16)
+# Distributions: --distributions '{"address":"stoc1...","percent":60}' --distributions '...'
 create_token() {
     local from_key="$1"
     local name="$2"
@@ -245,34 +257,31 @@ create_token() {
 
     send_tx "$BINARY tx stoc create-token \
         --from $from_key \
-        --name '$name' \
-        --symbol '$symbol' \
-        --initial-supply '$initial_supply' \
-        --total-supply '$total_supply' \
+        --name $name \
+        --symbol $symbol \
+        --initial-supply $initial_supply \
+        --total-supply $total_supply \
         --decimals $decimals \
-        --logo '$logo' \
+        --logo $logo \
         --unlimited=$unlimited \
         $extra_flags"
 }
 
-# mint_tokens FROM_KEY SYMBOL AMOUNT
 mint_tokens() {
     local from_key="$1"
     local symbol="$2"
     local amount="$3"
-    send_tx "$BINARY tx stoc mint-tokens --from $from_key --symbol '$symbol' --amount '$amount'"
+    send_tx "$BINARY tx stoc mint-tokens --from $from_key --symbol $symbol --amount $amount"
 }
 
-# release_tokens FROM_KEY SYMBOL AMOUNT RECIPIENT_ADDR
 release_tokens() {
     local from_key="$1"
     local symbol="$2"
     local amount="$3"
     local recipient="$4"
-    send_tx "$BINARY tx stoc release-tokens --from $from_key --symbol '$symbol' --amount '$amount' --recipient '$recipient'"
+    send_tx "$BINARY tx stoc release-tokens --from $from_key --symbol $symbol --amount $amount --recipient $recipient"
 }
 
-# burn_tokens FROM_KEY DENOM AMOUNT [BURN_ALL=false]
 burn_tokens() {
     local from_key="$1"
     local denom="$2"
@@ -283,9 +292,32 @@ burn_tokens() {
     if [[ "$burn_all" == "true" ]]; then
         flags="--burn-all"
     else
-        flags="--amount '$amount'"
+        flags="--amount $amount"
     fi
-    send_tx "$BINARY tx stoc burn-token --from $from_key --denom '$denom' $flags"
+    send_tx "$BINARY tx stoc burn-token --from $from_key --denom $denom $flags"
+}
+
+# ---------------------------------------------------------------------------
+# Tax helper — convert human-readable percent to proto integer
+# Usage: tax_percent 5    → "50000000000000000"   (5%)
+#        tax_percent 0.1  → "1000000000000000"    (0.1%)
+#        tax_percent 50   → "500000000000000000"  (50%)
+# ---------------------------------------------------------------------------
+tax_percent() {
+    local pct="$1"
+    # Multiply by 10^16 (LegacyDec precision 10^18 / 100)
+    # Use bc for decimal math
+    echo "$(echo "$pct * 10000000000000000" | bc | sed 's/\..*$//')"
+}
+
+# Build --tax flag JSON
+# Usage: tax_flag 5 stoc1addr...  → --tax '{"percent":"50000000000000000","recipient_address":"stoc1addr..."}'
+tax_flag() {
+    local pct_human="$1"
+    local recipient="$2"
+    local pct_proto
+    pct_proto=$(tax_percent "$pct_human")
+    echo "--tax '{\"percent\":\"${pct_proto}\",\"recipient_address\":\"${recipient}\"}'"
 }
 
 # ---------------------------------------------------------------------------
@@ -334,31 +366,25 @@ evm_get_transaction_receipt() {
     evm_rpc_call "eth_getTransactionReceipt" "[\"$txhash\"]"
 }
 
-# Convert hex to decimal
 hex_to_dec() {
     printf "%d" "$1" 2>/dev/null
 }
 
-# Convert decimal to hex (with 0x prefix)
 dec_to_hex() {
     printf "0x%x" "$1" 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
-# Governance helpers (for upgrade tests)
+# Governance helpers
 # ---------------------------------------------------------------------------
 
-# Submit a software upgrade proposal and vote YES
 submit_upgrade_proposal() {
     local from_key="$1"
     local upgrade_name="$2"
     local upgrade_height="$3"
-    local deposit="${4:-10000000ustoc}"
+    local deposit="${4:-10000000${DENOM}}"
 
-    local from_addr
-    from_addr=$(get_address "$from_key")
-
-    send_tx "$BINARY tx gov submit-proposal software-upgrade '$upgrade_name' \
+    send_tx "$BINARY tx gov submit-proposal software-upgrade $upgrade_name \
         --title 'Upgrade to $upgrade_name' \
         --description 'Upgrade chain to $upgrade_name' \
         --upgrade-height $upgrade_height \
@@ -399,7 +425,6 @@ query_bank_denom_metadata() {
 # IBC helpers
 # ---------------------------------------------------------------------------
 
-# Attempt IBC transfer (will fail without a real channel, but tests ante handler)
 ibc_transfer() {
     local from_key="$1"
     local receiver="$2"

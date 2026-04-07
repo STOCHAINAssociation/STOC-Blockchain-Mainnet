@@ -66,11 +66,11 @@ import_wallet() {
 # ---------------------------------------------------------------------------
 fund_wallet() {
     local to_addr="$1"
-    local amount="${2:-1000000000ustoc}"  # default 1000 STOC
+    local amount="${2:-1000000000${DENOM}}"  # default 1000 STOC
     local label="$3"
 
     local current_balance
-    current_balance=$(get_balance "$to_addr" "ustoc")
+    current_balance=$(get_balance "$to_addr" "$DENOM")
 
     # Skip if already funded (> 100 STOC)
     if [[ -n "$current_balance" && "$current_balance" -gt 100000000 ]]; then
@@ -121,13 +121,13 @@ setup_wallets() {
     log_info "  evm_wallet2= $ADDR_EVM2 / $EVM_WALLET2_ETH"
 
     # Fund EVM wallets from admin (each gets 10000 STOC for testing)
-    fund_wallet "$ADDR_EVM1" "10000000000ustoc" "evm_wallet1"
+    fund_wallet "$ADDR_EVM1" "10000000000${DENOM}" "evm_wallet1"
     wait_for_block 1
-    fund_wallet "$ADDR_EVM2" "10000000000ustoc" "evm_wallet2"
+    fund_wallet "$ADDR_EVM2" "10000000000${DENOM}" "evm_wallet2"
     wait_for_block 1
 
     # Fund validator2 extra if needed (validator1 is the active validator)
-    fund_wallet "$ADDR_VAL2" "1000000000ustoc" "validator2"
+    fund_wallet "$ADDR_VAL2" "1000000000${DENOM}" "validator2"
     wait_for_block 1
 
     log_info "=== Wallet setup complete ==="
@@ -144,7 +144,7 @@ print_wallet_summary() {
         addr=$(get_address "$name")
         if [[ -n "$addr" ]]; then
             local bal
-            bal=$(get_balance "$addr" "ustoc")
+            bal=$(get_balance "$addr" "$DENOM")
             log_info "  $name ($addr): ${bal} ustoc"
         fi
     done

@@ -35,22 +35,22 @@ run_gas_enforcement_tests() {
     # =========================================================================
 
     # T03: Send with adequate gas price — should succeed
-    test_start "Send with --gas-prices 0.001ustoc (above min)"
+    test_start "Send with --gas-prices 0.001${DENOM} (above min)"
     local result
-    result=$(CUSTOM_GAS_FLAGS="--gas auto --gas-adjustment 1.5 --gas-prices 0.001ustoc" \
-        send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 1000ustoc")
+    result=$(CUSTOM_GAS_FLAGS="--gas auto --gas-adjustment 1.5 --gas-prices 0.001${DENOM}" \
+        send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 1000${DENOM}")
     assert_tx_success "$result"
 
     # T04: Send with explicit --fees flag
-    test_start "Send with --fees 50000ustoc (explicit fee)"
-    result=$(CUSTOM_GAS_FLAGS="--gas 200000 --fees 50000ustoc" \
-        send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM2 1000ustoc")
+    test_start "Send with --fees 50000${DENOM} (explicit fee)"
+    result=$(CUSTOM_GAS_FLAGS="--gas 200000 --fees 50000${DENOM}" \
+        send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM2 1000${DENOM}")
     assert_tx_success "$result"
 
     # T05: Send with higher gas price
-    test_start "Send with --gas-prices 0.01ustoc (generous)"
-    result=$(CUSTOM_GAS_FLAGS="--gas auto --gas-adjustment 1.5 --gas-prices 0.01ustoc" \
-        send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 500ustoc")
+    test_start "Send with --gas-prices 0.01${DENOM} (generous)"
+    result=$(CUSTOM_GAS_FLAGS="--gas auto --gas-adjustment 1.5 --gas-prices 0.01${DENOM}" \
+        send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 500${DENOM}")
     assert_tx_success "$result"
 
     # =========================================================================
@@ -59,10 +59,10 @@ run_gas_enforcement_tests() {
 
     # T06: Send with --fees 0ustoc
     # Behavior depends on node min-gas-prices and feemarket min_gas_price
-    test_start "Send with --fees 0ustoc — check rejection"
+    test_start "Send with --fees 0${DENOM} — check rejection"
     local raw
-    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100ustoc \
-        $(_common_flags) --gas 200000 --fees 0ustoc --broadcast-mode sync" 2>&1)
+    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100${DENOM} \
+        $(_common_flags) --gas 200000 --fees 0${DENOM} --broadcast-mode sync" 2>&1)
     local code
     code=$(echo "$raw" | jq -r '.code // "null"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]]; then
@@ -78,9 +78,9 @@ run_gas_enforcement_tests() {
     fi
 
     # T07: Send with --gas-prices 0ustoc
-    test_start "Send with --gas-prices 0ustoc"
-    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100ustoc \
-        $(_common_flags) --gas 200000 --gas-prices 0ustoc --broadcast-mode sync" 2>&1)
+    test_start "Send with --gas-prices 0${DENOM}"
+    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100${DENOM} \
+        $(_common_flags) --gas 200000 --gas-prices 0${DENOM} --broadcast-mode sync" 2>&1)
     code=$(echo "$raw" | jq -r '.code // "null"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]]; then
         log_info "0 gas-price rejected"
@@ -96,8 +96,8 @@ run_gas_enforcement_tests() {
 
     # T08: Send with multi-denom fees (e.g., ustoc + ALPHA_0)
     test_start "Multi-denom fee rejected"
-    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100ustoc \
-        $(_common_flags) --gas 200000 --fees 50000ustoc,100ALPHA_0 --broadcast-mode sync" 2>&1)
+    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100${DENOM} \
+        $(_common_flags) --gas 200000 --fees 50000${DENOM},100ALPHA_0 --broadcast-mode sync" 2>&1)
     code=$(echo "$raw" | jq -r '.code // "null"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]]; then
         pass
@@ -127,7 +127,7 @@ run_gas_enforcement_tests() {
 
     # T09: Send with wrong denom fee (e.g., ALPHA_0 instead of ustoc)
     test_start "Wrong denom fee rejected (ALPHA_0)"
-    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100ustoc \
+    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100${DENOM} \
         $(_common_flags) --gas 200000 --fees 50000ALPHA_0 --broadcast-mode sync" 2>&1)
     code=$(echo "$raw" | jq -r '.code // "null"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]]; then
@@ -147,7 +147,7 @@ run_gas_enforcement_tests() {
 
     # T10: Send with fictional denom fee
     test_start "Wrong denom fee rejected (foobar)"
-    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100ustoc \
+    raw=$(eval "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 100${DENOM} \
         $(_common_flags) --gas 200000 --fees 50000foobar --broadcast-mode sync" 2>&1)
     code=$(echo "$raw" | jq -r '.code // "null"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]] || echo "$raw" | grep -qi "error\|invalid\|insufficient"; then
@@ -169,8 +169,8 @@ run_gas_enforcement_tests() {
 
     # T11: Gas auto-estimation works
     test_start "Gas auto-estimation (--gas auto)"
-    result=$(CUSTOM_GAS_FLAGS="--gas auto --gas-adjustment 1.5 --gas-prices 0.001ustoc" \
-        send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM2 500ustoc")
+    result=$(CUSTOM_GAS_FLAGS="--gas auto --gas-adjustment 1.5 --gas-prices 0.001${DENOM}" \
+        send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM2 500${DENOM}")
     assert_tx_success "$result"
 
     # T12: Verify gas_used > 0 in tx result

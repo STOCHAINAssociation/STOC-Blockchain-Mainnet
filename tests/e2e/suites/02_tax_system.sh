@@ -16,23 +16,15 @@ run_tax_system_tests() {
     # Create token with 5% tax, tax recipient = admin
     log_info "Creating TAX5 (5% tax, recipient=admin) ..."
     local result
-    result=$(create_token "$WALLET_ADMIN" "Tax5 Token" "TAXX" "10000000" "100000000" 6 "$LOGO" false \
-        "--tax '{\"percent\":\"0.050000000000000000\",\"recipient_address\":\"$ADDR_ADMIN\"}'")
+    result=$(create_token "$WALLET_ADMIN" "Tax5Token" "TAXX" "10000000" "100000000" 6 "$LOGO" false \
+        "$(tax_flag 5 $ADDR_ADMIN)")
     local tax5_ok=false
     if echo "$result" | jq -e '.code == 0' >/dev/null 2>&1; then
         tax5_ok=true
         log_info "TAX5 created: TAXX_0"
     else
-        # Try alternative flag format
-        result=$(create_token "$WALLET_ADMIN" "Tax5 Token" "TAXX" "10000000" "100000000" 6 "$LOGO" false \
-            "--tax.percent 0.050000000000000000 --tax.recipient-address $ADDR_ADMIN")
-        if echo "$result" | jq -e '.code == 0' >/dev/null 2>&1; then
-            tax5_ok=true
-            log_info "TAX5 created (alt flags): TAXX_0"
-        else
-            log_warn "Could not create taxed token — tax tests will be skipped"
-            log_warn "Raw result: $(echo "$result" | head -c 300)"
-        fi
+        log_warn "Could not create taxed token — tax tests will be skipped"
+        log_warn "Raw result: $(echo "$result" | head -c 300)"
     fi
 
     local TAX5_DENOM="TAXX_0"
@@ -139,15 +131,15 @@ run_tax_system_tests() {
     assert_equals "$admin_increase" "100"
 
     # T12: Transfer native ustoc — no custom token tax
-    test_start "Transfer ustoc — no custom token tax"
+    test_start "Transfer ${DENOM} — no custom token tax"
     local before_evm2_ustoc
-    before_evm2_ustoc=$(get_balance "$ADDR_EVM2" "ustoc")
-    result=$(bank_send "$WALLET_ADMIN" "$ADDR_EVM2" "1000ustoc")
+    before_evm2_ustoc=$(get_balance "$ADDR_EVM2" "$DENOM")
+    result=$(bank_send "$WALLET_ADMIN" "$ADDR_EVM2" "1000${DENOM}")
     assert_tx_success "$result"
 
-    test_start "Verify ustoc not taxed (full amount received)"
+    test_start "Verify ${DENOM} not taxed (full amount received)"
     local after_evm2_ustoc
-    after_evm2_ustoc=$(get_balance "$ADDR_EVM2" "ustoc")
+    after_evm2_ustoc=$(get_balance "$ADDR_EVM2" "$DENOM")
     local ustoc_increase=$((after_evm2_ustoc - before_evm2_ustoc))
     assert_equals "$ustoc_increase" "1000"
 
