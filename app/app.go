@@ -604,8 +604,8 @@ func (app *App) blockCustomTokenIBCTransfers() {
 
 		if needRebuild {
 			mu.Lock()
-			// Double-check after acquiring write lock
-			if escrowAddrs == nil || currentHeight-cacheHeight >= 100 {
+			// Double-check after acquiring write lock (must match read-lock threshold)
+			if escrowAddrs == nil || currentHeight-cacheHeight >= 10 {
 				newCache := make(map[string]string)
 				channels := ibcKeeper.ChannelKeeper.GetAllChannels(sdkCtx)
 				for _, ch := range channels {
