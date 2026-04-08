@@ -1,7 +1,5 @@
 package types
 
-import "cosmossdk.io/math"
-
 const (
 	// ModuleName defines the module name
 	ModuleName = "stoc"
@@ -45,10 +43,6 @@ const (
 
 var (
 	ParamsKey = []byte("p_stoc")
-
-	// TokenCreationFee is the fee (in ustoc) burned when creating a new token.
-	// 100 STOC = 100_000_000 ustoc
-	TokenCreationFee = math.NewInt(100_000_000)
 )
 
 func KeyPrefix(p string) []byte {
