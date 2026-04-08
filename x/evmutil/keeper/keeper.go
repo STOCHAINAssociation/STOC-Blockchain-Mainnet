@@ -22,6 +22,9 @@ func NewKeeper(
 	storeKey storetypes.StoreKey,
 	bankKeeper types.BankKeeper,
 ) Keeper {
+	if bankKeeper == nil {
+		panic("evmutil: BankKeeper must not be nil")
+	}
 	return Keeper{
 		cdc:        cdc,
 		storeKey:   storeKey,
@@ -37,5 +40,8 @@ func (k Keeper) Logger(ctx sdk.Context) log.Logger {
 // GetEvmBankKeeper returns an EvmBankKeeper that wraps the regular BankKeeper
 // with EVM-specific conversion logic
 func (k Keeper) GetEvmBankKeeper() EvmBankKeeper {
+	if k.bankKeeper == nil {
+		panic("evmutil: BankKeeper is nil — keeper not properly initialized")
+	}
 	return NewEvmBankKeeper(k.bankKeeper)
 }

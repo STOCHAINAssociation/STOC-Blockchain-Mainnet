@@ -154,6 +154,7 @@ var (
 	preBlockers = []string{
 		upgradetypes.ModuleName,
 		authtypes.ModuleName,
+		evmtypes.ModuleName, // v0.6.0: EVM module requires PreBlocker registration
 		// this line is used by starport scaffolding # stargate/app/preBlockers
 	}
 

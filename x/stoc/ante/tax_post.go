@@ -38,6 +38,10 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 	// Each message is processed independently to prevent cross-message interference.
 	taxErr := tpd.applyTaxes(ctx, tx)
 	if taxErr != nil {
+		ctx.Logger().Error("Tax enforcement failed",
+			"error", taxErr,
+			"height", ctx.BlockHeight(),
+		)
 		return ctx, fmt.Errorf("tax enforcement failed, transaction rejected: %w", taxErr)
 	}
 
@@ -86,9 +90,12 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 				// Return error instead of skipping — prevents tax evasion via corrupted authz messages
 				return fmt.Errorf("failed to unwrap authz MsgExec for tax: %w", err)
 			}
-			if err := tpd.applyTaxesForMsgs(ctx, innerMsgs, depth+1); err != nil {
+			// Use CacheContext for consistent isolation with direct MsgSend path
+			cacheCtx, writeCache := ctx.CacheContext()
+			if err := tpd.applyTaxesForMsgs(cacheCtx, innerMsgs, depth+1); err != nil {
 				return err
 			}
+			writeCache()
 		}
 	}
 	return nil

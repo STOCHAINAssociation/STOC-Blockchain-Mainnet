@@ -37,9 +37,10 @@ func IsNativeDenom(denom string) bool {
 	if d == cosmosDenom {
 		return true
 	}
-	// Use evmutil as single source of truth for EVM denom derivation
-	evmDenom := strings.ToLower(evmutiltypes.GetEvmDenom())
-	if d == evmDenom {
+	// Use SafeGetEvmDenom to prevent consensus panic from misconfigured denom.
+	// If DefaultBondDenom is corrupted, treat as "not native" instead of halting chain.
+	evmDenomStr, err := evmutiltypes.SafeGetEvmDenom()
+	if err == nil && d == strings.ToLower(evmDenomStr) {
 		return true
 	}
 	// Display denom: trim 'u' prefix (e.g. "ustoc" -> "stoc")
@@ -230,6 +231,10 @@ func Validate(token Token) error {
 				return fmt.Errorf("distribution percentage must be between 1 and 100")
 			}
 
+			// Overflow check before addition
+			if totalPercent > 100-dist.Percent {
+				return fmt.Errorf("distribution percentages overflow (sum exceeds 100)")
+			}
 			totalPercent += dist.Percent
 		}
 

@@ -1,7 +1,13 @@
 package app
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"sync"
 
 	_ "cosmossdk.io/api/cosmos/tx/config/v1" // import for side-effects
 	clienthelpers "cosmossdk.io/client/v2/helpers"
@@ -80,12 +86,13 @@ import (
 	icacontrollerkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller/keeper"
 	icahostkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/host/keeper"
 	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
-	ibctransferkeeper "github.com/cosmos/evm/x/ibc/transfer/keeper"
+	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 
 	stocmodulekeeper "stoc/x/stoc/keeper"
+	stoctypes "stoc/x/stoc/types"
 	// this line is used by starport scaffolding # stargate/app/moduleImport
 
 	"stoc/docs"
@@ -94,10 +101,10 @@ import (
 	// EVM imports
 	sdkmempool "github.com/cosmos/cosmos-sdk/types/mempool"
 	evmante "github.com/cosmos/evm/ante"
-	cosmosevmante "github.com/cosmos/evm/ante/evm"
-	cosmosevmtypes "github.com/cosmos/evm/types"
+	antetypes "github.com/cosmos/evm/ante/types"
 	erc20keeper "github.com/cosmos/evm/x/erc20/keeper"
 	evmkeeper "github.com/cosmos/evm/x/vm/keeper"
+	evmtypes "github.com/cosmos/evm/x/vm/types"
 	feemarketkeeper "github.com/cosmos/evm/x/feemarket/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	stocappante "stoc/app/ante"
@@ -181,16 +188,50 @@ type App struct {
 }
 
 func init() {
-	// Set default bond denom to ustoc (must be set before EVM modules use it)
-	// This is used by evm.go coinInfoMap and evmutil GetCosmosDenom()/GetEvmDenom()
-	sdk.DefaultBondDenom = "ustoc"
-
 	var err error
 	clienthelpers.EnvPrefix = Name
 	DefaultNodeHome, err = clienthelpers.GetNodeHomeDirectory("." + Name)
 	if err != nil {
 		panic(err)
 	}
+
+	// Set default bond denom from genesis staking params.
+	// Must be set before EVM modules use it (evm.go coinInfoMap, evmutil GetEvmDenom()).
+	// Reads genesis to support both mainnet (ustoc) and testnet (utstoc).
+	sdk.DefaultBondDenom = detectBondDenomFromGenesis(DefaultNodeHome)
+}
+
+// detectBondDenomFromGenesis reads bond_denom from genesis file.
+// For fresh nodes (no genesis yet), derives denom from chain-id in config.toml
+// or falls back based on DefaultNodeHome convention.
+// Supports: mainnet "ustoc", testnet "utstoc"
+func detectBondDenomFromGenesis(homeDir string) string {
+	// Try genesis first (most reliable source)
+	genesisPath := filepath.Join(homeDir, "config", "genesis.json")
+	data, err := os.ReadFile(genesisPath)
+	if err == nil {
+		var genesis struct {
+			AppState struct {
+				Staking struct {
+					Params struct {
+						BondDenom string `json:"bond_denom"`
+					} `json:"params"`
+				} `json:"staking"`
+			} `json:"app_state"`
+		}
+		if err := json.Unmarshal(data, &genesis); err == nil {
+			if genesis.AppState.Staking.Params.BondDenom != "" {
+				return genesis.AppState.Staking.Params.BondDenom
+			}
+		}
+	}
+
+	// No genesis yet (fresh node, e.g. ignite chain serve).
+	// Default to mainnet denom — Ignite will generate genesis with the correct denom shortly.
+	// config.toml is not scanned for "tstoc"/"testnet": substring matching could
+	// trigger on unrelated content (moniker, comments), causing a mainnet node to
+	// use the wrong denom.
+	return "ustoc"
 }
 
 // getGovProposalHandlers return the chain proposal handlers.
@@ -302,9 +343,9 @@ func New(
 		panic(err)
 	}
 
-	// add to default baseapp options
-	// enable optimistic execution
-	baseAppOptions = append(baseAppOptions, baseapp.SetOptimisticExecution())
+	// Optimistic execution disabled — experimental SDK feature that risks state divergence
+	// when combined with state-modifying PostHandler (tax). Re-enable when SDK matures.
+	// baseAppOptions = append(baseAppOptions, baseapp.SetOptimisticExecution())
 
 	// build app
 	app.App = appBuilder.Build(db, traceStore, baseAppOptions...)
@@ -328,6 +369,12 @@ func New(
 	// NOTE: BlockedModuleAccountsOverride only handles module names (via NewModuleAddress),
 	// so precompile hex addresses must be blocked via SendRestriction instead.
 	app.blockPrecompileTransfers()
+
+	// Block custom token IBC transfers at the bank module level.
+	// This is the primary enforcement — catches ALL execution paths including
+	// ICA host, x/group proposals, and x/gov proposals that bypass ante handlers.
+	// The ante handler (IBCCustomTokenRestriction) remains for early rejection and user-facing errors.
+	app.blockCustomTokenIBCTransfers()
 
 	// register streaming services
 	if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {
@@ -357,8 +404,12 @@ func New(
 	})
 
 	// create options for AnteHandler
-	// MaxTxGasWanted caps per-tx gas; 0 = no cap (mitigated by min gas price + block gas limit)
+	// MaxTxGasWanted caps per-tx gas to prevent single-tx block monopolization.
+	// Default 50M = half of BlockGasLimit (100M), allowing other txs in the same block.
 	maxGasWanted := cast.ToUint64(appOpts.Get("gas-wanted"))
+	if maxGasWanted == 0 {
+		maxGasWanted = 50_000_000
+	}
 
 	anteOptions := stocappante.StocAnteOptions{
 		HandlerOptions: evmante.HandlerOptions{
@@ -368,8 +419,8 @@ func New(
 			SignModeHandler:        app.txConfig.SignModeHandler(),
 			FeegrantKeeper:         app.FeeGrantKeeper,
 			SigGasConsumer:         evmante.SigVerificationGasConsumer,
-			ExtensionOptionChecker: cosmosevmtypes.HasDynamicFeeExtensionOption,
-			TxFeeChecker:           cosmosevmante.NewDynamicFeeChecker(app.FeeMarketKeeper),
+			ExtensionOptionChecker: antetypes.HasDynamicFeeExtensionOption,
+			DynamicFeeChecker:      true, // v0.6.0: replaces TxFeeChecker with boolean flag
 			EvmKeeper:              app.EVMKeeper,
 			FeeMarketKeeper:        &app.FeeMarketKeeper,
 			MaxTxGasWanted:         maxGasWanted,
@@ -506,6 +557,109 @@ func GetMaccPerms() map[string][]string {
 		dup[perms.Account] = perms.Permissions
 	}
 	return dup
+}
+
+// blockCustomTokenIBCTransfers registers a bank SendRestriction that prevents
+// custom tokens (created via x/stoc) from being escrowed by IBC transfer.
+// Unlike the ante handler (which only catches user-submitted txs), this restriction
+// is enforced at the bank module level and catches ALL execution paths:
+// - Direct user MsgTransfer
+// - ICA host message execution (bypasses ante handlers)
+// - x/group proposal execution (bypasses ante handlers)
+// - x/gov proposal execution (bypasses ante handlers)
+func (app *App) blockCustomTokenIBCTransfers() {
+	stocKeeper := app.StocKeeper
+	ibcKeeper := app.IBCKeeper
+
+	// Cached escrow addresses with mutex protection.
+	// SendRestriction is called from both DeliverTx (serial) and CheckTx (concurrent),
+	// so the cache MUST be protected against concurrent access.
+	var mu sync.RWMutex
+	var escrowAddrs map[string]string // bech32 addr → channelId
+	var cacheHeight int64
+
+	app.BankKeeper.AppendSendRestriction(func(ctx context.Context, fromAddr, toAddr sdk.AccAddress, amt sdk.Coins) (sdk.AccAddress, error) {
+		sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+		// Fast path: skip if no custom tokens in the amount
+		var customDenom string
+		for _, coin := range amt {
+			if stoctypes.IsNativeDenom(coin.Denom) {
+				continue
+			}
+			if stocKeeper.HasToken(sdkCtx, coin.Denom) {
+				customDenom = coin.Denom
+				break
+			}
+		}
+		if customDenom == "" {
+			return toAddr, nil
+		}
+
+		// Rebuild escrow address cache every 10 blocks to pick up new channels
+		currentHeight := sdkCtx.BlockHeight()
+		mu.RLock()
+		needRebuild := escrowAddrs == nil || currentHeight-cacheHeight >= 10
+		mu.RUnlock()
+
+		if needRebuild {
+			mu.Lock()
+			// Double-check after acquiring write lock (must match read-lock threshold)
+			if escrowAddrs == nil || currentHeight-cacheHeight >= 10 {
+				newCache := make(map[string]string)
+				channels := ibcKeeper.ChannelKeeper.GetAllChannels(sdkCtx)
+				for _, ch := range channels {
+					if ch.PortId == ibctransfertypes.PortID {
+						addr := ibctransfertypes.GetEscrowAddress(ch.PortId, ch.ChannelId)
+						newCache[addr.String()] = ch.ChannelId
+					}
+				}
+				escrowAddrs = newCache
+				cacheHeight = currentHeight
+			}
+			mu.Unlock()
+		}
+
+		// O(1) lookup with read lock
+		mu.RLock()
+		channelId, blocked := escrowAddrs[toAddr.String()]
+		mu.RUnlock()
+
+		if blocked {
+			sdkCtx.Logger().Warn("Blocked IBC escrow of custom token via SendRestriction",
+				"denom", customDenom,
+				"channel", channelId,
+				"from", fromAddr.String(),
+			)
+			return toAddr, fmt.Errorf(
+				"IBC transfer of custom token %q is not allowed: custom tokens created via x/stoc are Cosmos-only and cannot be transferred cross-chain",
+				customDenom,
+			)
+		}
+
+		return toAddr, nil
+	})
+}
+
+// DefaultGenesis returns default genesis state with STOC-specific EVM denom configuration.
+// Overrides cosmos/evm defaults ("aatom") with denoms derived from bond_denom.
+func (app *App) DefaultGenesis() map[string]json.RawMessage {
+	genesis := app.App.DefaultGenesis()
+
+	// Override EVM module genesis: set correct denoms for 6-decimal chain
+	bondDenom := sdk.DefaultBondDenom
+	extendedDenom := "a" + bondDenom[1:] // "ustoc" → "astoc"
+
+	evmGenState := evmtypes.DefaultGenesisState()
+	evmGenState.Params.EvmDenom = bondDenom
+	evmGenState.Params.ExtendedDenomOptions = &evmtypes.ExtendedDenomOptions{
+		ExtendedDenom: extendedDenom,
+	}
+	evmGenState.Params.ActiveStaticPrecompiles = evmtypes.AvailableStaticPrecompiles
+	evmGenState.Preinstalls = evmtypes.DefaultPreinstalls
+	genesis[evmtypes.ModuleName] = app.appCodec.MustMarshalJSON(evmGenState)
+
+	return genesis
 }
 
 // BlockedAddresses returns all the app's blocked account addresses.

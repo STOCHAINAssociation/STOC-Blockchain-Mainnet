@@ -36,6 +36,22 @@ genesis:
         min_gas_multiplier: "0.500000000000000000"
         base_fee_change_denominator: 8
         elasticity_multiplier: 2
+    evm:
+      params:
+        evm_denom: ustoc
+        extended_denom_options:
+          extended_denom: astoc
+    bank:
+      denom_metadata:
+        - base: ustoc
+          display: stoc
+          denom_units:
+            - denom: ustoc
+              exponent: 0
+            - denom: stoc
+              exponent: 6
+          name: STOC
+          symbol: STOC
 validators:
   - name: validator1
     bonded: 10000000000ustoc
