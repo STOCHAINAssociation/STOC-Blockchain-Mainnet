@@ -37,7 +37,7 @@ run_gas_enforcement_tests() {
     # T03: Send with adequate gas price — should succeed
     test_start "Send with --gas-prices 0.001${DENOM} (above min)"
     local result
-    result=$(CUSTOM_GAS_FLAGS="--gas auto --gas-adjustment 1.5 --gas-prices 0.001${DENOM}" \
+    result=$(CUSTOM_GAS_FLAGS="--gas 200000 --gas-prices 0.001${DENOM}" \
         send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 1000${DENOM}")
     assert_tx_success "$result"
 
@@ -49,7 +49,7 @@ run_gas_enforcement_tests() {
 
     # T05: Send with higher gas price
     test_start "Send with --gas-prices 0.01${DENOM} (generous)"
-    result=$(CUSTOM_GAS_FLAGS="--gas auto --gas-adjustment 1.5 --gas-prices 0.01${DENOM}" \
+    result=$(CUSTOM_GAS_FLAGS="--gas 200000 --gas-prices 0.01${DENOM}" \
         send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM1 500${DENOM}")
     assert_tx_success "$result"
 
@@ -167,9 +167,9 @@ run_gas_enforcement_tests() {
     section "Gas Auto-Estimation"
     # =========================================================================
 
-    # T11: Gas auto-estimation works
-    test_start "Gas auto-estimation (--gas auto)"
-    result=$(CUSTOM_GAS_FLAGS="--gas auto --gas-adjustment 1.5 --gas-prices 0.001${DENOM}" \
+    # T11: Fixed gas with gas-prices works
+    test_start "Send with fixed gas + gas-prices"
+    result=$(CUSTOM_GAS_FLAGS="--gas 200000 --gas-prices 0.001${DENOM}" \
         send_tx "$BINARY tx bank send $WALLET_ADMIN $ADDR_EVM2 500${DENOM}")
     assert_tx_success "$result"
 

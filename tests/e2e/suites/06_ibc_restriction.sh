@@ -8,6 +8,13 @@
 run_ibc_restriction_tests() {
     suite "06 — IBC Restriction"
 
+    # Get actual denoms for tokens created by earlier suites (global counter)
+    local ALPHA_DENOM BETA_DENOM
+    ALPHA_DENOM=$(get_last_token_denom "ALPHA")
+    BETA_DENOM=$(get_last_token_denom "BETA")
+    [[ -z "$ALPHA_DENOM" ]] && ALPHA_DENOM="ALPHA_0"
+    [[ -z "$BETA_DENOM" ]] && BETA_DENOM="BETA_0"
+
     # =========================================================================
     section "IBC Custom Token Blocked"
     # =========================================================================
@@ -18,9 +25,9 @@ run_ibc_restriction_tests() {
     # the restriction by checking the error message.
 
     # T01: IBC transfer of custom token — should be blocked by ante handler
-    test_start "IBC transfer ALPHA_0 blocked (custom token)"
+    test_start "IBC transfer ALPHA blocked (custom token)"
     local raw
-    raw=$(eval "$BINARY tx ibc-transfer transfer transfer channel-0 cosmos1xxxxxxxxx 1000ALPHA_0 \
+    raw=$(eval "$BINARY tx ibc-transfer transfer transfer channel-0 cosmos1xxxxxxxxx 1000${ALPHA_DENOM} \
         --from $WALLET_ADMIN \
         $(_common_flags) $(_gas_flags) \
         --packet-timeout-height 0-0 --packet-timeout-timestamp 0 \
@@ -61,8 +68,8 @@ run_ibc_restriction_tests() {
     fi
 
     # T02: IBC transfer of another custom token
-    test_start "IBC transfer BETA_0 blocked (another custom token)"
-    raw=$(eval "$BINARY tx ibc-transfer transfer transfer channel-0 cosmos1xxxxxxxxx 100BETA_0 \
+    test_start "IBC transfer BETA blocked (another custom token)"
+    raw=$(eval "$BINARY tx ibc-transfer transfer transfer channel-0 cosmos1xxxxxxxxx 100${BETA_DENOM} \
         --from $WALLET_ADMIN \
         $(_common_flags) $(_gas_flags) \
         --packet-timeout-height 0-0 --packet-timeout-timestamp 0 \
@@ -75,7 +82,7 @@ run_ibc_restriction_tests() {
         if [[ -n "$txhash" ]]; then
             tx_result=$(wait_for_tx "$txhash" 15)
             code=$(echo "$tx_result" | jq -r '.code // "0"')
-            if [[ "$code" != "0" ]]; then pass; else fail "BETA_0 IBC should be blocked"; fi
+            if [[ "$code" != "0" ]]; then pass; else fail "BETA IBC should be blocked"; fi
         else
             fail "BETA_0 IBC should be blocked"
         fi

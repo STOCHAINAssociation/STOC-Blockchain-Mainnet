@@ -2,6 +2,7 @@
 # =============================================================================
 # Suite 01: Token Lifecycle
 # Create, Query, Mint, Release, Burn — comprehensive token CRUD tests
+# NOTE: Token counter is GLOBAL — denoms are queried dynamically after creation
 # =============================================================================
 
 run_token_lifecycle_tests() {
@@ -19,15 +20,17 @@ run_token_lifecycle_tests() {
     local result
     result=$(create_token "$WALLET_ADMIN" "AlphaToken" "ALPHA" "1000000" "10000000" 6 "$LOGO" false)
     assert_tx_success "$result"
+    local ALPHA_DENOM
+    ALPHA_DENOM=$(get_last_token_denom "ALPHA")
 
     # T02: Query token by minimal denom
-    test_start "Query ALPHA_0 by minimal denom"
+    test_start "Query ALPHA by minimal denom"
     local token_json
-    token_json=$(query_token "ALPHA_0")
+    token_json=$(query_token "$ALPHA_DENOM")
     assert_json_field "$token_json" ".token.symbol" "ALPHA"
 
     # T03: Verify token fields
-    test_start "Verify ALPHA_0 fields (name, decimals, creator)"
+    test_start "Verify ALPHA fields (name, decimals, creator)"
     local t_name t_dec t_creator
     t_name=$(echo "$token_json" | jq -r '.token.name')
     t_dec=$(echo "$token_json" | jq -r '.token.decimals')
@@ -39,9 +42,9 @@ run_token_lifecycle_tests() {
     fi
 
     # T04: Verify creator received initial supply
-    test_start "Verify admin holds 1000000 ALPHA_0"
+    test_start "Verify admin holds 1000000 ALPHA"
     local bal
-    bal=$(get_balance "$ADDR_ADMIN" "ALPHA_0")
+    bal=$(get_balance "$ADDR_ADMIN" "$ALPHA_DENOM")
     assert_equals "$bal" "1000000"
 
     # T05: Verify remaining supply = total - initial
@@ -66,10 +69,12 @@ run_token_lifecycle_tests() {
     test_start "Create unlimited token (BETA)"
     result=$(create_token "$WALLET_ADMIN" "BetaToken" "BETA" "500000" "500000" 6 "$LOGO" true)
     assert_tx_success "$result"
+    local BETA_DENOM
+    BETA_DENOM=$(get_last_token_denom "BETA")
 
     # T08: Verify unlimited flag
-    test_start "Verify BETA_0 unlimited=true"
-    token_json=$(query_token "BETA_0")
+    test_start "Verify BETA unlimited=true"
+    token_json=$(query_token "$BETA_DENOM")
     assert_json_field "$token_json" ".token.unlimited" "true"
 
     # T09: Create token with 0 decimals
@@ -91,10 +96,12 @@ run_token_lifecycle_tests() {
     test_start "Create token with 0 initial supply (ZETA)"
     result=$(create_token "$WALLET_ADMIN" "ZetaToken" "ZETA" "0" "5000000" 6 "$LOGO" false)
     assert_tx_success "$result"
+    local ZETA_DENOM
+    ZETA_DENOM=$(get_last_token_denom "ZETA")
 
     # T13: Verify ZETA remaining = total supply
-    test_start "Verify ZETA_0 remaining_supply = 5000000"
-    token_json=$(query_token "ZETA_0")
+    test_start "Verify ZETA remaining_supply = 5000000"
+    token_json=$(query_token "$ZETA_DENOM")
     remaining=$(echo "$token_json" | jq -r '.token.remaining_supply')
     assert_equals "$remaining" "5000000"
 
@@ -102,10 +109,12 @@ run_token_lifecycle_tests() {
     test_start "Create token initial=total (ETA)"
     result=$(create_token "$WALLET_ADMIN" "EtaToken" "ETA" "1000000" "1000000" 6 "$LOGO" false)
     assert_tx_success "$result"
+    local ETA_DENOM
+    ETA_DENOM=$(get_last_token_denom "ETA")
 
     # T15: Verify ETA remaining = 0
-    test_start "Verify ETA_0 remaining_supply = 0"
-    token_json=$(query_token "ETA_0")
+    test_start "Verify ETA remaining_supply = 0"
+    token_json=$(query_token "$ETA_DENOM")
     remaining=$(echo "$token_json" | jq -r '.token.remaining_supply')
     assert_equals "$remaining" "0"
 
@@ -118,10 +127,12 @@ run_token_lifecycle_tests() {
     result=$(create_token "$WALLET_ADMIN" "TaxedToken" "TAXED" "1000000" "10000000" 6 "$LOGO" false \
         "$(tax_flag 5 $ADDR_ADMIN)")
     assert_tx_success "$result"
+    local TAXED_DENOM
+    TAXED_DENOM=$(get_last_token_denom "TAXED")
 
     # T17: Verify tax config
-    test_start "Verify TAXED_0 tax percent"
-    token_json=$(query_token "TAXED_0")
+    test_start "Verify TAXED tax percent"
+    token_json=$(query_token "$TAXED_DENOM")
     local tax_pct
     tax_pct=$(echo "$token_json" | jq -r '.token.tax.percent // "0"')
     if echo "$tax_pct" | grep -q "0.05"; then
@@ -148,10 +159,13 @@ run_token_lifecycle_tests() {
     else
         skip "distribution flag format may differ"
     fi
+    local DISTRIB_DENOM
+    DISTRIB_DENOM=$(get_last_token_denom "DISTRIB")
+    [[ -z "$DISTRIB_DENOM" ]] && DISTRIB_DENOM="DISTRIB_0"
 
     # T19: Verify distribution — admin got 60%
-    test_start "Verify admin got 600000 DISTRIB_0 (60%)"
-    bal=$(get_balance "$ADDR_ADMIN" "DISTRIB_0")
+    test_start "Verify admin got 600000 DISTRIB (60%)"
+    bal=$(get_balance "$ADDR_ADMIN" "$DISTRIB_DENOM")
     if [[ "$bal" == "600000" ]]; then
         pass
     else
@@ -159,8 +173,8 @@ run_token_lifecycle_tests() {
     fi
 
     # T20: Verify distribution — evm_wallet1 got 40%
-    test_start "Verify evm_wallet1 got 400000 DISTRIB_0 (40%)"
-    bal=$(get_balance "$ADDR_EVM1" "DISTRIB_0")
+    test_start "Verify evm_wallet1 got 400000 DISTRIB (40%)"
+    bal=$(get_balance "$ADDR_EVM1" "$DISTRIB_DENOM")
     if [[ "$bal" == "400000" ]]; then
         pass
     else
@@ -172,13 +186,15 @@ run_token_lifecycle_tests() {
     # =========================================================================
 
     # T21: Create second token with same symbol ALPHA
-    test_start "Create second ALPHA token (counter = 1)"
+    test_start "Create second ALPHA token (global counter)"
     result=$(create_token "$WALLET_ADMIN" "AlphaV2" "ALPHA" "500" "5000" 6 "$LOGO" false)
     assert_tx_success "$result"
+    local ALPHA2_DENOM
+    ALPHA2_DENOM=$(get_last_token_denom "ALPHA")
 
-    # T22: Verify minimal denom is ALPHA_1
-    test_start "Query ALPHA_1 exists"
-    token_json=$(query_token "ALPHA_1")
+    # T22: Verify second ALPHA exists
+    test_start "Query second ALPHA exists ($ALPHA2_DENOM)"
+    token_json=$(query_token "$ALPHA2_DENOM")
     assert_json_field "$token_json" ".token.symbol" "ALPHA"
 
     # T23: Query tokens by symbol returns both
@@ -201,24 +217,24 @@ run_token_lifecycle_tests() {
     # =========================================================================
 
     # T25: Mint tokens on unlimited token (BETA)
-    test_start "Mint 1000000 BETA_0 (unlimited)"
-    result=$(mint_tokens "$WALLET_ADMIN" "BETA_0" "1000000")
+    test_start "Mint 1000000 BETA (unlimited)"
+    result=$(mint_tokens "$WALLET_ADMIN" "$BETA_DENOM" "1000000")
     assert_tx_success "$result"
 
     # T26: Verify minted tokens go to module (remaining increased)
-    test_start "Verify BETA_0 remaining increased after mint"
-    token_json=$(query_token "BETA_0")
+    test_start "Verify BETA remaining increased after mint"
+    token_json=$(query_token "$BETA_DENOM")
     remaining=$(echo "$token_json" | jq -r '.token.remaining_supply')
     assert_equals "$remaining" "1000000"
 
     # T27: Mint on limited token with remaining supply (ALPHA has 9M remaining)
-    test_start "Mint 100000 ALPHA_0 (limited, has remaining)"
-    result=$(mint_tokens "$WALLET_ADMIN" "ALPHA_0" "100000")
+    test_start "Mint 100000 ALPHA (limited, has remaining)"
+    result=$(mint_tokens "$WALLET_ADMIN" "$ALPHA_DENOM" "100000")
     assert_tx_success "$result"
 
     # T28: Mint by non-creator (should fail)
     test_start "Mint by non-creator (evm_wallet1) — expect failure"
-    result=$(send_tx_expect_fail "$BINARY tx stoc mint-tokens --from $WALLET_EVM1 --symbol ALPHA_0 --amount 1000")
+    result=$(send_tx_expect_fail "$BINARY tx stoc mint-tokens --from $WALLET_EVM1 --symbol $ALPHA_DENOM --amount 1000")
     local code
     code=$(echo "$result" | jq -r '.code // "99"' 2>/dev/null)
     if [[ "$code" != "0" ]]; then
@@ -231,8 +247,8 @@ run_token_lifecycle_tests() {
     fi
 
     # T29: Mint on token with 0 remaining (ETA) — should fail unless unlimited
-    test_start "Mint ETA_0 (remaining=0, unlimited=false) — expect failure"
-    result=$(send_tx_expect_fail "$BINARY tx stoc mint-tokens --from $WALLET_ADMIN --symbol ETA_0 --amount 1000")
+    test_start "Mint ETA (remaining=0, unlimited=false) — expect failure"
+    result=$(send_tx_expect_fail "$BINARY tx stoc mint-tokens --from $WALLET_ADMIN --symbol $ETA_DENOM --amount 1000")
     code=$(echo "$result" | jq -r '.code // "99"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]]; then
         pass
@@ -253,25 +269,25 @@ run_token_lifecycle_tests() {
     # =========================================================================
 
     # T30: Release tokens to evm_wallet1
-    test_start "Release 50000 ALPHA_0 to evm_wallet1"
-    result=$(release_tokens "$WALLET_ADMIN" "ALPHA_0" "50000" "$ADDR_EVM1")
+    test_start "Release 50000 ALPHA to evm_wallet1"
+    result=$(release_tokens "$WALLET_ADMIN" "$ALPHA_DENOM" "50000" "$ADDR_EVM1")
     assert_tx_success "$result"
 
     # T31: Verify recipient received tokens
-    test_start "Verify evm_wallet1 holds 50000 ALPHA_0"
-    bal=$(get_balance "$ADDR_EVM1" "ALPHA_0")
+    test_start "Verify evm_wallet1 holds 50000 ALPHA"
+    bal=$(get_balance "$ADDR_EVM1" "$ALPHA_DENOM")
     assert_equals "$bal" "50000"
 
     # T32: Verify remaining decreased
-    test_start "Verify ALPHA_0 remaining decreased after release"
-    token_json=$(query_token "ALPHA_0")
+    test_start "Verify ALPHA remaining decreased after release"
+    token_json=$(query_token "$ALPHA_DENOM")
     remaining=$(echo "$token_json" | jq -r '.token.remaining_supply')
     # Was 9M + 100K minted = 9.1M, minus 50K released = 9050000
     assert_equals "$remaining" "9050000"
 
     # T33: Release by non-creator (should fail)
     test_start "Release by non-creator — expect failure"
-    result=$(send_tx_expect_fail "$BINARY tx stoc release-tokens --from $WALLET_EVM1 --symbol ALPHA_0 --amount 1000 --recipient $ADDR_EVM2")
+    result=$(send_tx_expect_fail "$BINARY tx stoc release-tokens --from $WALLET_EVM1 --symbol $ALPHA_DENOM --amount 1000 --recipient $ADDR_EVM2")
     code=$(echo "$result" | jq -r '.code // "99"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]]; then
         pass
@@ -288,7 +304,7 @@ run_token_lifecycle_tests() {
 
     # T34: Release more than remaining (ZETA has 5M remaining, try 6M)
     test_start "Release more than remaining — expect failure"
-    result=$(send_tx_expect_fail "$BINARY tx stoc release-tokens --from $WALLET_ADMIN --symbol ZETA_0 --amount 6000000 --recipient $ADDR_EVM1")
+    result=$(send_tx_expect_fail "$BINARY tx stoc release-tokens --from $WALLET_ADMIN --symbol $ZETA_DENOM --amount 6000000 --recipient $ADDR_EVM1")
     code=$(echo "$result" | jq -r '.code // "99"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]]; then
         pass
@@ -304,8 +320,8 @@ run_token_lifecycle_tests() {
     fi
 
     # T35: Release tokens to evm_wallet2 (cross-wallet)
-    test_start "Release 10000 ALPHA_0 to evm_wallet2"
-    result=$(release_tokens "$WALLET_ADMIN" "ALPHA_0" "10000" "$ADDR_EVM2")
+    test_start "Release 10000 ALPHA to evm_wallet2"
+    result=$(release_tokens "$WALLET_ADMIN" "$ALPHA_DENOM" "10000" "$ADDR_EVM2")
     assert_tx_success "$result"
 
     # =========================================================================
@@ -313,48 +329,48 @@ run_token_lifecycle_tests() {
     # =========================================================================
 
     # T36: Burn specific amount
-    test_start "Burn 100 ALPHA_0 from admin"
+    test_start "Burn 100 ALPHA from admin"
     local before_burn
-    before_burn=$(get_balance "$ADDR_ADMIN" "ALPHA_0")
-    result=$(burn_tokens "$WALLET_ADMIN" "ALPHA_0" "100")
+    before_burn=$(get_balance "$ADDR_ADMIN" "$ALPHA_DENOM")
+    result=$(burn_tokens "$WALLET_ADMIN" "$ALPHA_DENOM" "100")
     assert_tx_success "$result"
 
     # T37: Verify balance decreased
-    test_start "Verify ALPHA_0 balance decreased by 100"
+    test_start "Verify ALPHA balance decreased by 100"
     local after_burn
-    after_burn=$(get_balance "$ADDR_ADMIN" "ALPHA_0")
+    after_burn=$(get_balance "$ADDR_ADMIN" "$ALPHA_DENOM")
     local expected=$((before_burn - 100))
     assert_equals "$after_burn" "$expected"
 
     # T38: Burn specific amount from evm_wallet1
-    test_start "Burn 1000 ALPHA_0 from evm_wallet1"
-    result=$(burn_tokens "$WALLET_EVM1" "ALPHA_0" "1000")
+    test_start "Burn 1000 ALPHA from evm_wallet1"
+    result=$(burn_tokens "$WALLET_EVM1" "$ALPHA_DENOM" "1000")
     assert_tx_success "$result"
 
     # T39: Verify evm_wallet1 balance
-    test_start "Verify evm_wallet1 ALPHA_0 = 49000 after burn"
-    bal=$(get_balance "$ADDR_EVM1" "ALPHA_0")
+    test_start "Verify evm_wallet1 ALPHA = 49000 after burn"
+    bal=$(get_balance "$ADDR_EVM1" "$ALPHA_DENOM")
     assert_equals "$bal" "49000"
 
     # T40: Burn all (burn_all=true)
-    test_start "Burn all ALPHA_1 from admin"
-    local alpha1_bal
-    alpha1_bal=$(get_balance "$ADDR_ADMIN" "ALPHA_1")
-    if [[ "$alpha1_bal" -gt 0 ]]; then
-        result=$(burn_tokens "$WALLET_ADMIN" "ALPHA_1" "" "true")
+    test_start "Burn all second ALPHA from admin"
+    local alpha2_bal
+    alpha2_bal=$(get_balance "$ADDR_ADMIN" "$ALPHA2_DENOM")
+    if [[ "$alpha2_bal" -gt 0 ]]; then
+        result=$(burn_tokens "$WALLET_ADMIN" "$ALPHA2_DENOM" "" "true")
         assert_tx_success "$result"
     else
-        skip "ALPHA_1 balance is 0"
+        skip "second ALPHA balance is 0"
     fi
 
     # T41: Verify balance is 0 after burn_all
-    test_start "Verify ALPHA_1 balance = 0 after burn_all"
-    bal=$(get_balance "$ADDR_ADMIN" "ALPHA_1")
+    test_start "Verify second ALPHA balance = 0 after burn_all"
+    bal=$(get_balance "$ADDR_ADMIN" "$ALPHA2_DENOM")
     assert_equals "$bal" "0"
 
     # T42: Burn more than balance (should fail)
-    test_start "Burn 999999999 ALPHA_0 from evm_wallet2 — expect failure"
-    result=$(send_tx_expect_fail "$BINARY tx stoc burn-token --from $WALLET_EVM2 --denom ALPHA_0 --amount 999999999")
+    test_start "Burn 999999999 ALPHA from evm_wallet2 — expect failure"
+    result=$(send_tx_expect_fail "$BINARY tx stoc burn-token --from $WALLET_EVM2 --denom $ALPHA_DENOM --amount 999999999")
     code=$(echo "$result" | jq -r '.code // "99"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]]; then
         pass
@@ -381,18 +397,18 @@ run_token_lifecycle_tests() {
     # =========================================================================
 
     # T44: Transfer custom tokens admin -> evm_wallet1
-    test_start "Transfer 5000 ALPHA_0: admin -> evm_wallet1"
-    result=$(bank_send "$WALLET_ADMIN" "$ADDR_EVM1" "5000ALPHA_0")
+    test_start "Transfer 5000 ALPHA: admin -> evm_wallet1"
+    result=$(bank_send "$WALLET_ADMIN" "$ADDR_EVM1" "5000${ALPHA_DENOM}")
     assert_tx_success "$result"
 
     # T45: Transfer custom tokens evm_wallet1 -> evm_wallet2
-    test_start "Transfer 2000 ALPHA_0: evm_wallet1 -> evm_wallet2"
-    result=$(bank_send "$WALLET_EVM1" "$ADDR_EVM2" "2000ALPHA_0")
+    test_start "Transfer 2000 ALPHA: evm_wallet1 -> evm_wallet2"
+    result=$(bank_send "$WALLET_EVM1" "$ADDR_EVM2" "2000${ALPHA_DENOM}")
     assert_tx_success "$result"
 
     # T46: Transfer custom tokens evm_wallet2 -> validator2
-    test_start "Transfer 500 ALPHA_0: evm_wallet2 -> validator2"
-    result=$(bank_send "$WALLET_EVM2" "$ADDR_VAL2" "500ALPHA_0")
+    test_start "Transfer 500 ALPHA: evm_wallet2 -> validator2"
+    result=$(bank_send "$WALLET_EVM2" "$ADDR_VAL2" "500${ALPHA_DENOM}")
     assert_tx_success "$result"
 
     # T47: Transfer ustoc between wallets
@@ -401,7 +417,7 @@ run_token_lifecycle_tests() {
     assert_tx_success "$result"
 
     # T48: Verify all wallet balances after transfers
-    test_start "Verify validator2 holds ALPHA_0"
-    bal=$(get_balance "$ADDR_VAL2" "ALPHA_0")
+    test_start "Verify validator2 holds ALPHA"
+    bal=$(get_balance "$ADDR_VAL2" "$ALPHA_DENOM")
     assert_gt "$bal" "0"
 }

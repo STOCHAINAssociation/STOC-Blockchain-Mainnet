@@ -27,7 +27,12 @@ run_tax_system_tests() {
         log_warn "Raw result: $(echo "$result" | head -c 300)"
     fi
 
-    local TAX5_DENOM="TAXX_0"
+    local TAX5_DENOM
+    if [[ "$tax5_ok" == "true" ]]; then
+        TAX5_DENOM=$(get_last_token_denom "TAXX")
+        log_info "TAX5 denom: $TAX5_DENOM"
+    fi
+    [[ -z "$TAX5_DENOM" ]] && TAX5_DENOM="TAXX_0"
 
     # Fund evm_wallet1 and evm_wallet2 with taxed tokens via release
     if [[ "$tax5_ok" == "true" ]]; then

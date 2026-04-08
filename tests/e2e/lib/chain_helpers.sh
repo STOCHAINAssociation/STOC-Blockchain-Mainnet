@@ -240,6 +240,16 @@ query_tokens_by_symbol() {
     $BINARY query stoc tokens-by-symbol "$symbol" --node "$NODE" --output json 2>/dev/null
 }
 
+# Get the minimal denom of the most recently created token for a given symbol.
+# Token counter is GLOBAL (not per-symbol), so BETA's first token might be BETA_1 not BETA_0.
+# Usage: get_last_token_denom "ALPHA"  → e.g., "ALPHA_0" or "ALPHA_9"
+get_last_token_denom() {
+    local symbol="$1"
+    query_tokens_by_symbol "$symbol" | jq -r '
+        .tokens | map(.id) | sort_by(split("_")[-1] | tonumber) | last // ""
+    ' 2>/dev/null
+}
+
 # create_token FROM_KEY NAME SYMBOL INITIAL_SUPPLY TOTAL_SUPPLY DECIMALS LOGO UNLIMITED [EXTRA_FLAGS]
 # Tax: --tax '{"percent":"PROTO_INT","recipient_address":"stoc1..."}'
 #   Proto int for percent: 5% = 50000000000000000 (5 * 10^16)

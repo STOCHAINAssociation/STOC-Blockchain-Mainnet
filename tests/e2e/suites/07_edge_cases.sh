@@ -2,12 +2,20 @@
 # =============================================================================
 # Suite 07: Edge Cases & Regression Tests
 # Validation boundaries, error cases, regression for known bugs
+# NOTE: Token counter is GLOBAL — denoms are queried dynamically
 # =============================================================================
 
 run_edge_case_tests() {
     suite "07 — Edge Cases & Regression"
 
     local LOGO="https://example.com/logo.png"
+
+    # Get actual ALPHA denom from earlier suites (global counter)
+    local FIRST_ALPHA_DENOM
+    FIRST_ALPHA_DENOM=$(query_tokens_by_symbol "ALPHA" | jq -r '
+        .tokens | map(.id) | sort_by(split("_")[-1] | tonumber) | first // ""
+    ' 2>/dev/null)
+    [[ -z "$FIRST_ALPHA_DENOM" ]] && FIRST_ALPHA_DENOM="ALPHA_0"
 
     # =========================================================================
     section "Symbol Validation — Native Denom Protection"
@@ -448,7 +456,7 @@ run_edge_case_tests() {
 
     # T19: Burn with both amount and burn_all (should fail)
     test_start "Burn amount + burn_all simultaneously rejected"
-    raw=$(eval "$BINARY tx stoc burn-token --from $WALLET_ADMIN --denom ALPHA_0 --amount 100 --burn-all \
+    raw=$(eval "$BINARY tx stoc burn-token --from $WALLET_ADMIN --denom $FIRST_ALPHA_DENOM --amount 100 --burn-all \
         $(_common_flags) $(_gas_flags) --broadcast-mode sync" 2>&1)
     code=$(echo "$raw" | jq -r '.code // "null"' 2>/dev/null)
     if [[ "$code" != "0" && "$code" != "null" ]] || echo "$raw" | grep -qi "error\|invalid\|both"; then
@@ -469,17 +477,19 @@ run_edge_case_tests() {
     # =========================================================================
 
     # T20: Creating same symbol increments counter
-    test_start "Third ALPHA token gets counter _2"
+    test_start "Third ALPHA token created (global counter)"
     local result
     result=$(create_token "$WALLET_ADMIN" "AlphaV3" "ALPHA" "100" "1000" 6 "$LOGO" false)
     assert_tx_success "$result"
+    local ALPHA3_DENOM
+    ALPHA3_DENOM=$(get_last_token_denom "ALPHA")
 
-    test_start "ALPHA_2 exists and is distinct"
-    local alpha2
-    alpha2=$(query_token "ALPHA_2")
-    local alpha2_name
-    alpha2_name=$(echo "$alpha2" | jq -r '.token.name')
-    assert_equals "$alpha2_name" "AlphaV3"
+    test_start "Third ALPHA ($ALPHA3_DENOM) exists and is distinct"
+    local alpha3_json
+    alpha3_json=$(query_token "$ALPHA3_DENOM")
+    local alpha3_name
+    alpha3_name=$(echo "$alpha3_json" | jq -r '.token.name')
+    assert_equals "$alpha3_name" "AlphaV3"
 
     # =========================================================================
     section "Max Supply Boundary"
@@ -510,17 +520,23 @@ run_edge_case_tests() {
     log_info "Total tokens in chain: $count"
     assert_gt "$count" "5"
 
-    # T24: Token counter monotonically increasing
-    test_start "Token counter is consistent"
-    # Query ALPHA_0, ALPHA_1, ALPHA_2 — all should exist
-    local a0 a1 a2
-    a0=$(query_token "ALPHA_0" | jq -r '.token.id // empty')
-    a1=$(query_token "ALPHA_1" | jq -r '.token.id // empty')
-    a2=$(query_token "ALPHA_2" | jq -r '.token.id // empty')
-    if [[ "$a0" == "ALPHA_0" && "$a1" == "ALPHA_1" && "$a2" == "ALPHA_2" ]]; then
-        pass
+    # T24: Token counter monotonically increasing — verify all 3 ALPHA tokens exist
+    test_start "Token counter is consistent (3 ALPHA tokens exist)"
+    local alpha_tokens
+    alpha_tokens=$(query_tokens_by_symbol "ALPHA")
+    local alpha_count
+    alpha_count=$(echo "$alpha_tokens" | jq '.tokens | length' 2>/dev/null)
+    if [[ "$alpha_count" -ge 3 ]]; then
+        # Verify all tokens have symbol ALPHA and distinct IDs
+        local distinct_ids
+        distinct_ids=$(echo "$alpha_tokens" | jq '[.tokens[].id] | unique | length' 2>/dev/null)
+        if [[ "$distinct_ids" -ge 3 ]]; then
+            pass
+        else
+            fail "expected >= 3 distinct ALPHA IDs, got $distinct_ids"
+        fi
     else
-        fail "counter inconsistency: a0=$a0 a1=$a1 a2=$a2"
+        fail "expected >= 3 ALPHA tokens, got ${alpha_count:-0}"
     fi
 
     # T25: Native ustoc still works after all operations
