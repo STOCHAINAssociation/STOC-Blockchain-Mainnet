@@ -86,15 +86,6 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		return nil, sdkerrors.Wrap(err, "invalid creator address")
 	}
 
-	// Deduct token creation fee (burned to prevent spam/storage bloat)
-	creationFee := sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, types.TokenCreationFee))
-	if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, creator, types.ModuleName, creationFee); err != nil {
-		return nil, sdkerrors.Wrapf(types.ErrInsufficientFunds, "insufficient funds for token creation fee (%s): %v", creationFee.String(), err)
-	}
-	if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, creationFee); err != nil {
-		return nil, sdkerrors.Wrap(err, "failed to burn creation fee")
-	}
-
 	// InitialSupply and TotalSupply are in raw minimal units (decimals field is metadata only)
 	initialSupply := token.InitialSupply
 
