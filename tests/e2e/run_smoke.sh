@@ -14,6 +14,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Parse arguments
 # ---------------------------------------------------------------------------
 START_CHAIN=true
+RESET_DATA=true
 SUITES_FILTER=""
 
 while [[ $# -gt 0 ]]; do
@@ -22,16 +23,24 @@ while [[ $# -gt 0 ]]; do
             START_CHAIN=false
             shift
             ;;
+        --keep-state)
+            RESET_DATA=false
+            shift
+            ;;
         --suite)
             SUITES_FILTER="$2"
             shift 2
             ;;
         --help|-h)
-            echo "Usage: $0 [--no-chain] [--suite 01,02,03]"
+            echo "Usage: $0 [--no-chain] [--keep-state] [--suite 01,02,03]"
             echo ""
             echo "Options:"
-            echo "  --no-chain  Skip starting chain (assume already running)"
-            echo "  --suite     Run specific suites (comma-separated: 01,02,03,04,05,06,07)"
+            echo "  --no-chain    Skip starting chain (assume already running)"
+            echo "  --keep-state  Keep existing chain data (default: full reset)"
+            echo "  --suite       Run specific suites (comma-separated: 01,02,03,04,05,06,07)"
+            echo ""
+            echo "By default, chain data is wiped before each run to avoid stale"
+            echo "governance proposals and upgrade plans from previous test runs."
             exit 0
             ;;
         *)
@@ -62,6 +71,42 @@ source "$SCRIPT_DIR/suites/07_edge_cases.sh"
 # ---------------------------------------------------------------------------
 IGNITE_PID=""
 
+# Wipe chain data for a completely fresh state.
+# This prevents stale governance proposals, upgrade plans, and token counters
+# from previous test runs from interfering with new tests.
+reset_chain_data() {
+    log_info "=== Resetting chain data ==="
+
+    # Kill any existing chain processes
+    pkill -f "ignite chain serve" 2>/dev/null || true
+    pkill -f "stocd start" 2>/dev/null || true
+    sleep 2
+
+    # Detect chain home from ignite config or default
+    local chain_home="${HOME}/.stoc"
+
+    if [[ -d "$chain_home/data" ]]; then
+        log_info "Removing chain data: $chain_home/data"
+        rm -rf "$chain_home/data"
+    fi
+
+    # Remove WAL to prevent consensus replay issues
+    if [[ -d "$chain_home/data/cs.wal" ]]; then
+        rm -rf "$chain_home/data/cs.wal"
+    fi
+
+    # Remove test keyring (will be re-created by ignite from config.yml)
+    if [[ -d "$chain_home/keyring-test" ]]; then
+        log_info "Removing test keyring: $chain_home/keyring-test"
+        rm -rf "$chain_home/keyring-test"
+    fi
+
+    # Remove wasm cache if present
+    rm -rf "$chain_home/wasm" 2>/dev/null
+
+    log_info "Chain data reset complete"
+}
+
 start_chain() {
     log_info "Starting chain with: ignite chain serve --reset-once"
     log_info "Project dir: $PROJECT_DIR"
@@ -71,6 +116,11 @@ start_chain() {
     # Kill any existing ignite process
     pkill -f "ignite chain serve" 2>/dev/null || true
     sleep 2
+
+    # Reset chain data if requested (default: yes)
+    if [[ "$RESET_DATA" == "true" ]]; then
+        reset_chain_data
+    fi
 
     # Start ignite in background, capture output
     ignite chain serve --reset-once > /tmp/stoc_e2e_chain.log 2>&1 &
