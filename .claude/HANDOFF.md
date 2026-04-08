@@ -1,84 +1,75 @@
-# HANDOFF — v0.6.0 Audit + Fixes + Deploy + Testing
+# HANDOFF — E2E Test Suite + Mainnet Upgrade
 
-> Generated: 2026-04-07 | Branch: fix/evm_v0.6.0 | Commit: fd64dcd
+> Generated: 2026-04-08 03:30 UTC | Branch: fix/evm_v0.6.0 | Commit: 966962f
 
-## STATUS
+## CRITICAL — Mainnet v0.6.0 Upgrade Today
 
-Audit done (3 rounds GO), all fixes applied, devnet+testnet deployed, monitoring active, waiting mainnet upgrade Apr 8.
-Next: create comprehensive E2E test suite.
+**Proposal #4**: 3/3 YES, voting ends ~03:57 UTC (10:57 ICT)
+**Upgrade height**: 4,705,316 (~17:30-20:00 ICT)
+**Binary `stocd_v060` already on all 4 mainnet nodes** at `/root/go/bin/stocd_v060`
 
-## DONE
+### Swap instructions:
+```bash
+systemctl stop stocd
+cp /root/go/bin/stocd_v060 /root/go/bin/stocd
+chmod +x /root/go/bin/stocd
+systemctl start stocd
+```
+Mainnet IPs: Val1=64.176.4.207, Val2=202.182.110.150, Val3=45.32.180.48, Fullblocks=160.191.50.204
 
-- [x] Audit v0.6.0 — 6 agents, 80 Go files, 3 audit rounds, ALL GO
-- [x] Fix M1: fee denom restriction (`app/ante/cosmos_min_gas_price.go`)
-- [x] Fix M2: mempool limit 5000 (`app/evm.go:215`)
-- [x] Fix M3: cache denom EvmBankKeeper (`x/evmutil/keeper/bank_keeper.go`)
-- [x] Fix L1: DisplayDenom TrimPrefix (`app/evm.go:117`)
-- [x] Fix L5: escrow cache 100→10 blocks (`app/app.go:602`)
-- [x] Fix L17: distribution overflow check (`x/stoc/types/token.go:234`)
-- [x] Archive branches: `archive/no-evm`, `archive/feat-evm-v1.0.0-rc2` (remote)
-- [x] Devnet full loop: no-evm(h1)→feat/evm(h40)→v0.6.0(h118) ALL PASS
-- [x] Testnet rolling restart 4/4 nodes — PASS
-- [x] Telegram monitor cronjob (Topic 40, bot 8288157775)
-- [x] Binary: `/tmp/stocd_v060_fixed` (174MB Linux amd64)
-- [x] Unit tests: M1 decorator (3), L17 overflow (7), M3 cached denom (57 existing)
+---
 
-## TODO — NEXT SESSION
+## Current Task: Fix E2E Test Suite (41 remaining failures)
 
-### 1. E2E Test Suite (PRIORITY)
-Create comprehensive test scripts using `ignite chain serve --reset-once` (local) + devnet.
-See `memory/project_testing_strategy.md` for 8 test categories:
-1. Token lifecycle (create/mint/release/burn with all options)
-2. Tax system (transfer amounts, verify tax split)
-3. EVM isolation (custom tokens NOT visible from EVM)
-4. Denom conversion (regression: NOT aatom/atest)
-5. Gas enforcement (0 rejected, 0.001 accepted, multi-denom rejected)
-6. IBC restriction (custom tokens blocked)
-7. Upgrade handler (v2-evm, v3-fix-evm-denom)
-8. Edge cases (duplicate symbols, boundary values)
+### Root Cause: Token counter is GLOBAL
 
-**How to test**: Use `stocd tx` / `stocd q` commands against running chain.
-For EVM: use cast/curl with JSON-RPC or MetaMask.
+After `create_token`, minimal_denom = `SYMBOL_N` where N is global counter (not per-symbol).
+Tests hardcode `BETA_0` but actual denom is `BETA_1`. Fix: query actual denom after creation.
 
-### 2. Upload binary to mainnet (needs SSH permission)
-Binary already built: `/tmp/stocd_v060_fixed`
-Nodes: Val1=64.176.4.207, Val2=202.182.110.150, Val3=45.32.180.48, Full=160.191.50.204
+Add helper to `chain_helpers.sh`:
+```bash
+get_last_token_denom() {
+    local symbol="$1"
+    query_tokens_by_symbol "$symbol" | jq -r '.tokens[-1].minimal_denom'
+}
+```
 
-### 3. Mainnet upgrade (~Apr 8 13:00 UTC)
-Proposal #4: 3/3 YES, voting ends Apr 8 03:57 UTC
-Upgrade height: 4,705,316
-Swap: `cp /root/go/bin/stocd_v060_fixed /root/go/bin/stocd && systemctl restart stocd`
-Telegram monitor already running (cronjob every minute)
+### Other Fixes Needed
+- Gas enforcement: replace `--gas auto` with fixed gas in CUSTOM_GAS_FLAGS
+- EVM tests: check JSON-RPC config in ignite serve
+- Distribution: verify repeated flag vs JSON array format
 
-## KEY NUMBERS
+### Test Score: 92/139 pass (66%) — 6 skipped
 
-- Commits: `1944ea5` (M1-M3), `f231310` (L1,L5,L17), `fd64dcd` (tests)
-- Mainnet upgrade height: 4,705,316 (~Apr 8 13:00 UTC)
-- All tests: 67 tests pass (ante + stoc types + evmutil keeper)
+### Files to Fix
+- `lib/chain_helpers.sh` — add get_last_token_denom()
+- `suites/01_token_lifecycle.sh` — dynamic minimal_denom
+- `suites/02_tax_system.sh` — dynamic minimal_denom
+- `suites/05_gas_enforcement.sh` — fix --gas auto
+- `suites/07_edge_cases.sh` — dynamic counter
 
-## DECISIONS
+---
 
-- Permissionless token creation = BY DESIGN
-- Tax: send 100, tax 5% = 5→creator, 95→recipient — BY DESIGN
-- Devnet flow ALWAYS: no-evm → v1.0.0-rc2 → v0.6.0
-- Testing: local (ignite serve) for dev + devnet scripts for pre-release
-- v3 handler auto-sets MinGasPrice=10^9, NO separate gas proposal needed
+## Completed Today
 
-## BRANCHES
-
-| Branch | Purpose | Status |
-|--------|---------|--------|
-| `archive/no-evm` | No-EVM backup | Remote ✓ |
-| `archive/feat-evm-v1.0.0-rc2` | v1.0.0-rc2 backup | Remote ✓ |
-| **`fix/evm_v0.6.0`** | Current — v0.6.0 + all fixes | Commit `fd64dcd` |
-
-## MONITORING
-
-- Cronjob: `* * * * *` on local Mac
-- Script: `scripts/mainnet-upgrade-monitor.sh`
-- Lockfile: `/tmp/mainnet-upgrade-notified.lock`
-- Telegram: bot 8288157775, channel -1003689918216, Topic 40
+| Task | Status |
+|------|--------|
+| E2E test suite (141 tests, 7 suites) | Committed 966962f |
+| Security audit (3 agents) | 0 CRITICAL runtime |
+| C-1 fix (IBC cache threshold) | Committed 81f5c91 |
+| PM2 migration mainnet (180.93.43.89) | Done: 91G→38G |
+| PM2 migration testnet (157.66.219.214) | Done: 39G→30G |
+| Devnet genesis re-init | Done: v0.6.0, producing blocks |
+| ecosystem.config.js | Created in stoc-backend-sync-chain |
 
 ## DO NOT RE-READ
+- app/ante/* (audited, no changes needed)
+- x/stoc/ante/* (audited)
+- x/evmutil/keeper/bank_keeper.go (audited)
+- app/upgrades.go (reviewed, C-1 fixed)
 
-All files in app/ante/, app/evm.go, app/upgrades.go, app/app.go, x/evmutil/, x/stoc/
+## Next Actions
+1. Fix E2E test suite (global counter bug + 3 minor fixes)
+2. Re-run local + devnet
+3. Monitor mainnet upgrade (~17:30-20:00 ICT)
+4. After mainnet v0.6.0: submit gas price governance proposal
