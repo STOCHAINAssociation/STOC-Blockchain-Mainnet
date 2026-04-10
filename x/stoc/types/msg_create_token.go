@@ -5,6 +5,7 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 // Verify that MsgCreateToken implements the sdk.Msg interface at compile time
@@ -130,8 +131,21 @@ func (m *MsgCreateToken) ValidateBasic() error {
 			if m.Tax.RecipientAddress == "" {
 				return errorsmod.Wrap(ErrInvalidTaxRecipient, "tax recipient address is required when tax > 0")
 			}
-			if _, err := sdk.AccAddressFromBech32(m.Tax.RecipientAddress); err != nil {
+			taxAddr, err := sdk.AccAddressFromBech32(m.Tax.RecipientAddress)
+			if err != nil {
 				return errorsmod.Wrapf(ErrInvalidTaxRecipient, "invalid tax recipient address: %s", err)
+			}
+			// Reject module account addresses as tax recipient. Tax collection calls
+			// bank.SendCoins(recipient, taxRecipientAddr, taxCoin) — if taxRecipientAddr
+			// is a blocked module account, EVERY taxable transfer of this token would
+			// fail, permanently bricking the token's transferability.
+			if sdk.VerifyAddressFormat(taxAddr) == nil {
+				for _, blocked := range []string{"distribution", "gov", "bonded_tokens_pool", "not_bonded_tokens_pool", "stoc"} {
+					moduleAddr := sdk.AccAddress(authtypes.NewModuleAddress(blocked))
+					if taxAddr.Equals(moduleAddr) {
+						return errorsmod.Wrapf(ErrInvalidTaxRecipient, "tax recipient cannot be module account %s (%s)", blocked, m.Tax.RecipientAddress)
+					}
+				}
 			}
 		}
 	}

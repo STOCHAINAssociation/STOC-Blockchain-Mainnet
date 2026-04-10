@@ -134,8 +134,21 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			continue
 		}
 
-		// Calculate tax — enforce minimum 1 unit to prevent tax evasion via transaction splitting,
-		// but ensure recipient always retains at least 1 unit on micro-transfers.
+		// Reject micro-transfers that would bypass tax enforcement.
+		// For taxable tokens: minimum transfer amount is 2 units to ensure at least
+		// 1 unit tax can be collected and 1 unit reaches the recipient.
+		// Without this, an attacker can split N tokens into N × 1-unit transfers
+		// where each pays 0 tax (because 1-unit can't be split into tax + remainder).
+		// Example: 1,000,000 × 1-unit txs → 0 total tax instead of 500,000 at 50% rate.
+		// Gas cost per tx (~21 ustoc) is trivially low compared to securities token value.
+		if coin.Amount.LTE(math.OneInt()) {
+			return fmt.Errorf(
+				"transfer of %s %s below minimum taxable amount: custom tokens with tax enabled require transfer amount >= 2 to ensure tax can be collected",
+				coin.Amount.String(), coin.Denom,
+			)
+		}
+
+		// Calculate tax — enforce minimum 1 unit to prevent rounding-to-zero evasion
 		taxAmount := coin.Amount.ToLegacyDec().Mul(taxPercent).TruncateInt()
 		if taxAmount.IsZero() {
 			taxAmount = math.OneInt()
@@ -145,16 +158,11 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 		if taxAmount.GT(halfAmount) {
 			taxAmount = halfAmount
 		}
-		// Ensure recipient retains at least 1 unit — skip tax on 1-unit transfers
+		// Ensure recipient retains at least 1 unit (defensive — with amount >= 2
+		// and tax capped at half, this should always hold, but guard anyway)
 		if coin.Amount.Sub(taxAmount).LT(math.OneInt()) {
-			if coin.Amount.LTE(math.OneInt()) {
-				taxAmount = math.ZeroInt()
-			} else {
-				taxAmount = coin.Amount.Sub(math.OneInt())
-			}
+			taxAmount = coin.Amount.Sub(math.OneInt())
 		}
-
-		// Early exit: micro-transfer protection set tax to zero
 		if taxAmount.IsZero() {
 			continue
 		}
