@@ -13,6 +13,8 @@ import (
 
 // BurnToken allows ANY token holder to burn their own tokens (similar to ERC20 burn).
 // This is BY DESIGN — not restricted to token creator. TotalSupply is updated accordingly.
+// SECURITY: Native chain denoms (ustoc/astoc/stoc and variants) are explicitly rejected
+// to prevent users from bypassing governance supply policy via self-burn.
 func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*types.MsgBurnTokenResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -21,7 +23,23 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, sdkerrors.Wrap(err, "invalid creator address")
 	}
 
-	// Check if this is a stoc-managed token (optional — native denom burns are allowed)
+	// Reject burning native chain denoms (ustoc/astoc/stoc and test/devnet variants).
+	// x/stoc module has the `Burner` permission granted in app_config.go, which without
+	// this guard would allow any user to permanently destroy native bond denom supply
+	// via MsgBurnToken. This would:
+	//   1. Bypass governance inflation policy (supply is intended to only increase)
+	//   2. Skew staking/inflation accounting if large amounts are burned
+	//   3. Violate principle of least privilege (x/stoc only needs to burn tokens it manages)
+	// Native denom burns must go through dedicated burn mechanisms (e.g. fee burn, gov proposal),
+	// not the permissionless x/stoc burn path.
+	if types.IsNativeDenom(msg.Denom) {
+		return nil, sdkerrors.Wrapf(types.ErrUnauthorized,
+			"burning native denom %q is not allowed via x/stoc", msg.Denom)
+	}
+
+	// Check if this is a stoc-managed token. Unmanaged non-native denoms (e.g. IBC vouchers)
+	// are still burnable as a passthrough — the user destroys their own balance without
+	// supply tracking in x/stoc state.
 	token, isManaged := k.GetToken(ctx, msg.Denom)
 
 	// Determine amount to burn
