@@ -82,6 +82,7 @@ import (
 	_ "github.com/cosmos/cosmos-sdk/x/staking" // import for side-effects
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	vestingexported "github.com/cosmos/cosmos-sdk/x/auth/vesting/exported"
 	_ "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts" // import for side-effects
 	icacontrollerkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller/keeper"
 	icahostkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/host/keeper"
@@ -376,6 +377,13 @@ func New(
 	// The ante handler (IBCCustomTokenRestriction) remains for early rejection and user-facing errors.
 	app.blockCustomTokenIBCTransfers()
 
+	// Block custom token sends to/from non-wallet accounts (ICA, vesting, non-stoc modules).
+	// Defense-in-depth for Q2 + Q3b: custom tokens are company securities and may only
+	// move wallet-to-wallet. This SendRestriction catches execution paths that bypass
+	// the ante chain (ICA host, group/gov proposal execution) where the ante-level
+	// CustomTokenChainOpsRestriction cannot see inner messages.
+	app.blockCustomTokenNonWalletAccounts()
+
 	// register streaming services
 	if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {
 		return nil, err
@@ -639,6 +647,128 @@ func (app *App) blockCustomTokenIBCTransfers() {
 
 		return toAddr, nil
 	})
+}
+
+// blockCustomTokenNonWalletAccounts registers a bank SendRestriction that
+// prevents custom stoc tokens from being sent to or from any account that is
+// not a regular user wallet. Specifically blocks:
+//
+//   - *icatypes.InterchainAccount — prevents Q3b tax bypass via ICA host
+//     dispatching inner bank.MsgSend without going through the ante chain
+//   - vestingexported.VestingAccount (ContinuousVestingAccount,
+//     DelayedVestingAccount, PeriodicVestingAccount, PermanentLockedAccount)
+//     — prevents Q2 Scenario 1 tax bypass even when ante chain is bypassed
+//   - *authtypes.ModuleAccount (except x/stoc itself) — prevents Q2 Scenarios
+//     2/3 tax bypass even when ante chain is bypassed (gov proposal execution,
+//     group proposal execution)
+//
+// The x/stoc module account is explicitly ALLOWED as source or destination
+// because the legitimate token lifecycle needs it:
+//   - CreateToken: MintCoins(stoc_module) then SendCoinsFromModuleToAccount(stoc_module → creator)
+//   - ReleaseTokens: SendCoinsFromModuleToAccount(stoc_module → recipient)
+//   - BurnToken: SendCoinsFromAccountToModule(user → stoc_module) then BurnCoins(stoc_module)
+//
+// Native chain denoms (ustoc/astoc/stoc + test/devnet variants) are NEVER
+// affected by this restriction — staking STOC, vesting STOC for team/payroll,
+// gov deposit in STOC, community pool in STOC are all legitimate and pass through.
+//
+// This complements the CustomTokenChainOpsRestriction ante decorator:
+//   - Ante layer: fast rejection with clear user-facing errors for known msg types
+//   - Bank layer: defense-in-depth catching execution paths that bypass ante
+//     (ICA host, group.MsgExec, gov proposal execution)
+func (app *App) blockCustomTokenNonWalletAccounts() {
+	stocKeeper := app.StocKeeper
+	accountKeeper := app.AccountKeeper
+	stocModuleAddr := authtypes.NewModuleAddress(stoctypes.ModuleName)
+
+	app.BankKeeper.AppendSendRestriction(func(ctx context.Context, fromAddr, toAddr sdk.AccAddress, amt sdk.Coins) (sdk.AccAddress, error) {
+		sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+		// Fast path: skip if no custom tokens in the amount
+		var customDenom string
+		for _, coin := range amt {
+			if stoctypes.IsNativeDenom(coin.Denom) {
+				continue
+			}
+			if stocKeeper.HasToken(sdkCtx, coin.Denom) {
+				customDenom = coin.Denom
+				break
+			}
+		}
+		if customDenom == "" {
+			return toAddr, nil
+		}
+
+		// Allow x/stoc module as source or destination — required for legitimate
+		// token lifecycle operations (CreateToken mint distribution, ReleaseTokens,
+		// BurnToken collection). All other module accounts are blocked.
+		fromIsStoc := fromAddr.Equals(stocModuleAddr)
+		toIsStoc := toAddr.Equals(stocModuleAddr)
+
+		// Check fromAddr account type (skip if it's the stoc module)
+		if !fromIsStoc {
+			if err := rejectIfNonWallet(sdkCtx, accountKeeper, fromAddr, customDenom, "from"); err != nil {
+				return toAddr, err
+			}
+		}
+
+		// Check toAddr account type (skip if it's the stoc module)
+		if !toIsStoc {
+			if err := rejectIfNonWallet(sdkCtx, accountKeeper, toAddr, customDenom, "to"); err != nil {
+				return toAddr, err
+			}
+		}
+
+		return toAddr, nil
+	})
+}
+
+// rejectIfNonWallet returns an error if the given account is any of:
+// InterchainAccount, VestingAccount, or ModuleAccount. Returns nil for regular
+// BaseAccount, EthAccount, or nil (new account not yet created) — all treated
+// as user wallets.
+func rejectIfNonWallet(ctx sdk.Context, ak authkeeper.AccountKeeper, addr sdk.AccAddress, denom, direction string) error {
+	acc := ak.GetAccount(ctx, addr)
+	if acc == nil {
+		// New account (first-time receive) — treat as regular wallet
+		return nil
+	}
+
+	// Check InterchainAccount (ICA host-controlled account)
+	if _, isICA := acc.(*icatypes.InterchainAccount); isICA {
+		ctx.Logger().Warn("Blocked custom token send involving ICA account",
+			"denom", denom, "direction", direction, "addr", addr.String(),
+		)
+		return fmt.Errorf(
+			"custom token %q cannot be sent %s interchain account %s: custom stoc tokens may only move between regular user wallets",
+			denom, direction, addr.String(),
+		)
+	}
+
+	// Check VestingAccount (all 4 types satisfy this interface)
+	if _, isVesting := acc.(vestingexported.VestingAccount); isVesting {
+		ctx.Logger().Warn("Blocked custom token send involving vesting account",
+			"denom", denom, "direction", direction, "addr", addr.String(),
+		)
+		return fmt.Errorf(
+			"custom token %q cannot be sent %s vesting account %s: custom stoc tokens may only move between regular user wallets",
+			denom, direction, addr.String(),
+		)
+	}
+
+	// Check ModuleAccount (community pool, gov, distribution, feegrant, etc.)
+	// x/stoc module was already allowed above before calling this function.
+	if _, isModule := acc.(sdk.ModuleAccountI); isModule {
+		ctx.Logger().Warn("Blocked custom token send involving non-stoc module account",
+			"denom", denom, "direction", direction, "addr", addr.String(),
+		)
+		return fmt.Errorf(
+			"custom token %q cannot be sent %s module account %s: custom stoc tokens may only move between regular user wallets (x/stoc module excepted for token lifecycle)",
+			denom, direction, addr.String(),
+		)
+	}
+
+	return nil
 }
 
 // DefaultGenesis returns default genesis state with STOC-specific EVM denom configuration.
