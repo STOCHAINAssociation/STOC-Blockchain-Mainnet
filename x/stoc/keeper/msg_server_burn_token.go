@@ -109,7 +109,10 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		return nil, err
 	}
 
-	// Update token supply tracking only for stoc-managed tokens
+	// Update token supply tracking only for stoc-managed tokens.
+	// AUDIT NOTE — NOT A CEI VIOLATION: SetToken runs AFTER bank ops (SendCoinsFromAccountToModule,
+	// BurnCoins) by design. See MintToken in token.go for full rationale. Cosmos SDK tx atomicity
+	// (cacheTxContext) reverts all bank ops if SetToken fails — no orphan state possible.
 	if isManaged {
 		token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
 
