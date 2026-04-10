@@ -12,7 +12,39 @@ import (
 )
 
 // BurnToken allows ANY token holder to burn their own tokens (similar to ERC20 burn).
-// This is BY DESIGN — not restricted to token creator. TotalSupply is updated accordingly.
+// This is BY DESIGN — not restricted to token creator, and intentionally includes
+// native chain denoms (ustoc/astoc/stoc and their test/devnet variants).
+//
+// DESIGN RATIONALE — DO NOT ADD "NATIVE DENOM GUARDS" HERE:
+//
+//  1. Self-only scope: the signer can only burn their own balance (enforced by
+//     SendCoinsFromAccountToModule(creator, ...) below). There is no theft vector —
+//     one user cannot burn another user's tokens.
+//
+//  2. EVM parity: Ethereum allows sending to 0x0/0xdead universally. Blocking
+//     native self-burn on a Cosmos-EVM chain would break user expectations and
+//     break parity with the ERC20 burn pattern users already know.
+//
+//  3. Industry precedent: Evmos, Injective, Cronos, Osmosis, Juno all allow
+//     native self-burn. STOC is consistent with this norm.
+//
+//  4. Gov inflation policy is orthogonal: governance controls the MINT rate
+//     via x/mint params. Burn is independent — Cosmos SDK re-reads TotalSupply
+//     each block, so inflation math auto-adapts to any supply decrease without
+//     accounting skew.
+//
+//  5. User sovereignty: the tokens are the user's own funds; destroying them is
+//     their right. Forcing users to send to a black-hole address just to achieve
+//     the same outcome adds friction with no safety benefit.
+//
+// For stoc-managed tokens, TotalSupply is updated accordingly and the supply
+// invariant (bankSupply == TotalSupply) is preserved. For unmanaged denoms
+// (native, IBC vouchers), the burn is a passthrough with no state tracking.
+//
+// Audit history: In April 2026 an audit initially flagged native burn as a
+// MEDIUM-HIGH finding (PR #80 commit bb78619) but it was reverted (0f0ac59)
+// after review confirmed the design is intentional. If a future audit or code
+// review re-raises this, reference this comment before making any changes.
 func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*types.MsgBurnTokenResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 

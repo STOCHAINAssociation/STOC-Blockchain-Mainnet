@@ -199,6 +199,8 @@ Message handlers in `x/stoc/keeper/`:
 - `MsgMintTokens`: Mint additional tokens (if unlimited)
 - `MsgReleaseTokens`: Release minted tokens to circulation
 - `MsgBurnToken`: Burn tokens from circulation
+  - **BY DESIGN:** any holder can burn their own tokens, including native chain denoms (`ustoc`/`astoc`/`stoc` and test/devnet variants). This provides ERC20/EVM parity (Ethereum allows send-to-`0x0`) and matches industry precedent (Evmos, Injective, Cronos, Osmosis, Juno).
+  - **DO NOT** add native-denom guards to `BurnToken` — burn is self-only (signer burns own balance, no theft vector) and orthogonal to gov inflation policy (which controls mint rate, not burn). See godoc in `x/stoc/keeper/msg_server_burn_token.go` for full design rationale and audit history.
 
 ### Token Storage
 
