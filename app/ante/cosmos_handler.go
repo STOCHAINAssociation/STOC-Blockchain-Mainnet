@@ -38,8 +38,8 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewValidateBasicDecorator(),
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
-		stocante.NewIBCCustomTokenRestriction(options.StocKeeper),      // block custom token IBC transfers
-		stocante.NewVestingCustomTokenRestriction(options.StocKeeper), // block custom token vesting (tax evasion)
+		stocante.NewIBCCustomTokenRestriction(options.StocKeeper),        // block custom token IBC transfers
+		stocante.NewCustomTokenChainOpsRestriction(options.StocKeeper), // block custom token in gov/pool/vesting/group/erc20 (tax evasion + chain entanglement)
 		NewCosmosMinGasPriceDecorator(&feemarketParams),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
 		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeChecker),
