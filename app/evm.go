@@ -202,16 +202,18 @@ func (app *App) blockPrecompileTransfers() {
 // it is required for the ethereum json rpc server to work
 func (app *App) setEVMMempool() {
 	if evmtypes.GetChainConfig() != nil {
-		// NOTE: MaxTx limit is not available in EVMMempoolConfig for cosmos/evm v1.0.0-rc2.
-		// DoS mitigation: minimum gas price (validator config) + ante handler gas validation.
-		// BlockGasLimit 100M is standard for Cosmos EVM chains (similar to Evmos).
-		// TODO: Add MaxTx when cosmos/evm supports it, or implement custom mempool wrapper.
+		// EVM-side DoS mitigation uses BlockGasLimit (100M gas) combined with the
+		// validator's minimum gas price and the ante handler's gas validation.
+		// Cosmos-side DoS mitigation uses cosmosPoolMaxTx (below) to cap pending
+		// Cosmos txs mixed into the EVM mempool.
 		mempoolConfig := &evmmempool.EVMMempoolConfig{
 			AnteHandler:   app.BaseApp.AnteHandler(),
 			BlockGasLimit: 100_000_000,
 		}
 
-		// v0.6.0: cosmosPoolMaxTx=5000 limits pending Cosmos txs in EVM mempool (DoS mitigation)
+		// cosmosPoolMaxTx caps the number of pending Cosmos-native transactions
+		// buffered inside the EVM priority mempool to prevent unbounded memory
+		// growth under spam load.
 		evmMempool := evmmempool.NewExperimentalEVMMempool(app.CreateQueryContext, app.Logger(), app.EVMKeeper, app.FeeMarketKeeper, app.txConfig, app.clientCtx, mempoolConfig, 5000)
 		app.EVMMempool = evmMempool
 

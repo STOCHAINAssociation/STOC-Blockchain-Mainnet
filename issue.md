@@ -1,5 +1,25 @@
 # STOChain — EVM Security Review & Upgrade Planning
 
+> ## SUPERSEDED 2026-04-21
+>
+> This document captures the pre-migration state when STOChain ran
+> `cosmos/evm v1.0.0-rc2`. The chain has since migrated to
+> `cosmos/evm v0.6.0` on branch `fix/evm-from-v1.0.0-to-v0.6.0`.
+>
+> Current versions:
+>
+> | Component    | Version   |
+> |--------------|-----------|
+> | Cosmos SDK   | v0.53.6   |
+> | CometBFT     | v0.38.21  |
+> | IBC          | v10.5.0   |
+> | Cosmos EVM   | v0.6.0    |
+> | Go toolchain | 1.24.3    |
+>
+> The migration plan and historical CVE exposure below are kept for
+> reference only. For the post-migration security posture see the
+> round 2 audit notes maintained alongside this repository.
+
 > **Created:** 2026-04-02
 > **Updated:** 2026-04-02 (merged with automated audit results)
 > **Sources:** CVE-2026-ASA002, cosmos/evm changelog, PANews disclosure, DailyCVE, govulncheck, Dependabot, manual code audit

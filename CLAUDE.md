@@ -54,11 +54,11 @@ go test -mod=readonly -v -timeout 30m ./path/to/package -run TestFunctionName
 
 ### Core Technology Stack
 
-- **Cosmos SDK v0.53.4** - Main blockchain framework
-- **CometBFT v0.38.18** - Consensus mechanism (formerly Tendermint)
+- **Cosmos SDK v0.53.6** - Main blockchain framework
+- **CometBFT v0.38.21** - Consensus mechanism (formerly Tendermint)
 - **Ignite CLI** - Primary development and scaffolding tool
-- **IBC v10.2.0** - Inter-Blockchain Communication protocol
-- **Cosmos EVM v1.0.0-rc2** - Ethereum Virtual Machine integration
+- **IBC v10.5.0** - Inter-Blockchain Communication protocol
+- **Cosmos EVM v0.6.0** - Ethereum Virtual Machine integration
 - **Go 1.24.3** - Programming language
 
 ### Key Directories
