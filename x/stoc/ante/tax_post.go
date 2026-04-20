@@ -13,9 +13,6 @@ import (
 	stoctypes "stoc/x/stoc/types"
 )
 
-// maxAuthzUnwrapDepth limits recursive MsgExec unwrapping to prevent DoS via deeply nested authz messages.
-const maxAuthzUnwrapDepth = 3
-
 type TaxPostDecorator struct {
 	k   keeper.Keeper
 	cdc codec.BinaryCodec
@@ -82,7 +79,7 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 			}
 			writeCache()
 		case *authz.MsgExec:
-			if depth >= maxAuthzUnwrapDepth {
+			if depth >= stoctypes.MaxAuthzUnwrapDepth {
 				return fmt.Errorf("authz MsgExec nesting depth exceeded (%d), rejecting to prevent tax evasion", depth)
 			}
 			innerMsgs, err := m.GetMessages()

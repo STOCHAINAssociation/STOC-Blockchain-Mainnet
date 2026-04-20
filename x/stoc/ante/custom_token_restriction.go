@@ -123,7 +123,7 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 			if err != nil {
 				return fmt.Errorf("failed to unwrap group MsgSubmitProposal inner messages: %w", err)
 			}
-			if depth >= maxAuthzUnwrapDepth {
+			if depth >= stoctypes.MaxAuthzUnwrapDepth {
 				return fmt.Errorf("group MsgSubmitProposal nesting depth exceeded (%d)", depth)
 			}
 			if err := d.checkMsgs(ctx, innerMsgs, depth+1); err != nil {
@@ -156,7 +156,7 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 
 		// -------- Authz wrapper (recursive) --------
 		case *authz.MsgExec:
-			if depth >= maxAuthzUnwrapDepth {
+			if depth >= stoctypes.MaxAuthzUnwrapDepth {
 				return fmt.Errorf("authz MsgExec nesting depth exceeded (%d) in custom token restriction", depth)
 			}
 			innerMsgs, err := m.GetMessages()

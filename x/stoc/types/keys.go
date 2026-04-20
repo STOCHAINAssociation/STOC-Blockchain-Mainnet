@@ -19,6 +19,14 @@ const (
 
 	// MaxMultiSendOutputs limits outputs in MsgMultiSend to prevent DoS and tax bypass
 	MaxMultiSendOutputs = 50
+
+	// MaxAuthzUnwrapDepth caps the number of nested authz.MsgExec or group
+	// proposal layers the custom-token ante decorators will unwrap when
+	// looking for blocked message types. A single user authz grant is the
+	// common case; deeper nesting is rejected to bound worst-case CPU cost
+	// per transaction and to prevent an attacker from hiding a tax-bypassing
+	// bank.MsgSend behind arbitrarily many wrappers.
+	MaxAuthzUnwrapDepth = 3
 )
 
 // Event type and attribute keys
