@@ -84,19 +84,24 @@ func TestCreateToken_WithDistributions(t *testing.T) {
 	require.Equal(t, uint32(40), token.Distributions[1].Percent)
 }
 
-func TestCreateToken_InsufficientFee(t *testing.T) {
+func TestCreateToken_ZeroBalanceCreator(t *testing.T) {
+	// STOChain does not charge a creation fee for custom tokens. A wallet
+	// with a zero native balance can successfully create a token provided
+	// it can still pay the standard transaction gas (gas is handled by the
+	// ante chain, not this message handler). This test pins the behavior
+	// so a future change that accidentally reintroduces a fee against the
+	// creator balance will fail loudly here.
 	_, ms, ctx, mockBank := setupMsgServerWithMock(t)
 
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
 	creator := creatorAddr.String()
 
-	// Zero balance — cannot pay creation fee
 	mockBank.Balances[creator] = sdk.NewCoins()
 
 	msg := &types.MsgCreateToken{
 		Creator:       creator,
-		Name:          "Fail Token",
-		Symbol:        "FAIL",
+		Name:          "Zero Balance Token",
+		Symbol:        "ZBT",
 		InitialSupply: math.NewInt(1_000_000),
 		TotalSupply:   math.NewInt(1_000_000),
 		Decimals:      6,
@@ -104,8 +109,7 @@ func TestCreateToken_InsufficientFee(t *testing.T) {
 	}
 
 	_, err := ms.CreateToken(ctx, msg)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "insufficient funds")
+	require.NoError(t, err)
 }
 
 func TestCreateToken_InvalidCreator(t *testing.T) {

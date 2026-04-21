@@ -450,8 +450,11 @@ func TestTaxPostDecorator_MicroTransferCap(t *testing.T) {
 	}
 	require.NoError(t, k.SetToken(ctx, token))
 
-	// Send 1 token: 0.1% of 1 = 0 → minimum 1, but recipient must retain at least 1 unit
-	// So tax = 0 on 1-unit transfers (recipient retains full amount)
+	// Taxable tokens reject transfers of 1 unit or less. A 1-unit transfer
+	// cannot be split into a non-zero tax share plus a non-zero recipient
+	// share, so allowing it would let a caller split a larger payment into
+	// N × 1-unit transfers to bypass the tax entirely. The post-handler
+	// must surface this as an error that reverts the transaction.
 	mockBank.balances[recipient.String()] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(1)))
 
 	msg := &banktypes.MsgSend{
@@ -464,9 +467,10 @@ func TestTaxPostDecorator_MicroTransferCap(t *testing.T) {
 	tx := mockTx{msgs: []sdk.Msg{msg}}
 
 	_, err := decorator.PostHandle(ctx, tx, false, true, noopPostHandler)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "below minimum taxable amount")
 
-	// Tax = 0 on 1-unit transfers (recipient always retains at least 1 unit)
+	// Recipient balance unchanged; tax collector received nothing.
 	recipientBal := mockBank.balances[recipient.String()].AmountOf(denom)
 	taxCollectorBal := mockBank.balances[taxCollector.String()].AmountOf(denom)
 
