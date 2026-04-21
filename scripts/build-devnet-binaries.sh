@@ -46,13 +46,41 @@ set -u
 OUT_DIR="$(cd "$REPO_ROOT/.." && pwd)/bin-devnet"
 mkdir -p "$OUT_DIR"
 
+# Optional Telegram notification. The env file lives outside the stoc-current-dev
+# repository and must not be committed. Sourcing it is best-effort: missing file
+# or missing variables simply skip the ping at the end of the run.
+TELEGRAM_ENV="$REPO_ROOT/../private/telegram/devnet.env"
+if [[ -f "$TELEGRAM_ENV" ]]; then
+  # shellcheck disable=SC1090
+  source "$TELEGRAM_ENV"
+fi
+
+notify_telegram() {
+  local message="$1"
+  if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_CHAT_ID:-}" ]]; then
+    echo "[telegram] credentials not set; skipping notification."
+    return 0
+  fi
+  local payload=(
+    -d "chat_id=${TELEGRAM_CHAT_ID}"
+    -d "text=${message}"
+    -d "parse_mode=Markdown"
+  )
+  if [[ -n "${TELEGRAM_TOPIC_ID:-}" ]]; then
+    payload+=(-d "message_thread_id=${TELEGRAM_TOPIC_ID}")
+  fi
+  curl --silent --show-error --max-time 10 \
+    -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    "${payload[@]}" > /dev/null || echo "[telegram] send failed (non-fatal)"
+}
+
 ORIG_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
 # Preserve the current-branch Dockerfiles so they survive the checkouts
 # below; archive/no-evm has no Dockerfile and the rc2 archive only ships
 # Dockerfile.openapi, so we always reuse the ones from the HEAD branch.
 TMP_DIR="$(mktemp -d)"
-cp Dockerfile.stocd Dockerfile.stocd.patched "$TMP_DIR/"
+cp Dockerfile.stocd "$TMP_DIR/"
 
 cleanup() {
   local rc=$?
@@ -65,17 +93,17 @@ cleanup() {
 trap cleanup EXIT
 
 docker_build_and_export() {
-  local dockerfile="$1"
-  local branch="$2"
-  local out_name="$3"
+  local branch="$1"
+  local out_name="$2"
+  local apply_patch="$3"
   local image_tag="stoc-build-$(echo "$out_name" | tr '_' '-'):latest"
 
   echo ""
   echo "===================================================================="
   echo "Building $out_name"
-  echo "  branch     = $branch"
-  echo "  dockerfile = $dockerfile"
-  echo "  image tag  = $image_tag"
+  echo "  branch            = $branch"
+  echo "  APPLY_EVM_PATCH   = $apply_patch"
+  echo "  image tag         = $image_tag"
   echo "===================================================================="
 
   git checkout --quiet "$branch"
@@ -83,7 +111,8 @@ docker_build_and_export() {
 
   docker build \
     --platform linux/amd64 \
-    --file "$dockerfile" \
+    --file "$TMP_DIR/Dockerfile.stocd" \
+    --build-arg APPLY_EVM_PATCH="$apply_patch" \
     --tag "$image_tag" \
     .
 
@@ -99,9 +128,11 @@ docker_build_and_export() {
   shasum -a 256 "$OUT_DIR/$out_name"
 }
 
-docker_build_and_export "$TMP_DIR/Dockerfile.stocd"         "archive/no-evm"                "stoc_main_d"
-docker_build_and_export "$TMP_DIR/Dockerfile.stocd"         "archive/feat-evm-v1.0.0-rc2"   "stoc_evm_d"
-docker_build_and_export "$TMP_DIR/Dockerfile.stocd.patched" "fix/evm-from-v1.0.0-to-v0.6.0" "stoc_fixed_evm_d"
+# no-evm + rc2 do not depend on cosmos/evm v0.6.0, so the patch is skipped.
+# The v0.6.0 branch enables the patch to fix the 6-decimal RPC bugs.
+docker_build_and_export "archive/no-evm"                "stoc_main_d"       "false"
+docker_build_and_export "archive/feat-evm-v1.0.0-rc2"   "stoc_evm_d"        "false"
+docker_build_and_export "fix/evm-from-v1.0.0-to-v0.6.0" "stoc_fixed_evm_d"  "true"
 
 echo ""
 echo "===================================================================="
@@ -113,4 +144,7 @@ echo "--- linux/amd64 verification ---"
 file "$OUT_DIR"/stoc_main_d "$OUT_DIR"/stoc_evm_d "$OUT_DIR"/stoc_fixed_evm_d
 echo ""
 echo "--- sha256 ---"
-shasum -a 256 "$OUT_DIR"/stoc_main_d "$OUT_DIR"/stoc_evm_d "$OUT_DIR"/stoc_fixed_evm_d
+SUMS="$(shasum -a 256 "$OUT_DIR"/stoc_main_d "$OUT_DIR"/stoc_evm_d "$OUT_DIR"/stoc_fixed_evm_d)"
+echo "$SUMS"
+
+notify_telegram "$(printf '*devnet build done*\n\nOK, 3 binaries ready for devnet upgrade test.\n\n\`\`\`\n%s\n\`\`\`' "$SUMS")"

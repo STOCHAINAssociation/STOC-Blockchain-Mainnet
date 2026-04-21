@@ -1,36 +1,94 @@
-# Dockerfile.stocd — Build stocd binary for Linux (Ubuntu VPS) from macOS
+# Dockerfile.stocd — Build the stocd binary for an Ubuntu x86_64 VPS from
+# any host architecture (including Apple Silicon). The build runs inside a
+# linux/amd64 container, so the resulting ELF file can be copied directly
+# to the devnet / testnet / mainnet validator or fullnode and launched via
+# systemd without any further compilation step on the VPS.
+#
+# Two upstream bugs in cosmos/evm v0.6.0 affect chains whose base denom
+# uses 6 decimals (ustoc, utstoc, udstoc). This Dockerfile applies an
+# in-place sed patch against the Go module cache when APPLY_EVM_PATCH is
+# set to "true":
+#
+#   Fix 1 — eth_gasPrice 10^12 inflation
+#     FeeMarketWrapper.GetParams (x/vm/wrappers/feemarket.go) and
+#     RPCMinGasPrice (rpc/backend/node_info.go) call
+#     ConvertAmountTo18DecimalsLegacy on values that are already in the
+#     EVM 18-decimal scale, multiplying the reported gas price by 10^12.
+#
+#   Fix 2 — eth_getTransactionReceipt null on simple ETH transfers
+#     DecodeMsgLogs (x/vm/types/utils.go) returns an error when the
+#     message index exceeds the number of tx responses, which is the
+#     normal case for a native transfer that emits no events. The RPC
+#     layer then returns null and block explorers cannot display the
+#     receipt. The patch returns empty logs instead of the error.
+#
+# These are RPC-layer fixes only. They do not change consensus state, do
+# not require a governance proposal, and can be rolled out by rebuilding
+# the binary and restarting stocd on each node independently.
 #
 # Usage:
-#   # Build from current branch:
-#   docker build --platform linux/amd64 -f Dockerfile.stocd -t stoc-build .
-#   docker run --rm -v /tmp:/output stoc-build
-#   # Binary at: /tmp/stocd
 #
-#   # Build with custom output name:
-#   docker run --rm -v /tmp:/output -e BINARY_NAME=stoc_fixed_evm_d stoc-build
+#   # Build a vanilla binary for pre-v0.6.0 branches (no EVM, or rc2)
+#   docker build --platform linux/amd64 -f Dockerfile.stocd \
+#     -t stoc-build:vanilla .
 #
-#   # One-liner (no image cache):
-#   docker run --rm --platform linux/amd64 -v "$(pwd):/app" -v "/tmp:/output" -w /app \
-#     golang:1.24.3 sh -c 'go build -o /output/stocd ./cmd/stocd'
+#   # Build the production binary for v0.6.0 branches (6-decimal STOC)
+#   docker build --platform linux/amd64 -f Dockerfile.stocd \
+#     --build-arg APPLY_EVM_PATCH=true \
+#     -t stoc-build:patched .
 #
-#   # SCP to VPS:
-#   scp -i vps-ssh-key/dev-net/devnet /tmp/stocd root@<VPS_IP>:/root/go/bin/stocd
+#   # Export the compiled binary to the host
+#   docker run --rm -v "$(pwd)/out:/output" -e BINARY_NAME=stocd \
+#     stoc-build:patched
+#
+#   # Ship to a VPS
+#   scp -i <ssh-key> ./out/stocd root@<VPS_IP>:/root/go/bin/stocd
 
-FROM --platform=linux/amd64 golang:1.24.3 AS builder
+ARG GO_VERSION=1.25.8
+ARG UBUNTU_VERSION=22.04
+
+FROM --platform=linux/amd64 golang:${GO_VERSION} AS builder
+
+ARG APPLY_EVM_PATCH=false
+ARG COSMOS_EVM_VERSION=v0.6.0
 
 WORKDIR /app
 
-# Cache dependencies first (layer caching)
+# Cache dependencies so repeated builds with the same go.mod skip downloads.
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source and build
+# Apply the cosmos/evm RPC-layer patches only when the caller opts in via
+# --build-arg APPLY_EVM_PATCH=true. The sed targets only exist in the v0.6.0
+# module cache, so the step is a no-op for branches that do not depend on
+# cosmos/evm (no-evm) or depend on a different version (v1.0.0-rc2).
+RUN if [ "${APPLY_EVM_PATCH}" = "true" ]; then \
+    set -eux && \
+    MODCACHE="$(go env GOMODCACHE)" && \
+    EVM_MOD="${MODCACHE}/github.com/cosmos/evm@${COSMOS_EVM_VERSION}" && \
+    if [ ! -d "${EVM_MOD}" ]; then \
+      echo "ERROR: cosmos/evm ${COSMOS_EVM_VERSION} not present at ${EVM_MOD}"; \
+      echo "Set APPLY_EVM_PATCH=false for branches that do not depend on this version."; \
+      exit 1; \
+    fi && \
+    chmod -R u+w "${EVM_MOD}" && \
+    sed -i 's|params.MinGasPrice = types.ConvertAmountTo18DecimalsLegacy(params.MinGasPrice)|// PATCHED: MinGasPrice already in EVM 18-decimal scale, skip conversion|' \
+      "${EVM_MOD}/x/vm/wrappers/feemarket.go" && \
+    sed -i 's|return evmtypes.ConvertAmountTo18DecimalsLegacy(amt).TruncateInt().BigInt()|return amt.TruncateInt().BigInt() // PATCHED: already in EVM scale|' \
+      "${EVM_MOD}/rpc/backend/node_info.go" && \
+    sed -i 's|return nil, fmt.Errorf("invalid message index: %d", msgIndex)|return nil, nil // PATCHED: simple transfers have no tx responses, return empty logs|' \
+      "${EVM_MOD}/x/vm/types/utils.go" && \
+    echo "Applied cosmos/evm ${COSMOS_EVM_VERSION} 6-decimal RPC patches"; \
+  else \
+    echo "APPLY_EVM_PATCH=false — building vanilla binary"; \
+  fi
+
+# Copy the source and compile a static linux/amd64 binary.
 COPY . .
-RUN go build -o /stocd ./cmd/stocd
+RUN go build -mod=readonly -o /stocd ./cmd/stocd
 
-# Output stage — copy binary to mounted volume
-FROM --platform=linux/amd64 ubuntu:22.04
+# Minimal runtime stage: the entrypoint copies the binary to the mounted
+# /output volume under the name given by BINARY_NAME (defaults to stocd).
+FROM --platform=linux/amd64 ubuntu:${UBUNTU_VERSION}
 COPY --from=builder /stocd /stocd
-
-# Default: copy binary to /output volume with configurable name
 ENTRYPOINT ["sh", "-c", "cp /stocd /output/${BINARY_NAME:-stocd} && echo \"Built: /output/${BINARY_NAME:-stocd}\" && ls -lh /output/${BINARY_NAME:-stocd}"]
