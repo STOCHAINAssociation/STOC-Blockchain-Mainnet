@@ -1,8 +1,9 @@
 package keeper
 
 import (
-	"stoc/x/stoc/types"
 	"strings"
+
+	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
 	"cosmossdk.io/math"
@@ -10,23 +11,31 @@ import (
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
 )
 
-// SetToken sets a token in the store
-func (k Keeper) SetToken(ctx sdk.Context, token types.Token) {
+// SetToken sets a token in the store after validating its structure.
+// Returns error if the token fails state validation — prevents persisting corrupt data.
+func (k Keeper) SetToken(ctx sdk.Context, token types.Token) error {
+	if err := types.ValidateState(token); err != nil {
+		return sdkerrors.Wrap(err, "refusing to persist invalid token")
+	}
+
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
-	if token.Id == "" {
-		token.Id = token.MinimalDenom
-	} // Đảm bảo Id luôn là minimalDenom, không tự sinh uuid
+	// Always enforce Id == MinimalDenom to prevent key/denom mismatch
+	token.Id = token.MinimalDenom
 
 	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
-	mainStore.Set([]byte(token.Id), k.cdc.MustMarshal(&token))
+	bz, err := k.cdc.Marshal(&token)
+	if err != nil {
+		return sdkerrors.Wrap(err, "failed to marshal token")
+	}
+	mainStore.Set([]byte(token.Id), bz)
 
 	indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
 	indexKey := []byte(token.Symbol + ":" + token.Id)
 	indexStore.Set(indexKey, []byte{1})
+	return nil
 }
 
 // GetToken gets a token from the store
@@ -38,27 +47,47 @@ func (k Keeper) GetToken(ctx sdk.Context, minimalDenom string) (val types.Token,
 
 	b := store.Get([]byte(tokenId))
 	if b == nil {
-		k.Logger().Info("Token not found", "minimalDenom", minimalDenom)
+		k.Logger().Debug("Token not found", "minimalDenom", minimalDenom)
 		return types.Token{}, false
 	}
 
 	var token types.Token
-	k.cdc.MustUnmarshal(b, &token)
+	if err := k.cdc.Unmarshal(b, &token); err != nil {
+		k.Logger().Error("Failed to unmarshal token", "minimalDenom", minimalDenom, "error", err)
+		return types.Token{}, false
+	}
 	return token, true
 }
 
 // HasToken returns whether a token exists in the store
-func (k Keeper) HasToken(ctx sdk.Context, symbol string) bool {
+func (k Keeper) HasToken(ctx sdk.Context, minimalDenom string) bool {
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
-	return store.Has([]byte(symbol))
+	return store.Has([]byte(minimalDenom))
 }
 
-// DeleteToken removes a token from the store
-func (k Keeper) DeleteToken(ctx sdk.Context, symbol string) {
+// DeleteToken removes a token from the store and cleans up the symbol index.
+// Returns error if the token exists but cannot be unmarshaled (prevents orphan index entries).
+func (k Keeper) DeleteToken(ctx sdk.Context, minimalDenom string) error {
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	store := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
-	store.Delete([]byte(symbol))
+
+	// Get token first to find its Symbol for index cleanup
+	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
+	b := mainStore.Get([]byte(minimalDenom))
+	if b != nil {
+		var token types.Token
+		if err := k.cdc.Unmarshal(b, &token); err != nil {
+			// Return error to prevent orphan symbol index entries
+			return sdkerrors.Wrapf(err, "cannot delete token %s: unmarshal failed, index cleanup would be incomplete", minimalDenom)
+		}
+		// Clean up symbol index
+		indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
+		indexKey := []byte(token.Symbol + ":" + token.Id)
+		indexStore.Delete(indexKey)
+	}
+
+	mainStore.Delete([]byte(minimalDenom))
+	return nil
 }
 
 // GetAllTokens returns all tokens
@@ -71,57 +100,116 @@ func (k Keeper) GetAllTokens(ctx sdk.Context) (list []types.Token) {
 
 	for ; iterator.Valid(); iterator.Next() {
 		var val types.Token
-		k.cdc.MustUnmarshal(iterator.Value(), &val)
+		if err := k.cdc.Unmarshal(iterator.Value(), &val); err != nil {
+			k.Logger().Error("Failed to unmarshal token during iteration", "error", err)
+			continue
+		}
 		list = append(list, val)
 	}
 
 	return
 }
 
-// MintToken if the token is unlimited, mint the token to the address
-func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, symbol string, amount math.Int) error {
-	token, found := k.GetToken(ctx, symbol)
+// MintToken mints additional tokens for unlimited tokens and sends them to the owner
+func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom string, amount math.Int) error {
+	if amount.IsNil() || !amount.IsPositive() {
+		return sdkerrors.Wrap(types.ErrInvalidTokenAmount, "mint amount must be positive")
+	}
+
+	token, found := k.GetToken(ctx, minimalDenom)
 	if !found {
-		return sdkerrors.Wrapf(types.ErrTokenNotFound, "token %s not found", symbol)
+		return sdkerrors.Wrapf(types.ErrTokenNotFound, "token %s not found", minimalDenom)
 	}
 
 	if token.Creator != owner.String() {
-		return sdkerrors.Wrapf(types.ErrUnauthorized, "only token owner can mint token %s", symbol)
+		return sdkerrors.Wrapf(types.ErrUnauthorized, "only token owner can mint token %s", minimalDenom)
 	}
 
 	if !token.Unlimited {
-		return sdkerrors.Wrapf(types.ErrCannotMint, "token %s is not configured for unlimited minting", symbol)
+		return sdkerrors.Wrapf(types.ErrCannotMint, "token %s is not configured for unlimited minting", minimalDenom)
 	}
 
-	// Sử dụng đúng minimalDenom khi tạo coin
+	// Check supply cap even for unlimited tokens
+	newTotal := token.TotalSupply.Add(amount)
+	if newTotal.GT(types.MaxTokenSupply) {
+		return sdkerrors.Wrapf(types.ErrInvalidTokenAmount, "minting would exceed max supply (%s)", types.MaxTokenSupply.String())
+	}
+
+	// Pre-validate: ensure updated state will pass SetToken validation BEFORE any bank mutations.
+	// This prevents a scenario where bank ops succeed but SetToken rejects the new state.
+	token.TotalSupply = newTotal
+	if err := types.ValidateState(token); err != nil {
+		return sdkerrors.Wrap(err, "mint would produce invalid token state")
+	}
+
 	coins := sdk.NewCoins(sdk.NewCoin(token.MinimalDenom, amount))
-	err := k.BankKeeper.MintCoins(ctx, types.ModuleName, coins)
-	if err != nil {
+	if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, coins); err != nil {
 		return err
 	}
 
-	//send coins to the owner
-	err = k.BankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, owner, coins)
-	if err != nil {
+	if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, owner, coins); err != nil {
 		return err
 	}
 
-	//update total supply
-	token.TotalSupply = token.TotalSupply.Add(amount)
-	k.SetToken(ctx, token)
+	// Persist state AFTER all bank ops succeed.
+	//
+	// AUDIT NOTE — NOT A CEI VIOLATION (reviewed April 2026, PR #80):
+	// In Solidity, state updates must come BEFORE external calls to prevent
+	// re-entrancy attacks (Checks-Effects-Interactions pattern). In Cosmos SDK,
+	// this concern does NOT apply because:
+	//   1. bankKeeper.MintCoins and SendCoinsFromModuleToAccount are synchronous
+	//      in-process calls, not external contract calls — no re-entrancy vector.
+	//   2. The entire msg handler runs inside BaseApp.cacheTxContext (baseapp.go:975).
+	//      If SetToken fails here, the handler returns an error, and BaseApp
+	//      discards the cache — ALL prior bank ops (MintCoins, SendCoins) revert
+	//      atomically. No orphan coins, no supply desync.
+	//   3. Pre-validation above (ValidateState) ensures SetToken will not reject
+	//      the updated state under normal conditions. SetToken re-validates
+	//      defensively but should never fail after pre-validation passes.
+	//
+	// DO NOT reorder SetToken before bank ops — manual rollback on bank failure
+	// is error-prone and unnecessary given cosmos-sdk tx atomicity.
+	if err := k.SetToken(ctx, token); err != nil {
+		return err
+	}
 
 	//Emit event
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeMintToken,
-			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.MinimalDenom),
+			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
+			sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
 			sdk.NewAttribute(types.AttributeKeyTokenCreator, owner.String()),
-			sdk.NewAttribute(types.AttributeKeyMintToken, amount.String()),
+			sdk.NewAttribute(types.AttributeKeyMintAmount, amount.String()),
 		),
 	)
 
 	return nil
 
+}
+
+// FindToken resolves a token by minimalDenom first, then falls back to symbol lookup.
+// This handles the case where callers pass either "MYTOKEN_0" (minimalDenom) or "MYTOKEN" (symbol).
+// Returns error if symbol matches multiple tokens (ambiguous).
+func (k Keeper) FindToken(ctx sdk.Context, symbolOrDenom string) (types.Token, error) {
+	// Try direct lookup by minimalDenom first (most common case)
+	token, found := k.GetToken(ctx, symbolOrDenom)
+	if found {
+		return token, nil
+	}
+
+	// Fallback: lookup by symbol via index
+	tokens := k.GetTokensBySymbol(ctx, symbolOrDenom)
+	if len(tokens) == 0 {
+		return types.Token{}, sdkerrors.Wrapf(types.ErrTokenNotFound,
+			"token %q not found by minimalDenom or symbol", symbolOrDenom)
+	}
+	if len(tokens) > 1 {
+		return types.Token{}, sdkerrors.Wrapf(types.ErrAmbiguousSymbol,
+			"symbol %q matches %d tokens — use minimalDenom (e.g., %q) for disambiguation",
+			symbolOrDenom, len(tokens), tokens[0].MinimalDenom)
+	}
+	return tokens[0], nil
 }
 
 // GetTokensBySymbol use index to find token
@@ -135,19 +223,28 @@ func (k Keeper) GetTokensBySymbol(ctx sdk.Context, symbol string) []types.Token 
 	mainStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenKey))
 	var tokens []types.Token
 
+	symbolPrefix := symbol + ":"
 	for ; iterator.Valid(); iterator.Next() {
+		// Cap results to prevent unbounded iteration (DoS via symbol squatting)
+		if len(tokens) >= types.MaxQueryLimit {
+			break
+		}
 
-		key := string(iterator.Key())
-		parts := strings.Split(key, ":")
-		if len(parts) != 2 {
+		// KVStorePrefixIterator does NOT strip the iteration prefix from keys.
+		// iterator.Key() returns "SYMBOL:tokenId", so we must strip "SYMBOL:" to get the tokenId.
+		rawKey := string(iterator.Key())
+		tokenId := strings.TrimPrefix(rawKey, symbolPrefix)
+		if tokenId == "" {
 			continue
 		}
-		tokenId := parts[1]
 
 		b := mainStore.Get([]byte(tokenId))
 		if b != nil {
 			var token types.Token
-			k.cdc.MustUnmarshal(b, &token)
+			if err := k.cdc.Unmarshal(b, &token); err != nil {
+				k.Logger().Error("Failed to unmarshal token by symbol", "tokenId", tokenId, "error", err)
+				continue
+			}
 			tokens = append(tokens, token)
 		}
 	}

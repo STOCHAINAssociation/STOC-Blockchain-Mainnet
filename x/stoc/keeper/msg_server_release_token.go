@@ -12,15 +12,20 @@ import (
 func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTokens) (*types.MsgReleaseTokensResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Get token info
-	token, found := k.GetToken(ctx, msg.Symbol)
-	if !found {
-		return nil, sdkerrors.Wrapf(types.ErrTokenNotFound, "token %s does not exist", msg.Symbol)
+	// Get token info — supports both minimalDenom ("SYMBOL_0") and symbol ("SYMBOL")
+	token, err := k.FindToken(ctx, msg.Symbol)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if caller is creator
 	if msg.Creator != token.Creator {
 		return nil, sdkerrors.Wrap(types.ErrUnauthorized, "only token creator can release tokens")
+	}
+
+	// Defensive check: amount must be positive
+	if !msg.Amount.IsPositive() {
+		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "release amount must be positive")
 	}
 
 	// Check if requested amount exceeds remaining supply
@@ -30,6 +35,13 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 			msg.Amount, token.RemainingSupply)
 	}
 
+	// Pre-validate: ensure post-release state will pass SetToken validation BEFORE bank mutations.
+	preValidateToken := token
+	preValidateToken.RemainingSupply = token.RemainingSupply.Sub(msg.Amount)
+	if err := types.ValidateState(preValidateToken); err != nil {
+		return nil, sdkerrors.Wrap(err, "release would produce invalid token state")
+	}
+
 	// Transfer tokens from module account to recipient
 	recipient, err := sdk.AccAddressFromBech32(msg.Recipient)
 	if err != nil {
@@ -37,21 +49,35 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 	}
 
 	coin := sdk.NewCoin(token.MinimalDenom, msg.Amount)
-	if err := k.BankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
+	if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
 		return nil, err
 	}
 
-	// Update remaining supply
+	// Persist state AFTER bank op succeeds.
+	// AUDIT NOTE — NOT A CEI VIOLATION: See MintToken in token.go for full rationale.
+	// Cosmos SDK tx atomicity (cacheTxContext) reverts all bank ops if SetToken fails.
 	token.RemainingSupply = token.RemainingSupply.Sub(msg.Amount)
-	k.SetToken(ctx, token)
+	if err := k.SetToken(ctx, token); err != nil {
+		return nil, err
+	}
+
+	ctx.Logger().Info("Tokens released",
+		"symbol", token.Symbol,
+		"minimal_denom", token.MinimalDenom,
+		"amount", msg.Amount.String(),
+		"recipient", msg.Recipient,
+		"remaining_supply", token.RemainingSupply.String(),
+	)
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			"tokens_released",
-			sdk.NewAttribute("symbol", token.Symbol),
-			sdk.NewAttribute("amount", msg.Amount.String()),
-			sdk.NewAttribute("recipient", msg.Recipient),
-			sdk.NewAttribute("remaining", token.RemainingSupply.String()),
+			types.EventTypeReleaseTokens,
+			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
+			sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
+			sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.String()),
+			sdk.NewAttribute(types.AttributeKeyRecipient, msg.Recipient),
+			sdk.NewAttribute(types.AttributeKeyRemainingSupply, token.RemainingSupply.String()),
+			sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
 		),
 	)
 

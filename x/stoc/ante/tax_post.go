@@ -1,14 +1,16 @@
 package ante
 
 import (
-	"github.com/cosmos/cosmos-sdk/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/bank/types"
-
 	"fmt"
-	"stoc/x/stoc/keeper"
 
 	"cosmossdk.io/math"
+	"github.com/cosmos/cosmos-sdk/codec"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/authz"
+	"github.com/cosmos/cosmos-sdk/x/bank/types"
+
+	"stoc/x/stoc/keeper"
+	stoctypes "stoc/x/stoc/types"
 )
 
 type TaxPostDecorator struct {
@@ -28,74 +30,188 @@ func (tpd TaxPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, suc
 		return next(ctx, tx, simulate, success)
 	}
 
-	// handle with MsgSend transactions
-	for _, msg := range tx.GetMsgs() {
-		sendMsg, ok := msg.(*types.MsgSend)
-		if !ok {
-			continue
-		}
-
-		// handle tax for each coin being sent
-		for _, coin := range sendMsg.Amount {
-			// check if token has tax
-			token, found := tpd.k.GetToken(ctx, coin.Denom)
-			if !found || token.Tax.Percent.IsZero() || token.Tax.RecipientAddress == "" {
-				continue
-			}
-
-			// calculate tax
-			taxAmount := coin.Amount.ToLegacyDec().Mul(token.Tax.Percent).RoundInt()
-			if taxAmount.IsZero() {
-				taxAmount = math.NewInt(1)
-			}
-
-			// get recipient address and tax address
-			recipientAddr, err := sdk.AccAddressFromBech32(sendMsg.ToAddress)
-			if err != nil {
-				ctx.Logger().Error("Invalid recipient address", "address", sendMsg.ToAddress, "error", err)
-				return ctx, fmt.Errorf("invalid recipient address: %v", err)
-			}
-
-			taxRecipientAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
-			if err != nil {
-				ctx.Logger().Error("Invalid tax recipient address", "address", token.Tax.RecipientAddress, "error", err)
-				return ctx, fmt.Errorf("invalid tax recipient address: %v", err)
-			}
-
-			// check recipient balance
-			recipientBalance := tpd.k.BankKeeper.GetBalance(ctx, recipientAddr, coin.Denom)
-			if recipientBalance.Amount.LT(taxAmount) {
-				ctx.Logger().Error("Insufficient balance for tax", "recipient", sendMsg.ToAddress, "required", taxAmount.String()+coin.Denom, "actual", recipientBalance.Amount.String()+coin.Denom)
-				return ctx, fmt.Errorf("insufficient balance for tax: recipient %s needs %s%s for tax, but only has %s%s", sendMsg.ToAddress, taxAmount.String(), coin.Denom, recipientBalance.Amount.String(), coin.Denom)
-			}
-
-			// send tax from recipient to tax address
-			taxCoin := sdk.NewCoin(coin.Denom, taxAmount)
-			err = tpd.k.BankKeeper.SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin))
-			if err != nil {
-				ctx.Logger().Error("Failed to send tax", "error", err)
-				return ctx, fmt.Errorf("failed to send tax: %v", err)
-			}
-
-			ctx.Logger().Info("Tax transaction processed",
-				"token_denom", coin.Denom,
-				"tax_amount", taxAmount.String(),
-				"from", sendMsg.ToAddress,
-				"to", token.Tax.RecipientAddress,
-			)
-
-			ctx.EventManager().EmitEvent(
-				sdk.NewEvent(
-					"token_tax_applied",
-					sdk.NewAttribute("token_denom", coin.Denom),
-					sdk.NewAttribute("token_symbol", token.Symbol),
-					sdk.NewAttribute("tax_amount", taxAmount.String()),
-					sdk.NewAttribute("recipient", sendMsg.ToAddress),
-					sdk.NewAttribute("tax_recipient", token.Tax.RecipientAddress),
-				),
-			)
-		}
+	// Apply taxes — if tax collection fails, the transaction MUST fail.
+	// Allowing token transfers without tax would violate securities compliance.
+	// Each message is processed independently to prevent cross-message interference.
+	taxErr := tpd.applyTaxes(ctx, tx)
+	if taxErr != nil {
+		ctx.Logger().Error("Tax enforcement failed",
+			"error", taxErr,
+			"height", ctx.BlockHeight(),
+		)
+		return ctx, fmt.Errorf("tax enforcement failed, transaction rejected: %w", taxErr)
 	}
 
 	return next(ctx, tx, simulate, success)
+}
+
+// applyTaxes processes all tax-applicable messages in the transaction
+func (tpd TaxPostDecorator) applyTaxes(ctx sdk.Context, tx sdk.Tx) error {
+	return tpd.applyTaxesForMsgs(ctx, tx.GetMsgs(), 0)
+}
+
+// applyTaxesForMsgs processes tax for a list of messages, supporting recursive authz MsgExec unwrapping.
+// Each top-level message uses its own cache context to prevent cross-message tax interference.
+func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, depth int) error {
+	for _, msg := range msgs {
+		switch m := msg.(type) {
+		case *types.MsgSend:
+			// Use cache context per message so one message's tax state
+			// does not leak into another message's balance checks
+			cacheCtx, writeCache := ctx.CacheContext()
+			if err := tpd.applyTaxForRecipient(cacheCtx, m.ToAddress, m.Amount); err != nil {
+				return err
+			}
+			writeCache()
+		case *types.MsgMultiSend:
+			// Reject MsgMultiSend with too many inputs or outputs to prevent DoS
+			if len(m.Inputs) > stoctypes.MaxMultiSendOutputs {
+				return fmt.Errorf("MsgMultiSend has too many inputs (%d > %d)", len(m.Inputs), stoctypes.MaxMultiSendOutputs)
+			}
+			if len(m.Outputs) > stoctypes.MaxMultiSendOutputs {
+				return fmt.Errorf("MsgMultiSend has too many outputs (%d > %d)", len(m.Outputs), stoctypes.MaxMultiSendOutputs)
+			}
+			cacheCtx, writeCache := ctx.CacheContext()
+			for _, output := range m.Outputs {
+				if err := tpd.applyTaxForRecipient(cacheCtx, output.Address, output.Coins); err != nil {
+					return err
+				}
+			}
+			writeCache()
+		case *authz.MsgExec:
+			if depth >= stoctypes.MaxAuthzUnwrapDepth {
+				return fmt.Errorf("authz MsgExec nesting depth exceeded (%d), rejecting to prevent tax evasion", depth)
+			}
+			innerMsgs, err := m.GetMessages()
+			if err != nil {
+				// Return error instead of skipping — prevents tax evasion via corrupted authz messages
+				return fmt.Errorf("failed to unwrap authz MsgExec for tax: %w", err)
+			}
+			// Use CacheContext for consistent isolation with direct MsgSend path
+			cacheCtx, writeCache := ctx.CacheContext()
+			if err := tpd.applyTaxesForMsgs(cacheCtx, innerMsgs, depth+1); err != nil {
+				return err
+			}
+			writeCache()
+		}
+	}
+	return nil
+}
+
+// applyTaxForRecipient deducts tax from recipient for each taxable coin and sends it to the tax recipient.
+// NOTE: Tax applies to MsgSend/MsgMultiSend including those wrapped in authz MsgExec.
+// IBC transfers bypass this tax by design — custom tokens are blocked from IBC entirely
+// (see IBCCustomTokenRestriction), so tax evasion via IBC is not possible.
+func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddress string, coins sdk.Coins) error {
+	recipientAddr, err := sdk.AccAddressFromBech32(recipientAddress)
+	if err != nil {
+		return fmt.Errorf("invalid recipient address: %v", err)
+	}
+
+	for _, coin := range coins {
+		// Fast-path: skip store lookup for native denoms (ustoc, astoc, etc.)
+		// which can never be custom tokens — avoids unnecessary store reads per tx
+		if stoctypes.IsNativeDenom(coin.Denom) {
+			continue
+		}
+
+		token, found := tpd.k.GetToken(ctx, coin.Denom)
+		if !found || token.Tax.Percent.IsNil() || token.Tax.Percent.IsZero() || token.Tax.RecipientAddress == "" {
+			continue
+		}
+
+		// Runtime cap: enforce MaxTaxPercent even if state was modified outside ValidateBasic
+		taxPercent := token.Tax.Percent
+		if taxPercent.GT(stoctypes.MaxTaxPercent) {
+			taxPercent = stoctypes.MaxTaxPercent
+		}
+
+		// Skip zero-amount transfers (no-op)
+		if coin.Amount.IsZero() {
+			continue
+		}
+
+		// Reject micro-transfers that would bypass tax enforcement.
+		// For taxable tokens: minimum transfer amount is 2 units to ensure at least
+		// 1 unit tax can be collected and 1 unit reaches the recipient.
+		// Without this, an attacker can split N tokens into N × 1-unit transfers
+		// where each pays 0 tax (because 1-unit can't be split into tax + remainder).
+		// Example: 1,000,000 × 1-unit txs → 0 total tax instead of 500,000 at 50% rate.
+		// Gas cost per tx (~21 ustoc) is trivially low compared to securities token value.
+		if coin.Amount.LTE(math.OneInt()) {
+			return fmt.Errorf(
+				"transfer of %s %s below minimum taxable amount: custom tokens with tax enabled require transfer amount >= 2 to ensure tax can be collected",
+				coin.Amount.String(), coin.Denom,
+			)
+		}
+
+		// Calculate tax — enforce minimum 1 unit to prevent rounding-to-zero evasion
+		taxAmount := coin.Amount.ToLegacyDec().Mul(taxPercent).TruncateInt()
+		if taxAmount.IsZero() {
+			taxAmount = math.OneInt()
+		}
+		// Prevent confiscation: tax must not exceed half the transfer amount (true integer half)
+		halfAmount := coin.Amount.Quo(math.NewInt(2))
+		if taxAmount.GT(halfAmount) {
+			taxAmount = halfAmount
+		}
+		// Ensure recipient retains at least 1 unit (defensive — with amount >= 2
+		// and tax capped at half, this should always hold, but guard anyway)
+		if coin.Amount.Sub(taxAmount).LT(math.OneInt()) {
+			taxAmount = coin.Amount.Sub(math.OneInt())
+		}
+		if taxAmount.IsZero() {
+			continue
+		}
+
+		taxRecipientAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
+		if err != nil {
+			ctx.Logger().Error("Invalid tax recipient address", "address", token.Tax.RecipientAddress, "error", err)
+			return fmt.Errorf("invalid tax recipient address: %v", err)
+		}
+
+		// Skip tax when recipient IS the tax recipient (no-op self-transfer)
+		if recipientAddr.Equals(taxRecipientAddr) {
+			continue
+		}
+
+		// Cap tax at recipient's available balance to avoid reverting the entire tx
+		recipientBalance := tpd.k.GetBankKeeper().GetBalance(ctx, recipientAddr, coin.Denom)
+		if recipientBalance.Amount.LT(taxAmount) {
+			taxAmount = recipientBalance.Amount
+		}
+		if taxAmount.IsZero() {
+			ctx.Logger().Info("Tax skipped, recipient has zero balance",
+				"token_denom", coin.Denom,
+				"recipient", recipientAddress,
+			)
+			continue
+		}
+
+		taxCoin := sdk.NewCoin(coin.Denom, taxAmount)
+		if err := tpd.k.GetBankKeeper().SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin)); err != nil {
+			ctx.Logger().Error("Failed to send tax", "error", err)
+			return fmt.Errorf("failed to send tax: %v", err)
+		}
+
+		ctx.Logger().Info("Tax transaction processed",
+			"token_denom", coin.Denom,
+			"tax_amount", taxAmount.String(),
+			"from", recipientAddress,
+			"to", token.Tax.RecipientAddress,
+		)
+
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				"token_tax_applied",
+				sdk.NewAttribute("token_denom", coin.Denom),
+				sdk.NewAttribute("token_symbol", token.Symbol),
+				sdk.NewAttribute("tax_amount", taxAmount.String()),
+				sdk.NewAttribute("recipient", recipientAddress),
+				sdk.NewAttribute("tax_recipient", token.Tax.RecipientAddress),
+			),
+		)
+	}
+
+	return nil
 }

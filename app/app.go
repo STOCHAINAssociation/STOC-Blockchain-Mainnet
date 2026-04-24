@@ -1,7 +1,13 @@
 package app
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"sync"
 
 	_ "cosmossdk.io/api/cosmos/tx/config/v1" // import for side-effects
 	clienthelpers "cosmossdk.io/client/v2/helpers"
@@ -35,9 +41,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/spf13/cast"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/auth"
-	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	_ "github.com/cosmos/cosmos-sdk/x/auth/tx/config" // import for side-effects
@@ -76,30 +82,42 @@ import (
 	_ "github.com/cosmos/cosmos-sdk/x/staking" // import for side-effects
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	_ "github.com/cosmos/ibc-go/modules/capability" // import for side-effects
-	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
-	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
-	_ "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts" // import for side-effects
-	icacontrollerkeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/controller/keeper"
-	icahostkeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host/keeper"
-	icatypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/types"
-	_ "github.com/cosmos/ibc-go/v8/modules/apps/29-fee" // import for side-effects
-	ibcfeekeeper "github.com/cosmos/ibc-go/v8/modules/apps/29-fee/keeper"
-	ibctransferkeeper "github.com/cosmos/ibc-go/v8/modules/apps/transfer/keeper"
-	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
-	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
-	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
+	vestingexported "github.com/cosmos/cosmos-sdk/x/auth/vesting/exported"
+	_ "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts" // import for side-effects
+	icacontrollerkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller/keeper"
+	icahostkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/host/keeper"
+	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
+	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
+	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 
 	stocmodulekeeper "stoc/x/stoc/keeper"
+	stoctypes "stoc/x/stoc/types"
 	// this line is used by starport scaffolding # stargate/app/moduleImport
 
 	"stoc/docs"
 	stocante "stoc/x/stoc/ante"
+
+	// EVM imports
+	sdkmempool "github.com/cosmos/cosmos-sdk/types/mempool"
+	evmante "github.com/cosmos/evm/ante"
+	antetypes "github.com/cosmos/evm/ante/types"
+	erc20keeper "github.com/cosmos/evm/x/erc20/keeper"
+	evmkeeper "github.com/cosmos/evm/x/vm/keeper"
+	evmtypes "github.com/cosmos/evm/x/vm/types"
+	feemarketkeeper "github.com/cosmos/evm/x/feemarket/keeper"
+	"github.com/ethereum/go-ethereum/common"
+	stocappante "stoc/app/ante"
+	evmutilkeeper "stoc/x/evmutil/keeper"
 )
 
 const (
 	AccountAddressPrefix = "stoc"
 	Name                 = "stoc"
+	// ChainCoinType is the coin type for stoc chain
+	// Using 118 (Cosmos standard) for backward compatibility with existing accounts
+	ChainCoinType = 118
 )
 
 var (
@@ -144,21 +162,27 @@ type App struct {
 
 	// IBC
 	IBCKeeper           *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
-	CapabilityKeeper    *capabilitykeeper.Keeper
-	IBCFeeKeeper        ibcfeekeeper.Keeper
 	ICAControllerKeeper icacontrollerkeeper.Keeper
 	ICAHostKeeper       icahostkeeper.Keeper
 	TransferKeeper      ibctransferkeeper.Keeper
 
-	// Scoped IBC
-	ScopedIBCKeeper           capabilitykeeper.ScopedKeeper
-	ScopedIBCTransferKeeper   capabilitykeeper.ScopedKeeper
-	ScopedICAControllerKeeper capabilitykeeper.ScopedKeeper
-	ScopedICAHostKeeper       capabilitykeeper.ScopedKeeper
-	ScopedKeepers             map[string]capabilitykeeper.ScopedKeeper
+	// EVM Keepers
+	EVMKeeper         *evmkeeper.Keeper
+	FeeMarketKeeper   feemarketkeeper.Keeper
+	Erc20Keeper       erc20keeper.Keeper
+	EvmutilKeeper     evmutilkeeper.Keeper
+
+	// EVM mempool and client context
+	EVMMempool         sdkmempool.ExtMempool
+	clientCtx          client.Context
+	pendingTxListeners []func(common.Hash)
 
 	StocKeeper stocmodulekeeper.Keeper
 	// this line is used by starport scaffolding # stargate/app/keeperDeclaration
+
+	// blockedPrecompileAddrs contains bech32 addresses of EVM precompiles.
+	// Used by blockPrecompileTransfers to prevent direct Cosmos sends to precompile addresses.
+	blockedPrecompileAddrs map[string]bool
 
 	// simulation manager
 	sm *module.SimulationManager
@@ -171,6 +195,44 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+
+	// Set default bond denom from genesis staking params.
+	// Must be set before EVM modules use it (evm.go coinInfoMap, evmutil GetEvmDenom()).
+	// Reads genesis to support both mainnet (ustoc) and testnet (utstoc).
+	sdk.DefaultBondDenom = detectBondDenomFromGenesis(DefaultNodeHome)
+}
+
+// detectBondDenomFromGenesis reads bond_denom from genesis file.
+// For fresh nodes (no genesis yet), derives denom from chain-id in config.toml
+// or falls back based on DefaultNodeHome convention.
+// Supports: mainnet "ustoc", testnet "utstoc"
+func detectBondDenomFromGenesis(homeDir string) string {
+	// Try genesis first (most reliable source)
+	genesisPath := filepath.Join(homeDir, "config", "genesis.json")
+	data, err := os.ReadFile(genesisPath)
+	if err == nil {
+		var genesis struct {
+			AppState struct {
+				Staking struct {
+					Params struct {
+						BondDenom string `json:"bond_denom"`
+					} `json:"params"`
+				} `json:"staking"`
+			} `json:"app_state"`
+		}
+		if err := json.Unmarshal(data, &genesis); err == nil {
+			if genesis.AppState.Staking.Params.BondDenom != "" {
+				return genesis.AppState.Staking.Params.BondDenom
+			}
+		}
+	}
+
+	// No genesis yet (fresh node, e.g. ignite chain serve).
+	// Default to mainnet denom — Ignite will generate genesis with the correct denom shortly.
+	// Previous heuristic (scanning config.toml for "tstoc"/"testnet") was removed because
+	// substring matching could trigger on unrelated content (moniker, comments), causing
+	// a mainnet node to use the wrong denom.
+	return "ustoc"
 }
 
 // getGovProposalHandlers return the chain proposal handlers.
@@ -204,37 +266,6 @@ func AppConfig() depinject.Config {
 	)
 }
 
-func NewAnteHandler(
-	options ante.HandlerOptions,
-	stocKeeper stocmodulekeeper.Keeper,
-) (sdk.AnteHandler, error) {
-	anteDecorators := []sdk.AnteDecorator{
-		// stocante.NewTaxAnteDecorator(stocKeeper),
-		ante.NewSetUpContextDecorator(),                      // handle GasMeter
-		ante.NewExtensionOptionsDecorator(nil),               // handle extension options
-		ante.NewValidateBasicDecorator(),                     // handle validate basic
-		ante.NewTxTimeoutHeightDecorator(),                   // handle timeout height
-		ante.NewValidateMemoDecorator(options.AccountKeeper), // handle validate memo
-
-		ante.NewDeductFeeDecorator(
-			options.AccountKeeper,
-			options.BankKeeper,
-			options.FeegrantKeeper,
-			nil, // handle nil or default function here
-		),
-		ante.NewSetPubKeyDecorator(options.AccountKeeper),                                // handle set public key
-		ante.NewValidateSigCountDecorator(options.AccountKeeper),                         // handle validate sig count
-		ante.NewSigGasConsumeDecorator(options.AccountKeeper, options.SigGasConsumer),    // handle sig gas consume
-		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler), // handle sig verification
-
-		// other decorators
-		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
-		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
-	}
-
-	return sdk.ChainAnteDecorators(anteDecorators...), nil
-}
-
 // New returns a reference to an initialized App.
 func New(
 	logger log.Logger,
@@ -245,7 +276,7 @@ func New(
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) (*App, error) {
 	var (
-		app        = &App{ScopedKeepers: make(map[string]capabilitykeeper.ScopedKeeper)}
+		app        = &App{}
 		appBuilder *runtime.AppBuilder
 
 		// merge the AppConfig and other configuration in one config
@@ -259,7 +290,6 @@ func New(
 				// Passing the getter, the app IBC Keeper will always be accessible.
 				// This needs to be removed after IBC supports App Wiring.
 				app.GetIBCKeeper,
-				app.GetCapabilityScopedKeeper,
 				module.NewManager(
 					auth.NewAppModule(app.appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName)),
 				),
@@ -276,13 +306,12 @@ func New(
 					evidencetypes.ModuleName,
 					ibctransfertypes.ModuleName,
 					icatypes.ModuleName,
-					capabilitytypes.ModuleName,
 					group.ModuleName,
 					feegrant.ModuleName,
 					nft.ModuleName,
 					circuittypes.ModuleName,
 				},
-			),
+			), depinject.Provide(ProvideMsgEthereumTxCustomGetSigner),
 		)
 	)
 
@@ -315,9 +344,9 @@ func New(
 		panic(err)
 	}
 
-	// add to default baseapp options
-	// enable optimistic execution
-	baseAppOptions = append(baseAppOptions, baseapp.SetOptimisticExecution())
+	// Optimistic execution disabled — experimental SDK feature that risks state divergence
+	// when combined with state-modifying PostHandler (tax). Re-enable when SDK matures.
+	// baseAppOptions = append(baseAppOptions, baseapp.SetOptimisticExecution())
 
 	// build app
 	app.App = appBuilder.Build(db, traceStore, baseAppOptions...)
@@ -326,6 +355,34 @@ func New(
 	if err := app.registerIBCModules(appOpts); err != nil {
 		return nil, err
 	}
+
+	// Register EVM modules
+	if err := app.registerEVMModules(appOpts); err != nil {
+		return nil, err
+	}
+
+	// Post-register EVM modules (precompiles)
+	if err := app.postRegisterEVMModules(); err != nil {
+		return nil, err
+	}
+
+	// Block transfers to EVM precompile addresses.
+	// NOTE: BlockedModuleAccountsOverride only handles module names (via NewModuleAddress),
+	// so precompile hex addresses must be blocked via SendRestriction instead.
+	app.blockPrecompileTransfers()
+
+	// Block custom token IBC transfers at the bank module level.
+	// This is the primary enforcement — catches ALL execution paths including
+	// ICA host, x/group proposals, and x/gov proposals that bypass ante handlers.
+	// The ante handler (IBCCustomTokenRestriction) remains for early rejection and user-facing errors.
+	app.blockCustomTokenIBCTransfers()
+
+	// Block custom token sends to/from non-wallet accounts (ICA, vesting, non-stoc modules).
+	// Defense-in-depth for Q2 + Q3b: custom tokens are company securities and may only
+	// move wallet-to-wallet. This SendRestriction catches execution paths that bypass
+	// the ante chain (ICA host, group/gov proposal execution) where the ante-level
+	// CustomTokenChainOpsRestriction cannot see inner messages.
+	app.blockCustomTokenNonWalletAccounts()
 
 	// register streaming services
 	if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {
@@ -355,23 +412,50 @@ func New(
 	})
 
 	// create options for AnteHandler
-	anteOptions := ante.HandlerOptions{
-		AccountKeeper:   app.AccountKeeper,
-		BankKeeper:      app.BankKeeper,
-		SignModeHandler: app.txConfig.SignModeHandler(),
-		FeegrantKeeper:  app.FeeGrantKeeper,
-		SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
+	// MaxTxGasWanted caps per-tx gas to prevent single-tx block monopolization.
+	// Default 50M = half of BlockGasLimit (100M), allowing other txs in the same block.
+	maxGasWanted := cast.ToUint64(appOpts.Get("gas-wanted"))
+	if maxGasWanted == 0 {
+		maxGasWanted = 50_000_000
 	}
 
-	// set AnteHandler here, before adding modules
-	anteHandler, err := NewAnteHandler(anteOptions, app.StocKeeper)
-	if err != nil {
-		return nil, err
+	anteOptions := stocappante.StocAnteOptions{
+		HandlerOptions: evmante.HandlerOptions{
+			Cdc:                    app.appCodec,
+			AccountKeeper:          app.AccountKeeper,
+			BankKeeper:             app.BankKeeper,
+			SignModeHandler:        app.txConfig.SignModeHandler(),
+			FeegrantKeeper:         app.FeeGrantKeeper,
+			SigGasConsumer:         evmante.SigVerificationGasConsumer,
+			ExtensionOptionChecker: antetypes.HasDynamicFeeExtensionOption,
+			DynamicFeeChecker:      true, // v0.6.0: replaces TxFeeChecker with boolean flag
+			EvmKeeper:              app.EVMKeeper,
+			FeeMarketKeeper:        &app.FeeMarketKeeper,
+			MaxTxGasWanted:         maxGasWanted,
+			PendingTxListener: func(hash common.Hash) {
+				for _, listener := range app.pendingTxListeners {
+					listener(hash)
+				}
+			},
+			IBCKeeper: app.IBCKeeper,
+		},
+		StocKeeper: app.StocKeeper,
 	}
+	if err := anteOptions.Validate(); err != nil {
+		panic(err)
+	}
+
+	anteHandler := stocappante.NewAnteHandler(anteOptions)
 	app.SetAnteHandler(anteHandler)
+
+	// Setup EVM mempool
+	app.setEVMMempool()
 
 	postHandler := stocante.NewTaxPostDecorator(app.StocKeeper, app.appCodec)
 	app.SetPostHandler(sdk.ChainPostDecorators(postHandler))
+
+	// Register upgrade handlers for EVM migration
+	app.RegisterUpgradeHandlers()
 
 	if err := app.Load(loadLatest); err != nil {
 		return nil, err
@@ -427,14 +511,19 @@ func (app *App) GetMemKey(storeKey string) *storetypes.MemoryStoreKey {
 
 // kvStoreKeys returns all the kv store keys registered inside App.
 func (app *App) kvStoreKeys() map[string]*storetypes.KVStoreKey {
-	keys := make(map[string]*storetypes.KVStoreKey)
-	for _, k := range app.GetStoreKeys() {
-		if kv, ok := k.(*storetypes.KVStoreKey); ok {
-			keys[kv.Name()] = kv
+	return app.GetStoreKeysMap()
+}
+
+// GetStoreKeysMap returns all the kv store keys registered inside App as a map.
+func (app *App) GetStoreKeysMap() map[string]*storetypes.KVStoreKey {
+	storeKeysMap := make(map[string]*storetypes.KVStoreKey)
+	for _, storeKey := range app.GetStoreKeys() {
+		kvStoreKey, ok := app.UnsafeFindStoreKey(storeKey.Name()).(*storetypes.KVStoreKey)
+		if ok {
+			storeKeysMap[storeKey.Name()] = kvStoreKey
 		}
 	}
-
-	return keys
+	return storeKeysMap
 }
 
 // GetSubspace returns a param subspace for a given module name.
@@ -448,15 +537,6 @@ func (app *App) GetIBCKeeper() *ibckeeper.Keeper {
 	return app.IBCKeeper
 }
 
-// GetCapabilityScopedKeeper returns the capability scoped keeper.
-func (app *App) GetCapabilityScopedKeeper(moduleName string) capabilitykeeper.ScopedKeeper {
-	sk, ok := app.ScopedKeepers[moduleName]
-	if !ok {
-		sk = app.CapabilityKeeper.ScopeToModule(moduleName)
-		app.ScopedKeepers[moduleName] = sk
-	}
-	return sk
-}
 
 // SimulationManager implements the SimulationApp interface.
 func (app *App) SimulationManager() *module.SimulationManager {
@@ -485,6 +565,231 @@ func GetMaccPerms() map[string][]string {
 		dup[perms.Account] = perms.Permissions
 	}
 	return dup
+}
+
+// blockCustomTokenIBCTransfers registers a bank SendRestriction that prevents
+// custom tokens (created via x/stoc) from being escrowed by IBC transfer.
+// Unlike the ante handler (which only catches user-submitted txs), this restriction
+// is enforced at the bank module level and catches ALL execution paths:
+// - Direct user MsgTransfer
+// - ICA host message execution (bypasses ante handlers)
+// - x/group proposal execution (bypasses ante handlers)
+// - x/gov proposal execution (bypasses ante handlers)
+func (app *App) blockCustomTokenIBCTransfers() {
+	stocKeeper := app.StocKeeper
+	ibcKeeper := app.IBCKeeper
+
+	// Cached escrow addresses with mutex protection.
+	// SendRestriction is called from both DeliverTx (serial) and CheckTx (concurrent),
+	// so the cache MUST be protected against concurrent access.
+	var mu sync.RWMutex
+	var escrowAddrs map[string]string // bech32 addr → channelId
+	var cacheHeight int64
+
+	app.BankKeeper.AppendSendRestriction(func(ctx context.Context, fromAddr, toAddr sdk.AccAddress, amt sdk.Coins) (sdk.AccAddress, error) {
+		sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+		// Fast path: skip if no custom tokens in the amount
+		var customDenom string
+		for _, coin := range amt {
+			if stoctypes.IsNativeDenom(coin.Denom) {
+				continue
+			}
+			if stocKeeper.HasToken(sdkCtx, coin.Denom) {
+				customDenom = coin.Denom
+				break
+			}
+		}
+		if customDenom == "" {
+			return toAddr, nil
+		}
+
+		// Rebuild escrow address cache every 10 blocks to pick up new channels
+		currentHeight := sdkCtx.BlockHeight()
+		mu.RLock()
+		needRebuild := escrowAddrs == nil || currentHeight-cacheHeight >= 10
+		mu.RUnlock()
+
+		if needRebuild {
+			mu.Lock()
+			// Double-check after acquiring write lock (must match read-lock threshold)
+			if escrowAddrs == nil || currentHeight-cacheHeight >= 10 {
+				newCache := make(map[string]string)
+				channels := ibcKeeper.ChannelKeeper.GetAllChannels(sdkCtx)
+				for _, ch := range channels {
+					if ch.PortId == ibctransfertypes.PortID {
+						addr := ibctransfertypes.GetEscrowAddress(ch.PortId, ch.ChannelId)
+						newCache[addr.String()] = ch.ChannelId
+					}
+				}
+				escrowAddrs = newCache
+				cacheHeight = currentHeight
+			}
+			mu.Unlock()
+		}
+
+		// O(1) lookup with read lock
+		mu.RLock()
+		channelId, blocked := escrowAddrs[toAddr.String()]
+		mu.RUnlock()
+
+		if blocked {
+			sdkCtx.Logger().Warn("Blocked IBC escrow of custom token via SendRestriction",
+				"denom", customDenom,
+				"channel", channelId,
+				"from", fromAddr.String(),
+			)
+			return toAddr, fmt.Errorf(
+				"IBC transfer of custom token %q is not allowed: custom tokens created via x/stoc are Cosmos-only and cannot be transferred cross-chain",
+				customDenom,
+			)
+		}
+
+		return toAddr, nil
+	})
+}
+
+// blockCustomTokenNonWalletAccounts registers a bank SendRestriction that
+// prevents custom stoc tokens from being sent to or from any account that is
+// not a regular user wallet. Specifically blocks:
+//
+//   - *icatypes.InterchainAccount — prevents Q3b tax bypass via ICA host
+//     dispatching inner bank.MsgSend without going through the ante chain
+//   - vestingexported.VestingAccount (ContinuousVestingAccount,
+//     DelayedVestingAccount, PeriodicVestingAccount, PermanentLockedAccount)
+//     — prevents Q2 Scenario 1 tax bypass even when ante chain is bypassed
+//   - *authtypes.ModuleAccount (except x/stoc itself) — prevents Q2 Scenarios
+//     2/3 tax bypass even when ante chain is bypassed (gov proposal execution,
+//     group proposal execution)
+//
+// The x/stoc module account is explicitly ALLOWED as source or destination
+// because the legitimate token lifecycle needs it:
+//   - CreateToken: MintCoins(stoc_module) then SendCoinsFromModuleToAccount(stoc_module → creator)
+//   - ReleaseTokens: SendCoinsFromModuleToAccount(stoc_module → recipient)
+//   - BurnToken: SendCoinsFromAccountToModule(user → stoc_module) then BurnCoins(stoc_module)
+//
+// Native chain denoms (ustoc/astoc/stoc + test/devnet variants) are NEVER
+// affected by this restriction — staking STOC, vesting STOC for team/payroll,
+// gov deposit in STOC, community pool in STOC are all legitimate and pass through.
+//
+// This complements the CustomTokenChainOpsRestriction ante decorator:
+//   - Ante layer: fast rejection with clear user-facing errors for known msg types
+//   - Bank layer: defense-in-depth catching execution paths that bypass ante
+//     (ICA host, group.MsgExec, gov proposal execution)
+func (app *App) blockCustomTokenNonWalletAccounts() {
+	stocKeeper := app.StocKeeper
+	accountKeeper := app.AccountKeeper
+	stocModuleAddr := authtypes.NewModuleAddress(stoctypes.ModuleName)
+
+	app.BankKeeper.AppendSendRestriction(func(ctx context.Context, fromAddr, toAddr sdk.AccAddress, amt sdk.Coins) (sdk.AccAddress, error) {
+		sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+		// Fast path: skip if no custom tokens in the amount
+		var customDenom string
+		for _, coin := range amt {
+			if stoctypes.IsNativeDenom(coin.Denom) {
+				continue
+			}
+			if stocKeeper.HasToken(sdkCtx, coin.Denom) {
+				customDenom = coin.Denom
+				break
+			}
+		}
+		if customDenom == "" {
+			return toAddr, nil
+		}
+
+		// Allow x/stoc module as source or destination — required for legitimate
+		// token lifecycle operations (CreateToken mint distribution, ReleaseTokens,
+		// BurnToken collection). All other module accounts are blocked.
+		fromIsStoc := fromAddr.Equals(stocModuleAddr)
+		toIsStoc := toAddr.Equals(stocModuleAddr)
+
+		// Check fromAddr account type (skip if it's the stoc module)
+		if !fromIsStoc {
+			if err := rejectIfNonWallet(sdkCtx, accountKeeper, fromAddr, customDenom, "from"); err != nil {
+				return toAddr, err
+			}
+		}
+
+		// Check toAddr account type (skip if it's the stoc module)
+		if !toIsStoc {
+			if err := rejectIfNonWallet(sdkCtx, accountKeeper, toAddr, customDenom, "to"); err != nil {
+				return toAddr, err
+			}
+		}
+
+		return toAddr, nil
+	})
+}
+
+// rejectIfNonWallet returns an error if the given account is any of:
+// InterchainAccount, VestingAccount, or ModuleAccount. Returns nil for regular
+// BaseAccount, EthAccount, or nil (new account not yet created) — all treated
+// as user wallets.
+func rejectIfNonWallet(ctx sdk.Context, ak authkeeper.AccountKeeper, addr sdk.AccAddress, denom, direction string) error {
+	acc := ak.GetAccount(ctx, addr)
+	if acc == nil {
+		// New account (first-time receive) — treat as regular wallet
+		return nil
+	}
+
+	// Check InterchainAccount (ICA host-controlled account)
+	if _, isICA := acc.(*icatypes.InterchainAccount); isICA {
+		ctx.Logger().Warn("Blocked custom token send involving ICA account",
+			"denom", denom, "direction", direction, "addr", addr.String(),
+		)
+		return fmt.Errorf(
+			"custom token %q cannot be sent %s interchain account %s: custom stoc tokens may only move between regular user wallets",
+			denom, direction, addr.String(),
+		)
+	}
+
+	// Check VestingAccount (all 4 types satisfy this interface)
+	if _, isVesting := acc.(vestingexported.VestingAccount); isVesting {
+		ctx.Logger().Warn("Blocked custom token send involving vesting account",
+			"denom", denom, "direction", direction, "addr", addr.String(),
+		)
+		return fmt.Errorf(
+			"custom token %q cannot be sent %s vesting account %s: custom stoc tokens may only move between regular user wallets",
+			denom, direction, addr.String(),
+		)
+	}
+
+	// Check ModuleAccount (community pool, gov, distribution, feegrant, etc.)
+	// x/stoc module was already allowed above before calling this function.
+	if _, isModule := acc.(sdk.ModuleAccountI); isModule {
+		ctx.Logger().Warn("Blocked custom token send involving non-stoc module account",
+			"denom", denom, "direction", direction, "addr", addr.String(),
+		)
+		return fmt.Errorf(
+			"custom token %q cannot be sent %s module account %s: custom stoc tokens may only move between regular user wallets (x/stoc module excepted for token lifecycle)",
+			denom, direction, addr.String(),
+		)
+	}
+
+	return nil
+}
+
+// DefaultGenesis returns default genesis state with STOC-specific EVM denom configuration.
+// Overrides cosmos/evm defaults ("aatom") with denoms derived from bond_denom.
+func (app *App) DefaultGenesis() map[string]json.RawMessage {
+	genesis := app.App.DefaultGenesis()
+
+	// Override EVM module genesis: set correct denoms for 6-decimal chain
+	bondDenom := sdk.DefaultBondDenom
+	extendedDenom := "a" + bondDenom[1:] // "ustoc" → "astoc"
+
+	evmGenState := evmtypes.DefaultGenesisState()
+	evmGenState.Params.EvmDenom = bondDenom
+	evmGenState.Params.ExtendedDenomOptions = &evmtypes.ExtendedDenomOptions{
+		ExtendedDenom: extendedDenom,
+	}
+	evmGenState.Params.ActiveStaticPrecompiles = evmtypes.AvailableStaticPrecompiles
+	evmGenState.Preinstalls = evmtypes.DefaultPreinstalls
+	genesis[evmtypes.ModuleName] = app.appCodec.MustMarshalJSON(evmGenState)
+
+	return genesis
 }
 
 // BlockedAddresses returns all the app's blocked account addresses.
