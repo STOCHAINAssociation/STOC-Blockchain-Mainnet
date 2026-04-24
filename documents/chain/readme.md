@@ -295,6 +295,138 @@ stocd query staking validators --limit 100 | grep <your_validator_name>
 
 ---
 
+## Upgrading an Existing Node
+
+This section applies to operators who already run a STOC node with an older `stocd` binary (without EVM or on an earlier version) and want to move to the current release. **Fresh installs should follow the Common Setup + Scenario sections above instead.**
+
+### Pre-upgrade Checklist
+
+Before any binary swap, back up the following files:
+
+```bash
+BACKUP_DIR="$HOME/stoc-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+cp ~/.stoc/config/priv_validator_key.json "$BACKUP_DIR/"   # CRITICAL for validators
+cp ~/.stoc/config/node_key.json           "$BACKUP_DIR/"
+cp ~/.stoc/config/config.toml             "$BACKUP_DIR/"
+cp ~/.stoc/config/app.toml                "$BACKUP_DIR/"
+echo "Backup saved to $BACKUP_DIR"
+```
+
+Also record your current binary version and block height:
+
+```bash
+stocd version
+stocd status | jq '.sync_info.latest_block_height'
+```
+
+### Option A — Simple Binary Swap (most operators)
+
+Use this when your node is already **past** every historical upgrade height (which is the case for any node synced from a recent snapshot, or for operators who kept up with governance upgrades as they happened). The new binary stays backward-compatible — upgrade handlers are no-ops at heights beyond their activation.
+
+```bash
+# 1. Stop the service
+sudo systemctl stop stocd
+
+# 2. Pull latest source and rebuild
+cd /path/to/STOC-Blockchain-Mainnet
+git pull
+make install
+
+# 3. Verify new binary
+stocd version
+
+# 4. Ensure the EVM chain ID is set in app.toml (REQUIRED)
+if ! grep -q '^\[evm\]' ~/.stoc/config/app.toml; then
+  printf '\n[evm]\nevm-chain-id = 1306\n' >> ~/.stoc/config/app.toml
+else
+  sed -i 's/^evm-chain-id *=.*/evm-chain-id = 1306/' ~/.stoc/config/app.toml
+fi
+
+# 5. (Optional) Enable EVM JSON-RPC — see "EVM Support" section below
+
+# 6. Start the service
+sudo systemctl start stocd
+
+# 7. Watch logs — node should resume syncing / producing blocks
+sudo journalctl -u stocd -f
+```
+
+### Option B — Governance Upgrade (halt at upgrade height)
+
+Use this when the chain has a **pending** upgrade your current binary does not support. The old binary will halt at the upgrade height with a log message similar to:
+
+```
+ERR UPGRADE "<upgrade_name>" NEEDED at height: <H>
+```
+
+You have two ways to handle the swap:
+
+**Manual swap at halt**
+
+```bash
+# When you see "UPGRADE NEEDED" in the logs:
+sudo systemctl stop stocd
+
+cd /path/to/STOC-Blockchain-Mainnet
+git checkout <tag_or_branch_matching_upgrade>
+make install
+
+# Ensure evm-chain-id is set (see Option A step 4)
+sudo systemctl start stocd
+```
+
+**Automated swap with cosmovisor**
+
+`cosmovisor` watches for upgrade plans and swaps binaries at the configured height with no manual intervention. Recommended for production validators. Follow the official Cosmos SDK cosmovisor guide to install and configure:
+<https://docs.cosmos.network/main/build/tooling/cosmovisor>
+
+Place the new `stocd` binary at `$DAEMON_HOME/cosmovisor/upgrades/<upgrade_name>/bin/stocd` before the upgrade height.
+
+### Known Upgrade Handlers
+
+| Handler Name | Purpose |
+|--------------|---------|
+| `v2-evm` | Adds EVM support (new stores: `evm`, `feemarket`, `erc20`, `evmutil`) |
+| `v3-fix-evm-denom` | Fixes EVM denom derivation from staking bond denom + restores `MinGasPrice` to prevent free EVM spam |
+
+> These handlers have already executed on STOC mainnet. A node syncing from a recent snapshot will **not** trigger them. A node syncing from genesis will run them automatically at the historical heights — no operator action needed beyond having an up-to-date binary before that height is reached.
+
+### Post-upgrade Verification
+
+```bash
+# 1. Node is syncing or caught up
+stocd status | jq '.sync_info'
+
+# 2. Binary version matches expectation
+stocd version
+
+# 3. EVM JSON-RPC responds with the correct chain ID (requires json-rpc enabled)
+curl -s -X POST -H 'Content-Type: application/json' \
+  --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+  http://localhost:8545 | jq .
+# Expected: "result": "0x51a"   (0x51a = 1306)
+
+# 4. For validators — still in active set and signing blocks
+stocd query staking validator $(stocd keys show <key_name> --bech val -a)
+stocd query slashing signing-info $(stocd tendermint show-validator)
+```
+
+### Rollback
+
+If the upgraded binary fails to start, restore the old binary (from your package manager, previous git tag, or backup) and the original `app.toml`:
+
+```bash
+sudo systemctl stop stocd
+# Reinstall the previous binary
+cp "$BACKUP_DIR/app.toml" ~/.stoc/config/app.toml
+sudo systemctl start stocd
+```
+
+Rollback is only viable **before** the node processes blocks with the new binary. Once new-format state is written, you must re-sync from snapshot or genesis using a compatible binary.
+
+---
+
 ## Monitoring
 
 ### Check Node Status

@@ -9,6 +9,8 @@ Welcome to the comprehensive documentation for STOC Blockchain. This repository 
   - Fullnode setup (10k blocks via snapshot — recommended)
   - Full archive node (ALL blocks from genesis)
   - Become a validator
+  - **Upgrading an existing node** (binary swap, governance upgrade, cosmovisor, rollback)
+  - EVM support (JSON-RPC, WebSocket, MetaMask)
   - systemd service, firewall, monitoring
 
 ### 🛠️ Development Resources
