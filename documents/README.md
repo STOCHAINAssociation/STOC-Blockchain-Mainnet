@@ -51,7 +51,8 @@ STOC Blockchain is a high-performance blockchain built using the Cosmos SDK and 
 ## 🌐 Network Information
 
 ### Mainnet
-- **Chain ID**: `stoc`
+- **Cosmos Chain ID**: `stoc`
+- **EVM Chain ID (EIP-155)**: `1306` — must be set in `~/.stoc/config/app.toml` under `[evm]` as `evm-chain-id = 1306` (see [Chain Setup Guide](./chain/readme.md#set-the-evm-chain-id-required))
 - **Native Denom**: `ustoc` (6 decimals)
 - **EVM Denom**: `astoc` (18 decimals)
 - **Minimum Gas Price**: `0.001ustoc`

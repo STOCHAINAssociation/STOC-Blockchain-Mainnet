@@ -14,7 +14,8 @@ STOC Chain is a high-performance blockchain with full EVM (Ethereum Virtual Mach
 
 | Parameter | Mainnet | Development |
 |-----------|---------|-------------|
-| Chain ID | `stoc` | `stoc` |
+| Cosmos Chain ID | `stoc` | `stoc` |
+| EVM Chain ID (EIP-155) | `1306` | set via `app.toml` |
 | Native Token | `ustoc` (6 decimals) | `ustoc` |
 | EVM Token | `astoc` (18 decimals) | `astoc` |
 | Coin Type | 118 | 118 |
@@ -52,6 +53,8 @@ ignite chain serve
 ### Run a Node
 
 See [Node Setup Guide](./documents/chain/readme.md) for full instructions including snapshot sync, peer configuration, and validator setup.
+
+> ⚠️ **EVM Chain ID**: After `stocd init`, you **must** set `evm-chain-id = 1306` in `~/.stoc/config/app.toml` under the `[evm]` section before starting the node. The default Cosmos chain ID (`stoc`) cannot be auto-parsed as EVM chain ID. See the [dedicated section](./documents/chain/readme.md#set-the-evm-chain-id-required) in the setup guide.
 
 ## Technology Stack
 

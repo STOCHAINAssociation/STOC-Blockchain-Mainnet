@@ -31,7 +31,8 @@ This guide covers three setup scenarios for STOC mainnet:
 
 | Key | Value |
 |-----|-------|
-| Chain ID | `stoc` |
+| Cosmos Chain ID | `stoc` |
+| EVM Chain ID (EIP-155) | `1306` |
 | Coin Type | 118 (Cosmos standard) |
 | Native Denomination | `ustoc` (6 decimals, Cosmos) |
 | EVM Denomination | `astoc` (18 decimals, EVM) |
@@ -39,6 +40,8 @@ This guide covers three setup scenarios for STOC mainnet:
 | Minimum Gas Price | `0.001ustoc` |
 | Binary | `stocd` |
 | EVM Compatibility | Cosmos EVM v0.6.0 (Solidity, MetaMask, ethers.js) |
+
+> ⚠️ **Important**: The EVM chain ID (`1306`) must match across: your node's `app.toml`, wallets (MetaMask), and smart contract deployment tooling. A mismatch will result in failed signature verification and rejected transactions.
 
 ---
 
@@ -107,6 +110,30 @@ sed -i 's/minimum-gas-prices = ""/minimum-gas-prices = "0.001ustoc"/' ~/.stoc/co
 PEERS="5f0cd810689cc8907aa3520a75705b20f9f179bb@64.176.4.207:26656,4ed01c03afcca1399467c644efbb7f076cb406d0@202.182.110.150:26656,41f8094cd1da001a7a4416246c3ea5ab62196bd9@45.32.180.48:26656,4310f4113afd1cc4c220ea764f6d4710e1616b84@160.191.50.204:26656"
 sed -i "s/persistent_peers = \"\"/persistent_peers = \"$PEERS\"/" ~/.stoc/config/config.toml
 ```
+
+#### Set the EVM Chain ID (REQUIRED)
+
+Because the Cosmos chain ID (`stoc`) is not in `name_EVMID-version` format, the node **cannot auto-derive** the EVM chain ID and will **panic on start** unless you set it explicitly in `app.toml`:
+
+```bash
+# Locate the [evm] section in ~/.stoc/config/app.toml and set:
+#
+#   [evm]
+#   evm-chain-id = 1306
+#
+# One-shot edit (appends block if missing):
+if ! grep -q '^\[evm\]' ~/.stoc/config/app.toml; then
+  printf '\n[evm]\nevm-chain-id = 1306\n' >> ~/.stoc/config/app.toml
+else
+  # Replace existing evm-chain-id line inside [evm] block
+  sed -i 's/^evm-chain-id *=.*/evm-chain-id = 1306/' ~/.stoc/config/app.toml
+fi
+
+# Verify
+grep -A1 '^\[evm\]' ~/.stoc/config/app.toml
+```
+
+> ⚠️ **To connect to STOC mainnet, this value MUST be `1306`.** A different number will place your node on a **different EVM chain** — transactions signed for mainnet (chain ID 1306) will be rejected, MetaMask will see a different network, and smart contracts will not match deployed addresses. Double-check before starting the node.
 
 > You can also fetch peers dynamically from the addrbook API:
 > ```bash
@@ -363,9 +390,11 @@ Restart the node (`sudo systemctl restart stocd`) to apply.
 |-------|-------|
 | Network Name | STOC Mainnet |
 | RPC URL | Your node JSON-RPC (`http://<host>:8545`) or public endpoint |
-| Chain ID | See project announcements for the canonical EVM chain ID |
+| Chain ID | `1306` |
 | Currency Symbol | STOC |
 | Decimals | 18 |
+
+> ⚠️ **Chain ID must match**: MetaMask's Chain ID (`1306`) must be identical to `evm-chain-id` in your node's `app.toml`. If you edited `evm-chain-id` to a different value, wallets and tooling set to `1306` will not connect.
 
 > **Note**: Custom tokens created via the `x/stoc` module are Cosmos-only and are **not** accessible from the EVM. Only the native `ustoc`/`astoc` pair is bridged.
 
