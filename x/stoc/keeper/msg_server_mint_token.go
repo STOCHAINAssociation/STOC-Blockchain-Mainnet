@@ -18,9 +18,13 @@ func (k msgServer) MintTokens(goCtx context.Context, msg *types.MsgMintTokens) (
 		return nil, sdkerrors.Wrapf(types.ErrInvalidCreatorAddress, "invalid creator address (%s)", err)
 	}
 
-	// Call MintToken function to perform mint
+	// Resolve token — supports both minimalDenom ("SYMBOL_0") and symbol ("SYMBOL")
+	token, findErr := k.FindToken(ctx, msg.Symbol)
+	if findErr != nil {
+		return nil, findErr
+	}
 
-	err = k.Keeper.MintToken(ctx, creator, msg.Symbol, msg.Amount)
+	err = k.Keeper.MintToken(ctx, creator, token.MinimalDenom, msg.Amount)
 	if err != nil {
 		return nil, err
 	}

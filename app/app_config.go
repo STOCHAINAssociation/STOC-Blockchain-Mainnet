@@ -46,16 +46,19 @@ import (
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
-	icatypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/types"
-	ibcfeetypes "github.com/cosmos/ibc-go/v8/modules/apps/29-fee/types"
-	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
-	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
+	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
+	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+
+	erc20types "github.com/cosmos/evm/x/erc20/types"
+	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
+	evmtypes "github.com/cosmos/evm/x/vm/types"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	stocmodulev1 "stoc/api/stoc/stoc/module"
 	_ "stoc/x/stoc/module"
 	stocmoduletypes "stoc/x/stoc/types"
+	evmutiltypes "stoc/x/evmutil/types"
 	// this line is used by starport scaffolding # stargate/app/moduleImport
 )
 
@@ -63,12 +66,8 @@ var (
 	// NOTE: The genutils module must occur after staking so that pools are
 	// properly initialized with tokens from genesis accounts.
 	// NOTE: The genutils module must also occur after auth so that it can access the params from auth.
-	// NOTE: Capability module must occur first so that it can initialize any capabilities
-	// so that other modules that want to create or claim capabilities afterwards in InitChain
-	// can do so safely.
 	genesisModuleOrder = []string{
 		// cosmos-sdk/ibc modules
-		capabilitytypes.ModuleName,
 		authtypes.ModuleName,
 		banktypes.ModuleName,
 		distrtypes.ModuleName,
@@ -78,12 +77,10 @@ var (
 		minttypes.ModuleName,
 		crisistypes.ModuleName,
 		ibcexported.ModuleName,
-		genutiltypes.ModuleName,
 		evidencetypes.ModuleName,
 		authz.ModuleName,
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
-		ibcfeetypes.ModuleName,
 		feegrant.ModuleName,
 		paramstypes.ModuleName,
 		upgradetypes.ModuleName,
@@ -94,6 +91,13 @@ var (
 		circuittypes.ModuleName,
 		// chain modules
 		stocmoduletypes.ModuleName,
+		// cosmos evm modules — feemarket MUST initialize BEFORE evm (base fee params required)
+		feemarkettypes.ModuleName,
+		evmutiltypes.ModuleName,
+		erc20types.ModuleName,
+		evmtypes.ModuleName,
+		// NOTE: genutil must be after evm modules so EVM state is ready for genesis transactions
+		genutiltypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/initGenesis
 	}
 
@@ -112,11 +116,14 @@ var (
 		authz.ModuleName,
 		genutiltypes.ModuleName,
 		// ibc modules
-		capabilitytypes.ModuleName,
 		ibcexported.ModuleName,
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
-		ibcfeetypes.ModuleName,
+		// cosmos evm modules — feemarket MUST run BEFORE evm (updates base fee for current block)
+		feemarkettypes.ModuleName,
+		evmutiltypes.ModuleName,
+		erc20types.ModuleName,
+		evmtypes.ModuleName,
 		// chain modules
 		stocmoduletypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/beginBlockers
@@ -133,9 +140,12 @@ var (
 		// ibc modules
 		ibcexported.ModuleName,
 		ibctransfertypes.ModuleName,
-		capabilitytypes.ModuleName,
 		icatypes.ModuleName,
-		ibcfeetypes.ModuleName,
+		// cosmos evm modules — feemarket MUST run BEFORE evm (finalizes block gas usage)
+		feemarkettypes.ModuleName,
+		evmutiltypes.ModuleName,
+		erc20types.ModuleName,
+		evmtypes.ModuleName,
 		// chain modules
 		stocmoduletypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/endBlockers
@@ -144,6 +154,7 @@ var (
 	preBlockers = []string{
 		upgradetypes.ModuleName,
 		authtypes.ModuleName,
+		evmtypes.ModuleName, // v0.6.0: EVM module requires PreBlocker registration
 		// this line is used by starport scaffolding # stargate/app/preBlockers
 	}
 
@@ -157,10 +168,14 @@ var (
 		{Account: govtypes.ModuleName, Permissions: []string{authtypes.Burner}},
 		{Account: nft.ModuleName},
 		{Account: ibctransfertypes.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
-		{Account: ibcfeetypes.ModuleName},
 		{Account: icatypes.ModuleName},
 		// this line is used by starport scaffolding # stargate/app/maccPerms
 		{Account: stocmoduletypes.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
+		// evm module accounts
+		{Account: evmtypes.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
+		{Account: erc20types.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
+		{Account: feemarkettypes.ModuleName, Permissions: []string{authtypes.Burner}},
+		{Account: evmutiltypes.ModuleName, Permissions: []string{authtypes.Minter, authtypes.Burner}},
 	}
 
 	// blocked account addresses
@@ -171,6 +186,11 @@ var (
 		stakingtypes.BondedPoolName,
 		stakingtypes.NotBondedPoolName,
 		nft.ModuleName,
+		// EVM module accounts — prevent direct user transfers that bypass EVM logic
+		evmtypes.ModuleName,
+		erc20types.ModuleName,
+		feemarkettypes.ModuleName,
+		evmutiltypes.ModuleName,
 		// We allow the following module accounts to receive funds:
 		// govtypes.ModuleName
 	}
@@ -220,14 +240,14 @@ var (
 			{
 				Name: banktypes.ModuleName,
 				Config: appconfig.WrapAny(&bankmodulev1.Module{
-					BlockedModuleAccountsOverride: blockAccAddrs,
+					BlockedModuleAccountsOverride: getBlockAccAddrs(),
 				}),
 			},
 			{
 				Name: stakingtypes.ModuleName,
 				Config: appconfig.WrapAny(&stakingmodulev1.Module{
 					// NOTE: specifying a prefix is only necessary when using bech32 addresses
-					// If not specfied, the auth Bech32Prefix appended with "valoper" and "valcons" is used by default
+					// If not specified, the auth Bech32Prefix appended with "valoper" and "valcons" is used by default
 					Bech32PrefixValidator: AccountAddressPrefix + "valoper",
 					Bech32PrefixConsensus: AccountAddressPrefix + "valcons",
 				}),
@@ -303,3 +323,13 @@ var (
 		},
 	})
 )
+
+// getBlockAccAddrs returns module account names that are blocked from receiving funds.
+// NOTE: BlockedModuleAccountsOverride calls authtypes.NewModuleAddress(name) on each entry,
+// so entries MUST be module names, NOT bech32 addresses. Precompile address blocking
+// is handled separately via bank SendRestriction in app.go (see blockPrecompileTransfers).
+func getBlockAccAddrs() []string {
+	addrs := make([]string, len(blockAccAddrs))
+	copy(addrs, blockAccAddrs)
+	return addrs
+}

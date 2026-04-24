@@ -1,123 +1,159 @@
 # STOC Blockchain Node Setup Guide
 
-This guide provides step-by-step instructions for setting up and running a STOC blockchain node.
+This guide covers three setup scenarios for STOC mainnet:
+
+1. **Fullnode (10k blocks)** — Quick setup using snapshot, recommended for most users
+2. **Fullnode (ALL blocks)** — Full archive node, stores entire blockchain history
+3. **Become a Validator** — Join the active validator set
 
 ## Prerequisites
 
-- Go 1.24.3 or higher (toolchain go1.24.3)
-- Ignite CLI v29 (including Cosmos SDK)
-- Buf CLI (for protobuf generation)
-- Git
-- Minimum 16GB RAM
-- 500GB+ available disk space
-- Stable internet connection
+- **OS**: Ubuntu 22.04+ LTS
+- **Go**: 1.24.3+
+- **RAM**: 8GB minimum (16GB+ recommended for validators)
+- **Disk**: 50GB for 10k blocks / 500GB+ for ALL blocks
+- **Network**: Stable connection, 100 Mbps+
 
 ## Important Links
 
-- **Snapshot Download**: https://api-sync-stoc-mainnet.stochainscan.io/snapshots/download-latest
-- **Genesis JSON**: https://rpc-stoc-mainnet.stochainscan.io/genesis
-- **Addrbook API (for peers)**: https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook
-- **Source Code**: https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet
+| Resource | URL |
+|----------|-----|
+| Snapshot Download | https://api-sync-stoc-mainnet.stochainscan.io/snapshots/download-latest |
+| Genesis JSON | https://rpc-stoc-mainnet.stochainscan.io/genesis |
+| Addrbook (peers) | https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook |
+| RPC Endpoint | https://rpc-stoc-mainnet.stochainscan.io |
+| REST API | https://api-stoc-mainnet.stochainscan.io |
+| gRPC | https://grpc-stoc-mainnet.stochainscan.io |
+| Block Explorer | https://stochainscan.io |
+| Source Code | https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet |
 
-## Setup Instructions
+## Chain Info
 
-### 1. Install Required Tools
+| Key | Value |
+|-----|-------|
+| Chain ID | `stoc` |
+| Coin Type | 118 (Cosmos standard) |
+| Native Denomination | `ustoc` (6 decimals, Cosmos) |
+| EVM Denomination | `astoc` (18 decimals, EVM) |
+| Conversion | 1 `ustoc` = 10^12 `astoc` |
+| Minimum Gas Price | `0.001ustoc` |
+| Binary | `stocd` |
+| EVM Compatibility | Cosmos EVM v0.6.0 (Solidity, MetaMask, ethers.js) |
 
-First, install the necessary tools:
+---
+
+## Common Setup (All Scenarios)
+
+### 1. Install Go
 
 ```bash
-# Install go version 1.24.3
-sudo apt update
-sudo wget https://go.dev/dl/go1.24.3.linux-amd64.tar.gz
-#unpack it
+sudo apt update && sudo apt install -y build-essential jq curl wget
+
+# Install Go 1.24.3
+wget https://go.dev/dl/go1.24.3.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
 sudo tar -C /usr/local -xzf go1.24.3.linux-amd64.tar.gz
+rm go1.24.3.linux-amd64.tar.gz
 
 echo 'export GOROOT=/usr/local/go' >> ~/.bashrc
 echo 'export GOPATH=$HOME/go' >> ~/.bashrc
-echo 'export PATH=$PATH:$GOROOT/bin:$GOPATH/bin:/usr/local/bin' >> ~/.bashrc
+echo 'export PATH=$PATH:$GOROOT/bin:$GOPATH/bin' >> ~/.bashrc
 source ~/.bashrc
 
-# Install Buf CLI for protobuf generation
-go install github.com/bufbuild/buf/cmd/buf@latest
-
-# Verify buf installation
-buf --version
+# Verify
+go version
 ```
 
-### 2. Build Chain
-
-Clone the repository and build the binary (by using Ignite CLI):
+### 2. Build stocd
 
 ```bash
-# Clone the repository
 git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
 cd STOC-Blockchain-Mainnet
 
-# Build the binary
-ignite chain build
-```
+# Option A: Using make (recommended)
+make install
 
-Check if stocd is installed:
-```bash
+# Option B: Using Ignite CLI (requires Ignite v29+)
+ignite chain build
+
+# Verify
 stocd version
 ```
 
-### Alternative: Download Pre-built Binary
-
-If you encounter issues building the chain, you can download the pre-built binary: [Here](https://drive.google.com/file/d/1FWjVfsqQ7Y6qR1U2aAIzk0pm08spMiq-/view?usp=sharing)
-
+> **Alternative**: If you cannot build from source, download the pre-built binary from [here](https://drive.google.com/file/d/1FWjVfsqQ7Y6qR1U2aAIzk0pm08spMiq-/view?usp=sharing).
 
 ### 3. Initialize Node
-
-Initialize your node with a custom moniker name:
 
 ```bash
 stocd init <your_moniker_name> --chain-id stoc
 ```
 
-**Important Configuration:**
-- Chain ID: `stoc`
-- Minimum gas price: `0.001ustoc`
-
-Update the minimum gas price in your configuration:
-```bash
-# Edit app.toml to set minimum gas prices
-sed -i 's/minimum-gas-prices = ""/minimum-gas-prices = "0.001ustoc"/' ~/.stoc/config/app.toml
-```
-
-### 4. Configure Peers
-
-Get the current peer list from the addrbook API and configure your node (`vi ~/.stoc/config/config.toml`):
+### 4. Download Genesis
 
 ```bash
-# Fetch peers from addrbook API
-curl -s https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook | jq -r '.data.addrs[] | "\(.addr.id)@\(.addr.ip):\(.addr.port)"' | head -10
-
-# Current active peers for STOC mainnet:
-persistent_peers = "4ed01c03afcca1399467c644efbb7f076cb406d0@202.182.110.150:26656,41f8094cd1da001a7a4416246c3ea5ab62196bd9@45.32.180.48:26656,5f0cd810689cc8907aa3520a75705b20f9f179bb@64.176.4.207:26656"
-```
-
-### 5. Update Genesis
-
-Download and update the genesis file:
-
-```bash
-# Download genesis file
 curl -s https://rpc-stoc-mainnet.stochainscan.io/genesis | jq '.result.genesis' > ~/.stoc/config/genesis.json
 
-# Verify genesis file
+# Verify
 stocd genesis validate ~/.stoc/config/genesis.json
 ```
 
-### 6. Download Chain Data (Snapshot)
-
-To speed up synchronization, download the latest snapshot:
+### 5. Configure Node
 
 ```bash
-# Stop the node if running
-sudo systemctl stop stocd
+# Set minimum gas price
+sed -i 's/minimum-gas-prices = ""/minimum-gas-prices = "0.001ustoc"/' ~/.stoc/config/app.toml
 
-# Remove old data
+# Set persistent peers
+PEERS="5f0cd810689cc8907aa3520a75705b20f9f179bb@64.176.4.207:26656,4ed01c03afcca1399467c644efbb7f076cb406d0@202.182.110.150:26656,41f8094cd1da001a7a4416246c3ea5ab62196bd9@45.32.180.48:26656,4310f4113afd1cc4c220ea764f6d4710e1616b84@160.191.50.204:26656"
+sed -i "s/persistent_peers = \"\"/persistent_peers = \"$PEERS\"/" ~/.stoc/config/config.toml
+```
+
+> You can also fetch peers dynamically from the addrbook API:
+> ```bash
+> curl -s https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook | jq -r '.data.addrs[] | "\(.addr.id)@\(.addr.ip):\(.addr.port)"' | head -10
+> ```
+
+### 6. Setup systemd Service
+
+```bash
+sudo tee /etc/systemd/system/stocd.service > /dev/null <<EOF
+[Unit]
+Description=STOC Blockchain Daemon
+After=network-online.target
+
+[Service]
+User=root
+ExecStart=$(which stocd) start
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable stocd
+```
+
+---
+
+## Scenario 1: Fullnode (10k blocks) — Using Snapshot
+
+Recommended for most users. Uses a snapshot to skip syncing from genesis.
+
+### Set Pruning Config
+
+```bash
+sed -i 's/pruning = "default"/pruning = "custom"/' ~/.stoc/config/app.toml
+sed -i 's/pruning-keep-recent = "0"/pruning-keep-recent = "10000"/' ~/.stoc/config/app.toml
+sed -i 's/pruning-interval = "0"/pruning-interval = "100"/' ~/.stoc/config/app.toml
+```
+
+### Download and Apply Snapshot
+
+```bash
+# Remove default data
 rm -rf ~/.stoc/data
 
 # Download and extract snapshot
@@ -125,72 +161,148 @@ cd ~/.stoc
 wget -O snapshot.tar.gz https://api-sync-stoc-mainnet.stochainscan.io/snapshots/download-latest
 tar -xzf snapshot.tar.gz
 rm snapshot.tar.gz
-
-# Set proper permissions
-chown -R $(whoami):$(whoami) ~/.stoc/data
 ```
 
-### 7. Start Node and Begin Sync
-
-Start the STOC daemon to begin synchronization:
+### Start Node
 
 ```bash
-# Start node directly
-stocd start
+sudo systemctl start stocd
+
+# Check logs
+sudo journalctl -u stocd -f
 ```
 
-## Monitoring and Maintenance
+The node will sync remaining blocks from the snapshot height to the current height. This typically takes a few minutes.
 
-### Check Sync Status
+---
+
+## Scenario 2: Fullnode (ALL blocks) — Full Archive
+
+Stores the entire blockchain history from block 1. Requires more disk space and time to sync.
+
+### Set Pruning Config
 
 ```bash
-# Check if node is catching up
-stocd status | jq '.SyncInfo.catching_up'
-
-# Check current block height
-stocd status | jq '.SyncInfo.latest_block_height'
-
-# Check peer connections
-stocd status | jq '.NodeInfo.network'
+sed -i 's/pruning = "default"/pruning = "nothing"/' ~/.stoc/config/app.toml
 ```
 
-### Useful Commands
+### Start Node (Sync from Genesis)
 
 ```bash
-# Check node status
-stocd status
+sudo systemctl start stocd
 
-# Check account balance
-stocd query bank balances <address>
+# Check logs
+sudo journalctl -u stocd -f
+```
 
-# Check validator info
-stocd query staking validators
+> **Note**: Syncing from genesis will take a long time depending on your hardware and network speed. The node needs to process all blocks from block 1.
 
-# Create validator (after sync completion)
+---
+
+## Scenario 3: Become a Validator
+
+### Prerequisites
+
+- A fully synced node (Scenario 1 or 2 completed)
+- STOC tokens for self-delegation (minimum 1 STOC = 1000000ustoc)
+- Secure backup of your validator keys
+
+### Wait for Full Sync
+
+```bash
+# Check sync status — must show "false" before creating validator
+stocd status | jq '.sync_info.catching_up'
+```
+
+### Create Wallet (or Import Existing)
+
+```bash
+# Create new wallet
+stocd keys add <key_name>
+
+# Or import existing wallet
+stocd keys add <key_name> --recover
+```
+
+> **IMPORTANT**: Save your mnemonic phrase securely. Losing it means losing access to your funds.
+
+### Fund Your Wallet
+
+Transfer STOC tokens to your wallet address:
+
+```bash
+# Check your address
+stocd keys show <key_name> -a
+
+# Check balance
+stocd query bank balances $(stocd keys show <key_name> -a)
+```
+
+### Create Validator
+
+```bash
 stocd tx staking create-validator \
   --amount=1000000ustoc \
   --pubkey=$(stocd tendermint show-validator) \
-  --moniker="<your_moniker>" \
+  --moniker="<your_validator_name>" \
   --chain-id=stoc \
   --commission-rate="0.05" \
   --commission-max-rate="0.20" \
   --commission-max-change-rate="0.01" \
   --min-self-delegation="1" \
   --gas="auto" \
+  --gas-adjustment=1.5 \
   --gas-prices="0.001ustoc" \
   --from=<key_name>
 ```
 
-## Troubleshooting
+### Verify Validator
 
-### Common Issues
+```bash
+# Check validator status
+stocd query staking validator $(stocd keys show <key_name> --bech val -a)
 
-1. **Peer Connection Issues**: Update peers list from the addrbook API
-2. **Genesis Mismatch**: Re-download genesis file
-3. **Disk Space**: Ensure sufficient disk space for blockchain data
-4. **Memory Issues**: Increase system memory or add swap space
+# Check if your validator is in the active set
+stocd query staking validators --limit 100 | grep <your_validator_name>
+```
 
-### Log Analysis
+---
+
+## Monitoring
+
+### Check Node Status
+
+```bash
+# Sync status
+stocd status | jq '.sync_info'
+
+# Current block height
+stocd status | jq '.sync_info.latest_block_height'
+
+# Connected peers
+stocd status | jq '.node_info'
+
+# Peer count
+curl -s http://127.0.0.1:26657/net_info | jq '.result.n_peers'
+```
+
+### Useful Commands
+
+```bash
+# Check account balance
+stocd query bank balances <address>
+
+# List all validators
+stocd query staking validators --limit 100
+
+# Check validator status (for validators)
+stocd query slashing signing-info $(stocd tendermint show-validator)
+
+# Unjail validator (if jailed)
+stocd tx slashing unjail --from <key_name> --chain-id stoc --gas auto --gas-prices 0.001ustoc
+```
+
+### Log Management
 
 ```bash
 # View recent logs
@@ -203,20 +315,94 @@ sudo journalctl -u stocd -f
 sudo journalctl -u stocd | grep -i error
 ```
 
-## Security Considerations
+---
 
-- Keep your node updated with the latest version
-- Secure your private keys and never share them
-- Use firewall to restrict access to necessary ports only
-- Regular backup of your validator keys and important data
-- Monitor your node's performance and uptime
+## Firewall Configuration
 
-## Support
+```bash
+# Required ports
+sudo ufw allow 22/tcp     # SSH
+sudo ufw allow 26656/tcp  # P2P (required for all nodes)
 
-For additional support and community discussions:
-- GitHub Issues: https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet/issues
-- Official Documentation: Check the repository's docs folder
+# Optional — only if you want to expose RPC/API publicly
+# sudo ufw allow 26657/tcp  # Cosmos RPC
+# sudo ufw allow 1317/tcp   # REST API
+# sudo ufw allow 9090/tcp   # gRPC
+# sudo ufw allow 8545/tcp   # EVM JSON-RPC
+# sudo ufw allow 8546/tcp   # EVM WebSocket
+
+sudo ufw enable
+```
 
 ---
 
-**Note**: This guide assumes a Linux environment. Adjust commands accordingly for other operating systems.
+## EVM Support
+
+STOC ships with Cosmos EVM v0.6.0. Node operators can enable Ethereum JSON-RPC endpoints by editing `~/.stoc/config/app.toml`:
+
+```toml
+[json-rpc]
+enable = true
+address = "0.0.0.0:8545"
+ws-address = "0.0.0.0:8546"
+api = "eth,net,web3,txpool,debug"
+```
+
+Restart the node (`sudo systemctl restart stocd`) to apply.
+
+### EVM Endpoints
+
+| Endpoint | Default Port |
+|----------|--------------|
+| JSON-RPC | `8545` |
+| WebSocket | `8546` |
+
+### MetaMask Configuration
+
+| Field | Value |
+|-------|-------|
+| Network Name | STOC Mainnet |
+| RPC URL | Your node JSON-RPC (`http://<host>:8545`) or public endpoint |
+| Chain ID | See project announcements for the canonical EVM chain ID |
+| Currency Symbol | STOC |
+| Decimals | 18 |
+
+> **Note**: Custom tokens created via the `x/stoc` module are Cosmos-only and are **not** accessible from the EVM. Only the native `ustoc`/`astoc` pair is bridged.
+
+---
+
+## Backup Important Files
+
+Always back up these files before any maintenance:
+
+```bash
+# Validator key (CRITICAL for validators)
+~/.stoc/config/priv_validator_key.json
+
+# Node key
+~/.stoc/config/node_key.json
+
+# Configuration
+~/.stoc/config/config.toml
+~/.stoc/config/app.toml
+```
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Peer connection issues | Re-fetch peers from addrbook API |
+| Genesis mismatch | Re-download genesis file |
+| Disk space full | Check `du -sh ~/.stoc/data` and consider pruning |
+| Node not syncing | Check firewall (port 26656), check peers, check logs |
+| Validator jailed | Wait for jail period, then run unjail command |
+| Out of memory | Increase RAM or add swap space |
+
+---
+
+## Support
+
+- **GitHub Issues**: https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet/issues
+- **Block Explorer**: https://stochainscan.io

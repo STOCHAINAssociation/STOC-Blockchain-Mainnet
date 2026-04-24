@@ -2,12 +2,185 @@ package types
 
 import (
 	"fmt"
+	"math/big"
+	"regexp"
+	"strings"
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+
+	evmutiltypes "stoc/x/evmutil/types"
 )
 
-// ValidateToken validates a token structure
+// TokenSymbolRegex validates token symbol: alphanumeric, starts with letter, max 32 chars.
+// Exported so it can be shared with ValidateBasic in msg_create_token.go.
+var TokenSymbolRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9]{0,31}$`)
+
+// MaxTokenSupply is the maximum allowed supply for a single token (10^30).
+// This prevents potential overflow/memory issues with extremely large supply values.
+var MaxTokenSupply = math.NewIntFromBigInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(30), nil))
+
+// MaxTaxPercent is the maximum tax percentage (50%)
+var MaxTaxPercent = math.LegacyNewDecWithPrec(5, 1) // 0.5 = 50%
+
+// MaxDistributions limits the number of distribution entries to prevent gas griefing
+const MaxDistributions = 20
+
+// blockedTaxRecipientModules lists module accounts that must never receive
+// token tax payments. Each of these accounts either rejects inbound transfers
+// or is controlled by chain-level logic unrelated to the issuing company, so
+// routing tax there would permanently brick transfers of the taxed token.
+//
+//   - distribution:          validator reward pool, credits through a separate code path
+//   - gov:                   governance deposit pool, returns deposits only on proposal resolution
+//   - bonded_tokens_pool:    staking bonded collateral, accepts only Delegate / Undelegate flows
+//   - not_bonded_tokens_pool: staking unbonding collateral, same restriction as bonded pool
+//   - stoc:                  this module's own account, reserved for CreateToken / Release / Burn bookkeeping
+var blockedTaxRecipientModules = []string{
+	"distribution",
+	"gov",
+	"bonded_tokens_pool",
+	"not_bonded_tokens_pool",
+	ModuleName,
+}
+
+// BlockedTaxRecipientModule reports whether the given account address matches
+// one of the module accounts forbidden from receiving token tax. On match it
+// returns the module name; otherwise it returns an empty string. The caller
+// should reject the token or transaction when match is true.
+func BlockedTaxRecipientModule(addr sdk.AccAddress) string {
+	for _, name := range blockedTaxRecipientModules {
+		if addr.Equals(sdk.AccAddress(authtypes.NewModuleAddress(name))) {
+			return name
+		}
+	}
+	return ""
+}
+
+// IsNativeDenom dynamically checks if a denom is a native chain denom.
+// Uses sdk.DefaultBondDenom and evmutil.GetEvmDenom() as single source of truth:
+// - Cosmos denom (e.g. "ustoc" or "utstoc")
+// - EVM denom (e.g. "astoc" or "atstoc") — from evmutil.GetEvmDenom()
+// - Display denom (e.g. "stoc" or "tstoc") — derived by trimming 'u' prefix
+func IsNativeDenom(denom string) bool {
+	d := strings.ToLower(denom)
+	cosmosDenom := strings.ToLower(sdk.DefaultBondDenom)
+	if d == cosmosDenom {
+		return true
+	}
+	// Use SafeGetEvmDenom to prevent consensus panic from misconfigured denom.
+	// If DefaultBondDenom is corrupted, treat as "not native" instead of halting chain.
+	evmDenomStr, err := evmutiltypes.SafeGetEvmDenom()
+	if err == nil && d == strings.ToLower(evmDenomStr) {
+		return true
+	}
+	// Display denom: trim 'u' prefix (e.g. "ustoc" -> "stoc")
+	if len(cosmosDenom) > 0 && cosmosDenom[0] == 'u' {
+		displayDenom := cosmosDenom[1:]
+		if d == displayDenom {
+			return true
+		}
+	}
+	return false
+}
+
+// safeIsNativeDenom wraps IsNativeDenom with panic recovery.
+// IsNativeDenom calls evmutil.GetEvmDenom() which panics if sdk.DefaultBondDenom
+// is not properly initialized (e.g., "stake" in tests instead of "ustoc").
+func safeIsNativeDenom(denom string) (isNative bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			isNative = false
+		}
+	}()
+	return IsNativeDenom(denom)
+}
+
+// ValidateState validates a token for state persistence (post-creation mutations like burn/mint).
+// Unlike Validate(), this skips creation-time invariants (e.g., TotalSupply >= InitialSupply)
+// that may not hold after legitimate operations like burns.
+func ValidateState(token Token) error {
+	if token.Name == "" {
+		return fmt.Errorf("token name cannot be empty")
+	}
+	if len(token.Name) > 64 {
+		return fmt.Errorf("token name too long (max 64 characters)")
+	}
+	if token.Symbol == "" {
+		return fmt.Errorf("token symbol cannot be empty")
+	}
+	if !TokenSymbolRegex.MatchString(token.Symbol) {
+		return fmt.Errorf("token symbol must be alphanumeric, start with a letter, and max 32 characters")
+	}
+	// Block native denom symbols to prevent confusion and genesis injection attacks.
+	// Use recover because IsNativeDenom calls GetEvmDenom() which can panic
+	// if sdk.DefaultBondDenom is not properly initialized (e.g., in tests).
+	if isNative := safeIsNativeDenom(token.Symbol); isNative {
+		return fmt.Errorf("token symbol %q conflicts with native chain denom", token.Symbol)
+	}
+	if token.Decimals > 18 {
+		return fmt.Errorf("decimals must be between 0 and 18")
+	}
+	if token.Logo == "" {
+		return fmt.Errorf("logo cannot be empty")
+	}
+	if len(token.Logo) > 256 {
+		return fmt.Errorf("logo too long (max 256 characters)")
+	}
+	// Validate logo URL scheme to prevent persisting malicious payloads (XSS/SSRF defense)
+	if !strings.HasPrefix(token.Logo, "https://") && !strings.HasPrefix(token.Logo, "ipfs://") {
+		return fmt.Errorf("logo must be a valid URL (https:// or ipfs://)")
+	}
+	if token.TotalSupply.IsNil() || token.TotalSupply.IsNegative() {
+		return fmt.Errorf("total supply cannot be nil or negative")
+	}
+	if token.TotalSupply.GT(MaxTokenSupply) {
+		return fmt.Errorf("total supply exceeds maximum allowed (%s)", MaxTokenSupply.String())
+	}
+	if !token.RemainingSupply.IsNil() && token.RemainingSupply.IsNegative() {
+		return fmt.Errorf("remaining supply cannot be negative")
+	}
+	if !token.RemainingSupply.IsNil() && token.RemainingSupply.GT(token.TotalSupply) {
+		return fmt.Errorf("remaining supply (%s) exceeds total supply (%s)", token.RemainingSupply.String(), token.TotalSupply.String())
+	}
+	if token.MinimalDenom == "" {
+		return fmt.Errorf("minimal denom cannot be empty")
+	}
+	// Require creator address — tokens without a creator become permanently orphaned
+	// (no one can mint/release). Reject at state validation to prevent genesis injection.
+	if token.Creator == "" {
+		return fmt.Errorf("creator address cannot be empty")
+	}
+	if _, err := sdk.AccAddressFromBech32(token.Creator); err != nil {
+		return fmt.Errorf("invalid creator address in state: %s", err)
+	}
+	// Validate tax fields — prevents genesis import of tokens with out-of-range tax or invalid recipient
+	if !token.Tax.Percent.IsNil() {
+		if token.Tax.Percent.IsNegative() || token.Tax.Percent.GT(MaxTaxPercent) {
+			return fmt.Errorf("tax percentage must be between 0 and %s (50%%)", MaxTaxPercent.String())
+		}
+		if token.Tax.Percent.GT(math.LegacyZeroDec()) {
+			if token.Tax.RecipientAddress == "" {
+				return fmt.Errorf("tax enabled but recipient address missing")
+			}
+			taxAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
+			if err != nil {
+				return fmt.Errorf("invalid tax recipient address in state: %s", err)
+			}
+			// Reject module accounts that would trap tax revenue and brick every
+			// subsequent taxable transfer. The same check runs at message
+			// validation for MsgCreateToken; repeating it here protects genesis
+			// import and any future direct state-write path from corrupt input.
+			if mod := BlockedTaxRecipientModule(taxAddr); mod != "" {
+				return fmt.Errorf("tax recipient cannot be module account %s (%s)", mod, token.Tax.RecipientAddress)
+			}
+		}
+	}
+	return nil
+}
+
+// Validate validates a token structure (for creation-time validation)
 func Validate(token Token) error {
 	if token.Name == "" {
 		return fmt.Errorf("token name cannot be empty")
@@ -16,6 +189,13 @@ func Validate(token Token) error {
 	if token.Symbol == "" {
 		return fmt.Errorf("token symbol cannot be empty")
 	}
+	if !TokenSymbolRegex.MatchString(token.Symbol) {
+		return fmt.Errorf("token symbol must be alphanumeric, start with a letter, and max 32 characters")
+	}
+	// Block native denom symbols to prevent confusion (mirrors ValidateState check)
+	if isNative := safeIsNativeDenom(token.Symbol); isNative {
+		return fmt.Errorf("token symbol %q conflicts with native chain denom", token.Symbol)
+	}
 
 	if token.Decimals > 18 {
 		return fmt.Errorf("decimals must be between 0 and 18")
@@ -23,6 +203,13 @@ func Validate(token Token) error {
 
 	if token.Logo == "" {
 		return fmt.Errorf("logo cannot be empty")
+	}
+	if len(token.Logo) > 256 {
+		return fmt.Errorf("logo too long (max 256 characters)")
+	}
+	// Validate logo URL scheme to prevent persisting malicious payloads (XSS/SSRF defense)
+	if !strings.HasPrefix(token.Logo, "https://") && !strings.HasPrefix(token.Logo, "ipfs://") {
+		return fmt.Errorf("logo must be a valid URL (https:// or ipfs://)")
 	}
 
 	if token.InitialSupply.IsNil() {
@@ -41,36 +228,74 @@ func Validate(token Token) error {
 		return fmt.Errorf("total supply cannot be negative")
 	}
 
+	// Upper bound check for supply values
+	if token.InitialSupply.GT(MaxTokenSupply) {
+		return fmt.Errorf("initial supply exceeds maximum allowed (%s)", MaxTokenSupply.String())
+	}
+	if token.TotalSupply.GT(MaxTokenSupply) {
+		return fmt.Errorf("total supply exceeds maximum allowed (%s)", MaxTokenSupply.String())
+	}
+
 	if !token.TotalSupply.IsNil() && !token.InitialSupply.IsNil() && token.TotalSupply.LT(token.InitialSupply) {
 		return fmt.Errorf("total supply cannot be less than initial supply")
 	}
 
-	// Validate distributions
-	totalPercent := uint32(0)
-	for _, dist := range token.Distributions {
-		if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
-			return fmt.Errorf("invalid address in distribution: %s", err)
+	// Reject dead tokens: zero total supply with no minting capability
+	if !token.Unlimited && !token.TotalSupply.IsNil() && token.TotalSupply.IsZero() {
+		return fmt.Errorf("total supply cannot be zero for non-unlimited tokens")
+	}
+
+	if token.MinimalDenom == "" {
+		return fmt.Errorf("minimal denom cannot be empty")
+	}
+
+	// Validate creator address
+	if token.Creator != "" {
+		if _, err := sdk.AccAddressFromBech32(token.Creator); err != nil {
+			return fmt.Errorf("invalid creator address: %s", err)
+		}
+	}
+
+	// Validate distributions (only when present — empty is valid for genesis/migration)
+	if len(token.Distributions) > MaxDistributions {
+		return fmt.Errorf("too many distributions (%d > max %d)", len(token.Distributions), MaxDistributions)
+	}
+	if len(token.Distributions) > 0 {
+		totalPercent := uint32(0)
+		for _, dist := range token.Distributions {
+			if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
+				return fmt.Errorf("invalid address in distribution: %s", err)
+			}
+
+			if dist.Percent == 0 || dist.Percent > 100 {
+				return fmt.Errorf("distribution percentage must be between 1 and 100")
+			}
+
+			// Overflow check before addition
+			if totalPercent > 100-dist.Percent {
+				return fmt.Errorf("distribution percentages overflow (sum exceeds 100)")
+			}
+			totalPercent += dist.Percent
 		}
 
-		if dist.Percent > 100 {
-			return fmt.Errorf("distribution percentage must be between 0 and 100")
+		if totalPercent != 100 {
+			return fmt.Errorf("distribution percentages must sum to 100, got %d", totalPercent)
+		}
+	}
+
+	// Validate tax — nil check prevents panic on uninitialized Tax.Percent
+	if !token.Tax.Percent.IsNil() {
+		if token.Tax.Percent.IsNegative() || token.Tax.Percent.GT(MaxTaxPercent) {
+			return fmt.Errorf("tax percentage must be between 0 and %s (50%%)", MaxTaxPercent.String())
 		}
 
-		totalPercent += dist.Percent
-	}
-
-	if totalPercent != 100 {
-		return fmt.Errorf("distribution percentages must sum to 100, got %d", totalPercent)
-	}
-
-	// Validate tax
-	if token.Tax.Percent.IsNegative() || token.Tax.Percent.GT(math.LegacyOneDec()) {
-		return fmt.Errorf("tax percentage must be between 0 and 1")
-	}
-
-	if token.Tax.Percent.GT(math.LegacyZeroDec()) {
-		if _, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress); err != nil {
-			return fmt.Errorf("invalid tax recipient address: %s", err)
+		if token.Tax.Percent.GT(math.LegacyZeroDec()) {
+			if token.Tax.RecipientAddress == "" {
+				return fmt.Errorf("tax enabled but recipient address missing")
+			}
+			if _, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress); err != nil {
+				return fmt.Errorf("invalid tax recipient address: %s", err)
+			}
 		}
 	}
 

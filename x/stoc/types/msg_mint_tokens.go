@@ -31,9 +31,16 @@ func (m *MsgMintTokens) ValidateBasic() error {
 	if m.Symbol == "" {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol cannot be empty")
 	}
+	// Symbol is actually a minimalDenom (e.g., "SYMBOL_0"), validate it as a denom
+	if err = sdk.ValidateDenom(m.Symbol); err != nil {
+		return errorsmod.Wrapf(ErrInvalidTokenSymbol, "invalid symbol/denom format: %v", err)
+	}
 
 	if m.Amount.IsNil() || m.Amount.IsZero() || m.Amount.IsNegative() {
 		return errorsmod.Wrap(ErrInvalidAmount, "mint amount must be positive")
+	}
+	if m.Amount.GT(MaxTokenSupply) {
+		return errorsmod.Wrapf(ErrInvalidAmount, "mint amount exceeds maximum allowed (%s)", MaxTokenSupply.String())
 	}
 
 	return nil

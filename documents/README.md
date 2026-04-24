@@ -6,10 +6,10 @@ Welcome to the comprehensive documentation for STOC Blockchain. This repository 
 
 ### 🔗 Chain Setup and Operation
 - **[Chain Setup Guide](./chain/readme.md)** - Complete guide for setting up and running a STOC blockchain node
-  - Node initialization and configuration
-  - Snapshot and genesis setup
-  - Peer configuration
-  - Sync process
+  - Fullnode setup (10k blocks via snapshot — recommended)
+  - Full archive node (ALL blocks from genesis)
+  - Become a validator
+  - systemd service, firewall, monitoring
 
 ### 🛠️ Development Resources
 - **[Development Guide](./development/readme.md)** - Comprehensive development documentation
@@ -25,6 +25,9 @@ STOC Blockchain is a high-performance blockchain built using the Cosmos SDK and 
 
 - **Fast Transactions**: Sub-second finality
 - **Low Fees**: Minimum gas price of 0.001ustoc
+- **EVM Compatibility**: Full Ethereum Virtual Machine support via Cosmos EVM v0.6.0 — deploy Solidity contracts, connect MetaMask, use Web3.js / ethers.js
+- **Dual Denomination**: `ustoc` (6 decimals, Cosmos) ↔ `astoc` (18 decimals, EVM) with automatic conversion
+- **Custom Token System**: Create fungible tokens with configurable tax via `x/stoc` module
 - **Interoperability**: IBC-enabled for cross-chain communication
 - **Developer Friendly**: Comprehensive tooling and documentation
 - **Secure**: Built on proven Tendermint consensus
@@ -49,6 +52,8 @@ STOC Blockchain is a high-performance blockchain built using the Cosmos SDK and 
 
 ### Mainnet
 - **Chain ID**: `stoc`
+- **Native Denom**: `ustoc` (6 decimals)
+- **EVM Denom**: `astoc` (18 decimals)
 - **Minimum Gas Price**: `0.001ustoc`
 - **REST API**: `https://api-stoc-mainnet.stochainscan.io`
 - **RPC**: `https://rpc-stoc-mainnet.stochainscan.io/`
@@ -59,6 +64,8 @@ STOC Blockchain is a high-performance blockchain built using the Cosmos SDK and 
 - **Local REST API**: `http://localhost:1317`
 - **Local RPC**: `http://localhost:26657`
 - **Local gRPC**: `http://localhost:9090`
+- **Local EVM JSON-RPC**: `http://localhost:8545`
+- **Local EVM WebSocket**: `http://localhost:8546`
 
 ## 📋 Prerequisites
 

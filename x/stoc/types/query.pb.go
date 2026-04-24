@@ -6,6 +6,7 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	_ "github.com/cosmos/cosmos-sdk/types"
 	query "github.com/cosmos/cosmos-sdk/types/query"
 	_ "github.com/cosmos/cosmos-sdk/types/tx/amino"
 	_ "github.com/cosmos/gogoproto/gogoproto"
@@ -391,6 +392,173 @@ func (m *QueryTokensBySymbolResponse) GetTokens() []Token {
 	return nil
 }
 
+// BalanceWithMetadata represents a balance with its token metadata
+type BalanceWithMetadata struct {
+	Denom    string `protobuf:"bytes,1,opt,name=denom,proto3" json:"denom,omitempty"`
+	Amount   string `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	Metadata *Token `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+}
+
+func (m *BalanceWithMetadata) Reset()         { *m = BalanceWithMetadata{} }
+func (m *BalanceWithMetadata) String() string { return proto.CompactTextString(m) }
+func (*BalanceWithMetadata) ProtoMessage()    {}
+func (*BalanceWithMetadata) Descriptor() ([]byte, []int) {
+	return fileDescriptor_51b91da1db22168c, []int{8}
+}
+func (m *BalanceWithMetadata) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *BalanceWithMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_BalanceWithMetadata.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *BalanceWithMetadata) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BalanceWithMetadata.Merge(m, src)
+}
+func (m *BalanceWithMetadata) XXX_Size() int {
+	return m.Size()
+}
+func (m *BalanceWithMetadata) XXX_DiscardUnknown() {
+	xxx_messageInfo_BalanceWithMetadata.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_BalanceWithMetadata proto.InternalMessageInfo
+
+func (m *BalanceWithMetadata) GetDenom() string {
+	if m != nil {
+		return m.Denom
+	}
+	return ""
+}
+
+func (m *BalanceWithMetadata) GetAmount() string {
+	if m != nil {
+		return m.Amount
+	}
+	return ""
+}
+
+func (m *BalanceWithMetadata) GetMetadata() *Token {
+	if m != nil {
+		return m.Metadata
+	}
+	return nil
+}
+
+// QueryBalancesWithMetadataRequest is the request type for the Query/BalancesWithMetadata RPC method
+type QueryBalancesWithMetadataRequest struct {
+	Address    string             `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	Pagination *query.PageRequest `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
+}
+
+func (m *QueryBalancesWithMetadataRequest) Reset()         { *m = QueryBalancesWithMetadataRequest{} }
+func (m *QueryBalancesWithMetadataRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryBalancesWithMetadataRequest) ProtoMessage()    {}
+func (*QueryBalancesWithMetadataRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_51b91da1db22168c, []int{9}
+}
+func (m *QueryBalancesWithMetadataRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryBalancesWithMetadataRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryBalancesWithMetadataRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryBalancesWithMetadataRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryBalancesWithMetadataRequest.Merge(m, src)
+}
+func (m *QueryBalancesWithMetadataRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryBalancesWithMetadataRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryBalancesWithMetadataRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryBalancesWithMetadataRequest proto.InternalMessageInfo
+
+func (m *QueryBalancesWithMetadataRequest) GetAddress() string {
+	if m != nil {
+		return m.Address
+	}
+	return ""
+}
+
+func (m *QueryBalancesWithMetadataRequest) GetPagination() *query.PageRequest {
+	if m != nil {
+		return m.Pagination
+	}
+	return nil
+}
+
+// QueryBalancesWithMetadataResponse is the response type for the Query/BalancesWithMetadata RPC method
+type QueryBalancesWithMetadataResponse struct {
+	Balances   []BalanceWithMetadata `protobuf:"bytes,1,rep,name=balances,proto3" json:"balances"`
+	Pagination *query.PageResponse   `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
+}
+
+func (m *QueryBalancesWithMetadataResponse) Reset()         { *m = QueryBalancesWithMetadataResponse{} }
+func (m *QueryBalancesWithMetadataResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryBalancesWithMetadataResponse) ProtoMessage()    {}
+func (*QueryBalancesWithMetadataResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_51b91da1db22168c, []int{10}
+}
+func (m *QueryBalancesWithMetadataResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryBalancesWithMetadataResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryBalancesWithMetadataResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryBalancesWithMetadataResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryBalancesWithMetadataResponse.Merge(m, src)
+}
+func (m *QueryBalancesWithMetadataResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryBalancesWithMetadataResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryBalancesWithMetadataResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryBalancesWithMetadataResponse proto.InternalMessageInfo
+
+func (m *QueryBalancesWithMetadataResponse) GetBalances() []BalanceWithMetadata {
+	if m != nil {
+		return m.Balances
+	}
+	return nil
+}
+
+func (m *QueryBalancesWithMetadataResponse) GetPagination() *query.PageResponse {
+	if m != nil {
+		return m.Pagination
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*QueryParamsRequest)(nil), "stoc.stoc.QueryParamsRequest")
 	proto.RegisterType((*QueryParamsResponse)(nil), "stoc.stoc.QueryParamsResponse")
@@ -400,47 +568,60 @@ func init() {
 	proto.RegisterType((*QueryTokensResponse)(nil), "stoc.stoc.QueryTokensResponse")
 	proto.RegisterType((*QueryTokensBySymbolRequest)(nil), "stoc.stoc.QueryTokensBySymbolRequest")
 	proto.RegisterType((*QueryTokensBySymbolResponse)(nil), "stoc.stoc.QueryTokensBySymbolResponse")
+	proto.RegisterType((*BalanceWithMetadata)(nil), "stoc.stoc.BalanceWithMetadata")
+	proto.RegisterType((*QueryBalancesWithMetadataRequest)(nil), "stoc.stoc.QueryBalancesWithMetadataRequest")
+	proto.RegisterType((*QueryBalancesWithMetadataResponse)(nil), "stoc.stoc.QueryBalancesWithMetadataResponse")
 }
 
 func init() { proto.RegisterFile("stoc/stoc/query.proto", fileDescriptor_51b91da1db22168c) }
 
 var fileDescriptor_51b91da1db22168c = []byte{
-	// 553 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x54, 0xcf, 0x6b, 0xd4, 0x40,
-	0x14, 0xde, 0xb4, 0x36, 0xb0, 0xe3, 0x0f, 0xcc, 0xb4, 0x16, 0x8d, 0x6d, 0xd4, 0x54, 0x57, 0xad,
-	0x25, 0x43, 0x6b, 0x0f, 0x9e, 0x83, 0xe8, 0x41, 0x84, 0x1a, 0x3d, 0x89, 0xb0, 0x4c, 0xea, 0x10,
-	0x82, 0x9b, 0x4c, 0xba, 0x93, 0x8a, 0xa1, 0xf4, 0xe2, 0x5d, 0x11, 0xfc, 0x27, 0x3c, 0xfa, 0x67,
-	0xf4, 0xb8, 0xe0, 0xc5, 0x93, 0xc8, 0xae, 0xe0, 0xbf, 0x21, 0xf3, 0xe6, 0xad, 0x4d, 0xb6, 0xbb,
-	0x16, 0xbc, 0xcc, 0xce, 0xbe, 0xf7, 0xbd, 0xef, 0xfb, 0xde, 0x9b, 0xb7, 0x4b, 0x2e, 0xa9, 0x52,
-	0xee, 0x32, 0x38, 0xf6, 0xf6, 0x45, 0xbf, 0x0a, 0x8a, 0xbe, 0x2c, 0x25, 0x6d, 0xeb, 0x48, 0xa0,
-	0x0f, 0xd7, 0xe1, 0x59, 0x9a, 0x4b, 0x06, 0xa7, 0xc9, 0xba, 0x4b, 0x89, 0x4c, 0x24, 0x5c, 0x99,
-	0xbe, 0x61, 0x74, 0x25, 0x91, 0x32, 0xe9, 0x09, 0xc6, 0x8b, 0x94, 0xf1, 0x3c, 0x97, 0x25, 0x2f,
-	0x53, 0x99, 0x2b, 0xcc, 0xae, 0xef, 0x4a, 0x95, 0x49, 0xc5, 0x62, 0xae, 0x84, 0x91, 0x62, 0x6f,
-	0x37, 0x63, 0x51, 0xf2, 0x4d, 0x56, 0xf0, 0x24, 0xcd, 0x01, 0x8c, 0xd8, 0xe5, 0x63, 0x53, 0x05,
-	0xef, 0xf3, 0x6c, 0xcc, 0x51, 0x33, 0x5b, 0xca, 0x37, 0x02, 0xe1, 0xfe, 0x12, 0xa1, 0xcf, 0x34,
-	0xe1, 0x0e, 0x60, 0x23, 0xb1, 0xb7, 0x2f, 0x54, 0xe9, 0x3f, 0x21, 0x8b, 0x8d, 0xa8, 0x2a, 0x64,
-	0xae, 0x04, 0xdd, 0x26, 0xb6, 0xe1, 0xbc, 0x6c, 0x5d, 0xb7, 0xee, 0x9c, 0xdd, 0x72, 0x82, 0xbf,
-	0xad, 0x06, 0x06, 0x1a, 0xb6, 0x8f, 0x7e, 0x5c, 0x6b, 0x7d, 0xf9, 0xfd, 0x75, 0xdd, 0x8a, 0x10,
-	0xeb, 0x3f, 0x20, 0x0e, 0x90, 0xbd, 0xd0, 0xb2, 0xa8, 0x40, 0xd7, 0xc8, 0xf9, 0x2c, 0xcd, 0xd3,
-	0x8c, 0xf7, 0xba, 0xaf, 0x45, 0x2e, 0x33, 0x60, 0x6c, 0x47, 0xe7, 0x30, 0xf8, 0x50, 0xc7, 0xfc,
-	0x10, 0xcd, 0x61, 0x25, 0xba, 0xd8, 0x20, 0x0b, 0xd0, 0x01, 0x9a, 0xb8, 0x58, 0x33, 0x01, 0xc0,
-	0xf0, 0x8c, 0xf6, 0x10, 0x19, 0x90, 0xff, 0xaa, 0xce, 0x31, 0x6e, 0x90, 0x3e, 0x22, 0xe4, 0x78,
-	0x72, 0x48, 0xd4, 0x09, 0xcc, 0x98, 0x03, 0x3d, 0xe6, 0xc0, 0xbc, 0x28, 0x8e, 0x39, 0xd8, 0xe1,
-	0x89, 0xc0, 0xda, 0xa8, 0x56, 0xe9, 0x7f, 0xb4, 0x70, 0x52, 0x63, 0x7a, 0xf4, 0x18, 0x10, 0x1b,
-	0xe4, 0xf5, 0xa4, 0xe6, 0xff, 0x61, 0x12, 0x51, 0xf4, 0x71, 0xc3, 0xcf, 0x1c, 0xf8, 0xb9, 0x7d,
-	0xaa, 0x1f, 0x23, 0xd6, 0x30, 0xb4, 0x4d, 0xdc, 0x9a, 0x9f, 0xb0, 0x7a, 0x5e, 0x65, 0xb1, 0xec,
-	0x8d, 0xdb, 0x5e, 0x26, 0xb6, 0x82, 0x00, 0x8e, 0x1b, 0xbf, 0xf9, 0x4f, 0xc9, 0xd5, 0xa9, 0x55,
-	0xff, 0xd7, 0xcd, 0xd6, 0x60, 0x9e, 0x2c, 0x00, 0x1f, 0x8d, 0x89, 0x6d, 0x16, 0x83, 0xae, 0xd6,
-	0x6a, 0x4e, 0x6e, 0x9c, 0xeb, 0xcd, 0x4a, 0x1b, 0x0b, 0xfe, 0x95, 0xf7, 0xdf, 0x7e, 0x7d, 0x9e,
-	0x5b, 0xa4, 0x0e, 0x9b, 0xdc, 0x6f, 0x2a, 0xc9, 0x02, 0x98, 0xa0, 0x2b, 0x93, 0x1c, 0xf5, 0x8d,
-	0x73, 0x57, 0x67, 0x64, 0x51, 0xe0, 0x2e, 0x08, 0xac, 0xd1, 0x1b, 0x6c, 0xe2, 0x87, 0xa2, 0xd8,
-	0x41, 0x63, 0x53, 0x0f, 0x75, 0x53, 0x66, 0x50, 0x74, 0x3a, 0xe7, 0xec, 0xa6, 0x9a, 0x5b, 0x32,
-	0xb5, 0x29, 0x5c, 0x88, 0x0f, 0x16, 0xb9, 0xd0, 0x7c, 0x0d, 0x7a, 0x6b, 0x3a, 0xdb, 0xc4, 0x1b,
-	0xbb, 0x9d, 0xd3, 0x60, 0x28, 0xbe, 0x01, 0xe2, 0x1d, 0x7a, 0xf3, 0x84, 0x78, 0x37, 0xae, 0xba,
-	0x66, 0x31, 0xd8, 0x81, 0xf9, 0x3c, 0x0c, 0xef, 0x1d, 0x0d, 0x3d, 0x6b, 0x30, 0xf4, 0xac, 0x9f,
-	0x43, 0xcf, 0xfa, 0x34, 0xf2, 0x5a, 0x83, 0x91, 0xd7, 0xfa, 0x3e, 0xf2, 0x5a, 0x2f, 0x1d, 0xa8,
-	0x7c, 0x87, 0x04, 0x55, 0x21, 0x54, 0x6c, 0xc3, 0x7f, 0xcb, 0xfd, 0x3f, 0x01, 0x00, 0x00, 0xff,
-	0xff, 0xee, 0xac, 0x2c, 0x6a, 0x21, 0x05, 0x00, 0x00,
+	// 712 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x55, 0xcf, 0x4f, 0x13, 0x41,
+	0x14, 0xee, 0x02, 0xad, 0xf4, 0xf9, 0x23, 0x76, 0xa8, 0x04, 0x57, 0x58, 0x60, 0x11, 0x54, 0x68,
+	0x76, 0x02, 0x72, 0xf0, 0x68, 0x1a, 0xa3, 0x07, 0x43, 0x82, 0xab, 0x89, 0x89, 0x31, 0x21, 0xb3,
+	0xed, 0xa4, 0x6e, 0xec, 0xee, 0x94, 0xce, 0x62, 0x6c, 0x08, 0x17, 0xe3, 0x55, 0x63, 0xe2, 0xc5,
+	0x3f, 0xc1, 0x93, 0xf1, 0xcf, 0xe0, 0x48, 0xe2, 0xc5, 0x93, 0x31, 0x60, 0xe2, 0xc1, 0x7f, 0xc2,
+	0xec, 0xcc, 0x5b, 0xd8, 0x2e, 0x4b, 0x31, 0xc4, 0xcb, 0x74, 0x67, 0xe6, 0x7b, 0xef, 0xfb, 0xbe,
+	0x37, 0xf3, 0xa6, 0x70, 0x45, 0x46, 0xa2, 0x41, 0xd5, 0xb0, 0xb9, 0xc5, 0xbb, 0x3d, 0xa7, 0xd3,
+	0x15, 0x91, 0x20, 0xe5, 0x78, 0xc5, 0x89, 0x07, 0xb3, 0xc2, 0x02, 0x3f, 0x14, 0x54, 0x8d, 0x7a,
+	0xd7, 0xac, 0xb6, 0x44, 0x4b, 0xa8, 0x4f, 0x1a, 0x7f, 0xe1, 0xea, 0x64, 0x4b, 0x88, 0x56, 0x9b,
+	0x53, 0xd6, 0xf1, 0x29, 0x0b, 0x43, 0x11, 0xb1, 0xc8, 0x17, 0xa1, 0xc4, 0xdd, 0xc5, 0x86, 0x90,
+	0x81, 0x90, 0xd4, 0x63, 0x92, 0x6b, 0x2a, 0xfa, 0x6a, 0xd9, 0xe3, 0x11, 0x5b, 0xa6, 0x1d, 0xd6,
+	0xf2, 0x43, 0x05, 0x46, 0xac, 0x95, 0xc6, 0x26, 0xa8, 0x86, 0xf0, 0x93, 0xfd, 0xf1, 0x23, 0xd1,
+	0x1d, 0xd6, 0x65, 0x41, 0xc2, 0x91, 0x32, 0x13, 0x89, 0x97, 0x1c, 0xe1, 0x76, 0x15, 0xc8, 0xa3,
+	0x98, 0x70, 0x5d, 0x61, 0x5d, 0xbe, 0xb9, 0xc5, 0x65, 0x64, 0x3f, 0x84, 0xb1, 0xbe, 0x55, 0xd9,
+	0x11, 0xa1, 0xe4, 0x64, 0x15, 0x4a, 0x3a, 0xe7, 0x84, 0x31, 0x63, 0xdc, 0x3c, 0xbf, 0x52, 0x71,
+	0x0e, 0x4b, 0xe1, 0x68, 0x68, 0xbd, 0xbc, 0xfb, 0x63, 0xba, 0xf0, 0xf9, 0xf7, 0xd7, 0x45, 0xc3,
+	0x45, 0xac, 0x7d, 0x07, 0x2a, 0x2a, 0xd9, 0x93, 0x98, 0x16, 0x19, 0xc8, 0x1c, 0x5c, 0x0c, 0xfc,
+	0xd0, 0x0f, 0x58, 0x7b, 0xa3, 0xc9, 0x43, 0x11, 0xa8, 0x8c, 0x65, 0xf7, 0x02, 0x2e, 0xde, 0x8b,
+	0xd7, 0xec, 0x3a, 0x8a, 0xc3, 0x48, 0x54, 0x51, 0x83, 0xa2, 0x72, 0x80, 0x22, 0x2e, 0xa7, 0x44,
+	0x28, 0x60, 0x7d, 0x24, 0xd6, 0xe0, 0x6a, 0x90, 0xfd, 0x3c, 0x9d, 0x23, 0x31, 0x48, 0xee, 0x03,
+	0x1c, 0x55, 0x16, 0x13, 0x2d, 0x38, 0xba, 0xb4, 0x4e, 0x5c, 0x5a, 0x47, 0x9f, 0x38, 0x16, 0xd8,
+	0x59, 0x67, 0x2d, 0x8e, 0xb1, 0x6e, 0x2a, 0xd2, 0x7e, 0x6f, 0x60, 0xa5, 0x92, 0xf4, 0xa8, 0xd1,
+	0x81, 0x92, 0xa2, 0x8f, 0x2b, 0x35, 0x3c, 0x40, 0x24, 0xa2, 0xc8, 0x83, 0x3e, 0x3d, 0x43, 0x4a,
+	0xcf, 0x8d, 0x53, 0xf5, 0x68, 0xb2, 0x3e, 0x41, 0xab, 0x60, 0xa6, 0xf4, 0xd4, 0x7b, 0x8f, 0x7b,
+	0x81, 0x27, 0xda, 0x89, 0xed, 0x71, 0x28, 0x49, 0xb5, 0x80, 0xe5, 0xc6, 0x99, 0xbd, 0x06, 0xd7,
+	0x72, 0xa3, 0xce, 0xe6, 0xc6, 0xde, 0x84, 0xb1, 0x3a, 0x6b, 0xb3, 0xb0, 0xc1, 0x9f, 0xfa, 0xd1,
+	0x8b, 0x35, 0x1e, 0xb1, 0x26, 0x8b, 0x18, 0xa9, 0x42, 0x31, 0x7d, 0xd6, 0x7a, 0x12, 0x6b, 0x62,
+	0x81, 0xd8, 0x0a, 0x23, 0x65, 0xbb, 0xec, 0xe2, 0x8c, 0xd4, 0x60, 0x34, 0xc0, 0xc8, 0x89, 0xe1,
+	0xfc, 0x93, 0x76, 0x0f, 0x11, 0xf6, 0x5b, 0x03, 0x66, 0x94, 0x05, 0x24, 0x96, 0x69, 0xe6, 0xc4,
+	0xfe, 0x04, 0x9c, 0x63, 0xcd, 0x66, 0x97, 0x4b, 0x89, 0x12, 0x92, 0x69, 0xe6, 0x3e, 0x0c, 0x9d,
+	0xf9, 0x3e, 0x7c, 0x31, 0x60, 0x76, 0x80, 0x0c, 0xac, 0xe7, 0x5d, 0x18, 0xf5, 0x70, 0x1f, 0x2b,
+	0x6a, 0xa5, 0xac, 0xe5, 0x94, 0x0e, 0xeb, 0x7b, 0x18, 0xf5, 0xdf, 0xee, 0xcb, 0xca, 0x9f, 0x11,
+	0x28, 0x2a, 0xc1, 0xc4, 0x83, 0x92, 0xee, 0x61, 0x32, 0x95, 0x12, 0x73, 0xfc, 0x71, 0x30, 0xad,
+	0x93, 0xb6, 0x75, 0x7a, 0xfb, 0xea, 0x9b, 0x6f, 0xbf, 0x3e, 0x0e, 0x8d, 0x91, 0x0a, 0xcd, 0x3e,
+	0x45, 0x44, 0x40, 0x51, 0x1d, 0x1c, 0x99, 0xcc, 0xe6, 0x48, 0x3f, 0x0e, 0xe6, 0xd4, 0x09, 0xbb,
+	0x48, 0x70, 0x4b, 0x11, 0xcc, 0x91, 0x59, 0x9a, 0x79, 0xd3, 0x24, 0xdd, 0xee, 0x7b, 0x54, 0x76,
+	0x62, 0x53, 0xfa, 0x4e, 0x93, 0xfc, 0x9c, 0x27, 0x9b, 0xea, 0x6f, 0xe8, 0x5c, 0x53, 0xd8, 0xbb,
+	0xef, 0x0c, 0xb8, 0xd4, 0xdf, 0x38, 0x64, 0x3e, 0x3f, 0x5b, 0xa6, 0x1d, 0xcd, 0x85, 0xd3, 0x60,
+	0x48, 0x5e, 0x53, 0xe4, 0x0b, 0xe4, 0xfa, 0x31, 0xf2, 0x0d, 0xaf, 0xb7, 0xa1, 0x7b, 0x98, 0x6e,
+	0xeb, 0xdf, 0x1d, 0xf2, 0xc9, 0x80, 0x6a, 0xde, 0xf5, 0x23, 0x4b, 0x59, 0xba, 0x01, 0xbd, 0x62,
+	0xd6, 0xfe, 0x0d, 0x8c, 0x0a, 0xe7, 0x95, 0xc2, 0x69, 0x32, 0x95, 0x52, 0x98, 0x5c, 0x56, 0xba,
+	0x8d, 0x5d, 0xb6, 0x53, 0x5f, 0xda, 0xdd, 0xb7, 0x8c, 0xbd, 0x7d, 0xcb, 0xf8, 0xb9, 0x6f, 0x19,
+	0x1f, 0x0e, 0xac, 0xc2, 0xde, 0x81, 0x55, 0xf8, 0x7e, 0x60, 0x15, 0x9e, 0x55, 0x54, 0xc8, 0x6b,
+	0xf4, 0xd6, 0xeb, 0x70, 0xe9, 0x95, 0xd4, 0x3f, 0xd4, 0xed, 0xbf, 0x01, 0x00, 0x00, 0xff, 0xff,
+	0x57, 0x19, 0x83, 0x70, 0x87, 0x07, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -463,6 +644,8 @@ type QueryClient interface {
 	Tokens(ctx context.Context, in *QueryTokensRequest, opts ...grpc.CallOption) (*QueryTokensResponse, error)
 	// TokensBySymbol returns tokens with a specific symbol
 	TokensBySymbol(ctx context.Context, in *QueryTokensBySymbolRequest, opts ...grpc.CallOption) (*QueryTokensBySymbolResponse, error)
+	// BalancesWithMetadata returns balances with token metadata for an address
+	BalancesWithMetadata(ctx context.Context, in *QueryBalancesWithMetadataRequest, opts ...grpc.CallOption) (*QueryBalancesWithMetadataResponse, error)
 }
 
 type queryClient struct {
@@ -509,6 +692,15 @@ func (c *queryClient) TokensBySymbol(ctx context.Context, in *QueryTokensBySymbo
 	return out, nil
 }
 
+func (c *queryClient) BalancesWithMetadata(ctx context.Context, in *QueryBalancesWithMetadataRequest, opts ...grpc.CallOption) (*QueryBalancesWithMetadataResponse, error) {
+	out := new(QueryBalancesWithMetadataResponse)
+	err := c.cc.Invoke(ctx, "/stoc.stoc.Query/BalancesWithMetadata", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 type QueryServer interface {
 	// Parameters queries the parameters of the module.
@@ -519,6 +711,8 @@ type QueryServer interface {
 	Tokens(context.Context, *QueryTokensRequest) (*QueryTokensResponse, error)
 	// TokensBySymbol returns tokens with a specific symbol
 	TokensBySymbol(context.Context, *QueryTokensBySymbolRequest) (*QueryTokensBySymbolResponse, error)
+	// BalancesWithMetadata returns balances with token metadata for an address
+	BalancesWithMetadata(context.Context, *QueryBalancesWithMetadataRequest) (*QueryBalancesWithMetadataResponse, error)
 }
 
 // UnimplementedQueryServer can be embedded to have forward compatible implementations.
@@ -536,6 +730,9 @@ func (*UnimplementedQueryServer) Tokens(ctx context.Context, req *QueryTokensReq
 }
 func (*UnimplementedQueryServer) TokensBySymbol(ctx context.Context, req *QueryTokensBySymbolRequest) (*QueryTokensBySymbolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TokensBySymbol not implemented")
+}
+func (*UnimplementedQueryServer) BalancesWithMetadata(ctx context.Context, req *QueryBalancesWithMetadataRequest) (*QueryBalancesWithMetadataResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BalancesWithMetadata not implemented")
 }
 
 func RegisterQueryServer(s grpc1.Server, srv QueryServer) {
@@ -614,6 +811,24 @@ func _Query_TokensBySymbol_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_BalancesWithMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryBalancesWithMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).BalancesWithMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/stoc.stoc.Query/BalancesWithMetadata",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).BalancesWithMetadata(ctx, req.(*QueryBalancesWithMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var Query_serviceDesc = _Query_serviceDesc
 var _Query_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "stoc.stoc.Query",
@@ -634,6 +849,10 @@ var _Query_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TokensBySymbol",
 			Handler:    _Query_TokensBySymbol_Handler,
+		},
+		{
+			MethodName: "BalancesWithMetadata",
+			Handler:    _Query_BalancesWithMetadata_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -910,6 +1129,146 @@ func (m *QueryTokensBySymbolResponse) MarshalToSizedBuffer(dAtA []byte) (int, er
 	return len(dAtA) - i, nil
 }
 
+func (m *BalanceWithMetadata) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *BalanceWithMetadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *BalanceWithMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Metadata != nil {
+		{
+			size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQuery(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.Amount) > 0 {
+		i -= len(m.Amount)
+		copy(dAtA[i:], m.Amount)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Amount)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Denom) > 0 {
+		i -= len(m.Denom)
+		copy(dAtA[i:], m.Denom)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Denom)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryBalancesWithMetadataRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryBalancesWithMetadataRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryBalancesWithMetadataRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Pagination != nil {
+		{
+			size, err := m.Pagination.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQuery(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Address) > 0 {
+		i -= len(m.Address)
+		copy(dAtA[i:], m.Address)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Address)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryBalancesWithMetadataResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryBalancesWithMetadataResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryBalancesWithMetadataResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Pagination != nil {
+		{
+			size, err := m.Pagination.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQuery(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Balances) > 0 {
+		for iNdEx := len(m.Balances) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Balances[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQuery(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintQuery(dAtA []byte, offset int, v uint64) int {
 	offset -= sovQuery(v)
 	base := offset
@@ -1021,6 +1380,63 @@ func (m *QueryTokensBySymbolResponse) Size() (n int) {
 			l = e.Size()
 			n += 1 + l + sovQuery(uint64(l))
 		}
+	}
+	return n
+}
+
+func (m *BalanceWithMetadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Denom)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	l = len(m.Amount)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	if m.Metadata != nil {
+		l = m.Metadata.Size()
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryBalancesWithMetadataRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Address)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	if m.Pagination != nil {
+		l = m.Pagination.Size()
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryBalancesWithMetadataResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Balances) > 0 {
+		for _, e := range m.Balances {
+			l = e.Size()
+			n += 1 + l + sovQuery(uint64(l))
+		}
+	}
+	if m.Pagination != nil {
+		l = m.Pagination.Size()
+		n += 1 + l + sovQuery(uint64(l))
 	}
 	return n
 }
@@ -1677,6 +2093,394 @@ func (m *QueryTokensBySymbolResponse) Unmarshal(dAtA []byte) error {
 			}
 			m.Tokens = append(m.Tokens, Token{})
 			if err := m.Tokens[len(m.Tokens)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *BalanceWithMetadata) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: BalanceWithMetadata: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: BalanceWithMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Denom", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Denom = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Amount", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Amount = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Metadata == nil {
+				m.Metadata = &Token{}
+			}
+			if err := m.Metadata.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryBalancesWithMetadataRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryBalancesWithMetadataRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryBalancesWithMetadataRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Address", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Address = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Pagination", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Pagination == nil {
+				m.Pagination = &query.PageRequest{}
+			}
+			if err := m.Pagination.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryBalancesWithMetadataResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryBalancesWithMetadataResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryBalancesWithMetadataResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Balances", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Balances = append(m.Balances, BalanceWithMetadata{})
+			if err := m.Balances[len(m.Balances)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Pagination", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Pagination == nil {
+				m.Pagination = &query.PageResponse{}
+			}
+			if err := m.Pagination.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
