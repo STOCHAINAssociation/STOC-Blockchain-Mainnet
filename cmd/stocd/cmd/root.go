@@ -17,6 +17,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtxconfig "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
+	cosmosevmkeyring "github.com/cosmos/evm/crypto/keyring"
+	ibctransfer "github.com/cosmos/ibc-go/v10/modules/apps/transfer"
+	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -39,6 +42,7 @@ func NewRootCmd() *cobra.Command {
 			depinject.Provide(
 				ProvideClientContext,
 			),
+			depinject.Provide(app.ProvideMsgEthereumTxCustomGetSigner),
 		),
 		&autoCliOpts,
 		&moduleBasicManager,
@@ -56,7 +60,7 @@ func NewRootCmd() *cobra.Command {
 			cmd.SetOut(cmd.OutOrStdout())
 			cmd.SetErr(cmd.ErrOrStderr())
 
-			clientCtx = clientCtx.WithCmdContext(cmd.Context())
+			clientCtx = clientCtx.WithCmdContext(cmd.Context()).WithViper(app.Name)
 			clientCtx, err := client.ReadPersistentCommandFlags(clientCtx, cmd.Flags())
 			if err != nil {
 				return err
@@ -81,17 +85,30 @@ func NewRootCmd() *cobra.Command {
 	// Since the IBC modules don't support dependency injection, we need to
 	// manually register the modules on the client side.
 	// This needs to be removed after IBC supports App Wiring.
-	ibcModules := app.RegisterIBC(clientCtx.InterfaceRegistry)
+	ibcModules := app.RegisterIBC(clientCtx.Codec)
 	for name, mod := range ibcModules {
 		moduleBasicManager[name] = module.CoreAppModuleBasicAdaptor(name, mod)
 		autoCliOpts.Modules[name] = mod
 	}
 
+	// Register EVM modules
+	evmModules := app.RegisterEVM(clientCtx.Codec, clientCtx.InterfaceRegistry)
+	for name, mod := range evmModules {
+		moduleBasicManager[name] = module.CoreAppModuleBasicAdaptor(name, mod)
+		autoCliOpts.Modules[name] = mod
+	}
+
+	// v0.6.0: use standard ibc-go transfer module (EVM IBC wrapper removed)
+	moduleBasicManager[ibctransfertypes.ModuleName] = module.CoreAppModuleBasicAdaptor(
+		ibctransfertypes.ModuleName,
+		ibctransfer.AppModule{},
+	)
+
 	initRootCmd(rootCmd, clientCtx.TxConfig, moduleBasicManager)
 
 	overwriteFlagDefaults(rootCmd, map[string]string{
 		flags.FlagChainID:        strings.ReplaceAll(app.Name, "-", ""),
-		flags.FlagKeyringBackend: "test",
+		flags.FlagKeyringBackend: "os",
 	})
 
 	if err := autoCliOpts.EnhanceRootCommand(rootCmd); err != nil {
@@ -130,7 +147,9 @@ func ProvideClientContext(
 		WithInput(os.Stdin).
 		WithAccountRetriever(types.AccountRetriever{}).
 		WithHomeDir(app.DefaultNodeHome).
-		WithViper(app.Name) // env variable prefix
+		WithViper(app.Name).
+		WithKeyringOptions(cosmosevmkeyring.Option()).
+		WithLedgerHasProtobuf(true)
 
 	// Read the config again to overwrite the default values with the values from the config file
 	clientCtx, _ = config.ReadFromClientConfig(clientCtx)

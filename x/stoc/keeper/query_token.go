@@ -21,7 +21,7 @@ func (k Keeper) TokensBySymbol(goCtx context.Context, req *types.QueryTokensBySy
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Lấy tất cả các token có cùng symbol
+	// Get all tokens with the same symbol
 	tokens := k.GetTokensBySymbol(ctx, req.Symbol)
 
 	if len(tokens) == 0 {
@@ -42,22 +42,21 @@ func (k Keeper) Token(goCtx context.Context, req *types.QueryTokenRequest) (*typ
 	var found bool
 
 	if req.MinimalDenom == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "minimal_denom is not supported")
-	} else {
-
-		token, found = k.GetToken(ctx, req.MinimalDenom)
+		return nil, status.Errorf(codes.InvalidArgument, "minimal_denom is required")
 	}
 
+	token, found = k.GetToken(ctx, req.MinimalDenom)
+
 	if !found {
-		return nil, status.Errorf(codes.NotFound, "token with symbol '%s' not found", req.MinimalDenom)
+		return nil, status.Errorf(codes.NotFound, "token with minimal_denom '%s' not found", req.MinimalDenom)
 	}
 
 	return &types.QueryTokenResponse{Token: token}, nil
 }
 
 func (k Keeper) Tokens(goCtx context.Context, req *types.QueryTokensRequest) (*types.QueryTokensResponse, error) {
-	const MaxLimit = 100
-	const DefaultLimit = 20
+	const MaxLimit = types.MaxQueryLimit
+	const DefaultLimit = types.DefaultQueryLimit
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
@@ -99,6 +98,8 @@ func (k Keeper) Tokens(goCtx context.Context, req *types.QueryTokensRequest) (*t
 }
 
 func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBalancesWithMetadataRequest) (*types.QueryBalancesWithMetadataResponse, error) {
+	const maxBalances = types.MaxBalancesResult
+
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
@@ -108,37 +109,37 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	
+
 	// Parse address
 	addr, err := sdk.AccAddressFromBech32(req.Address)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid address: %v", err)
 	}
 
-	// Get all balances for this address using bank keeper
-	balances := k.BankKeeper.GetAllBalances(ctx, addr)
-
-	// Create response with metadata
+	// Iterate balances with early termination to avoid loading all denoms into memory.
+	// This prevents memory DoS via addresses with thousands of airdropped denoms.
 	var balancesWithMetadata []types.BalanceWithMetadata
-	for _, balance := range balances {
-		balanceWithMetadata := types.BalanceWithMetadata{
-			Denom:  balance.Denom,
-			Amount: balance.Amount.String(),
+	k.bankKeeper.IterateAccountBalances(ctx, addr, func(coin sdk.Coin) bool {
+		if len(balancesWithMetadata) >= maxBalances {
+			return true // stop iteration
 		}
-		
-		// Try to get token metadata for this denom
-		token, found := k.GetToken(ctx, balance.Denom)
+		bwm := types.BalanceWithMetadata{
+			Denom:  coin.Denom,
+			Amount: coin.Amount.String(),
+		}
+		token, found := k.GetToken(ctx, coin.Denom)
 		if found {
-			balanceWithMetadata.Metadata = &token
+			bwm.Metadata = &token
 		}
-		
-		balancesWithMetadata = append(balancesWithMetadata, balanceWithMetadata)
-	}
+		balancesWithMetadata = append(balancesWithMetadata, bwm)
+		return false
+	})
 
-	// Create pagination response with proper total
+	// Pagination response — BalancesWithMetadata does not support cursor-based pagination
+	// because it aggregates bank balances with stoc metadata. Total reflects returned count.
+	// Clients detect truncation when len(Balances) == MaxBalancesResult (200).
 	pageRes := &query.PageResponse{
-		NextKey: nil,
-		Total:   uint64(len(balancesWithMetadata)),
+		Total: uint64(len(balancesWithMetadata)),
 	}
 
 	return &types.QueryBalancesWithMetadataResponse{

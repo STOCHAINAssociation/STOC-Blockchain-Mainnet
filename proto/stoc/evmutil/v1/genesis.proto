@@ -1,0 +1,7 @@
+syntax = "proto3";
+package stoc.evmutil.v1;
+
+option go_package = "stoc/x/evmutil/types";
+
+// GenesisState defines the evmutil module's genesis state.
+message GenesisState {}

@@ -8,3 +8,5 @@ release/
 *.log
 *.ign
 .qodo
+stocd
+build/

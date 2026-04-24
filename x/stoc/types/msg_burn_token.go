@@ -31,15 +31,25 @@ func (m *MsgBurnToken) ValidateBasic() error {
 	if m.Denom == "" {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "denom cannot be empty")
 	}
+	if err := sdk.ValidateDenom(m.Denom); err != nil {
+		return errorsmod.Wrapf(ErrInvalidTokenSymbol, "invalid denom: %v", err)
+	}
 
 	// Validate amount when not burning all
 	if !m.BurnAll {
-		if m.Amount.IsNil() || m.Amount.IsNegative() {
+		if m.Amount.IsNil() || !m.Amount.IsPositive() {
 			return errorsmod.Wrap(ErrInvalidAmount, "burn amount must be positive")
 		}
-		if m.Amount.IsZero() {
-			return errorsmod.Wrap(ErrInvalidAmount, "burn amount must be positive")
+		if m.Amount.GT(MaxTokenSupply) {
+			return errorsmod.Wrapf(ErrInvalidAmount, "burn amount exceeds maximum token supply (%s)", MaxTokenSupply.String())
 		}
+	}
+
+	// Reject ambiguous input: BurnAll=true with a non-zero Amount to prevent user confusion.
+	// When BurnAll is set, the entire balance is burned — Amount is ignored, which could
+	// surprise users who set both fields expecting Amount to be a cap.
+	if m.BurnAll && !m.Amount.IsNil() && m.Amount.IsPositive() {
+		return errorsmod.Wrap(ErrInvalidAmount, "cannot set both burn_all=true and a specific amount — use one or the other")
 	}
 
 	return nil

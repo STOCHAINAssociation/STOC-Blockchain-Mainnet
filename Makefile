@@ -79,7 +79,7 @@ proto-gen:
 #################
 
 golangci_lint_cmd=golangci-lint
-golangci_version=v1.61.0
+golangci_version=v1.64.8
 
 lint:
 	@echo "--> Running linter"
@@ -103,7 +103,7 @@ govet:
 
 govulncheck:
 	@echo Running govulncheck...
-	@go install golang.org/x/vuln/cmd/govulncheck@latest
+	@go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 	@govulncheck ./...
 
 .PHONY: govet govulncheck
