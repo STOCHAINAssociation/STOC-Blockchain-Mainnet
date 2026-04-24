@@ -31,17 +31,30 @@ STOC Chain is a high-performance blockchain with full EVM (Ethereum Virtual Mach
 
 ### Build from Source
 
+Requires **Go 1.25.8+** and **[Ignite CLI v29+](https://docs.ignite.com/welcome/install)**.
+
 ```bash
 # Clone the public repository
 git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
 cd STOC-Blockchain-Mainnet
 
-# Build and install stocd binary
+# Recommended: Ignite CLI (auto proto-gen + tidy + install)
+ignite chain build
+
+# Alternative: pure-Go build (no Ignite needed; embeds branch + commit version)
 make install
 
 # Verify
 stocd version
 ```
+
+> If `ignite chain build` reports `go: cannot find "go1.25.8" in PATH`, install the Go toolchain launcher once:
+> ```bash
+> go install golang.org/dl/go1.25.8@latest
+> $(go env GOPATH)/bin/go1.25.8 download
+> ```
+>
+> Full setup instructions (including OS-level Go install) live in the [Node Setup Guide](./documents/chain/readme.md#2-install-ignite-cli-v29).
 
 ### Local Development (Hot Reload)
 
@@ -107,7 +120,8 @@ STOC-Blockchain-Mainnet/
 ## Build & Test Commands
 
 ```bash
-make install        # Build and install stocd
+ignite chain build  # Recommended: build + install stocd (auto proto-gen)
+make install        # Alternative: pure-Go build with branch+commit version
 make test           # Full test suite (vet + vuln + unit)
 make test-unit      # Unit tests only
 make test-race      # Tests with race detection

@@ -47,51 +47,94 @@ This guide covers three setup scenarios for STOC mainnet:
 
 ## Common Setup (All Scenarios)
 
-### 1. Install Go
+### 1. Install Go 1.25.8+
+
+The project's `go.mod` requires **Go 1.25.8 or newer**.
 
 ```bash
-sudo apt update && sudo apt install -y build-essential jq curl wget
+sudo apt update && sudo apt install -y build-essential jq curl wget git
 
-# Install Go 1.24.3
-wget https://go.dev/dl/go1.24.3.linux-amd64.tar.gz
+# Download and install Go 1.25.8 (Linux amd64 — adjust arch as needed)
+wget https://go.dev/dl/go1.25.8.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.24.3.linux-amd64.tar.gz
-rm go1.24.3.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.25.8.linux-amd64.tar.gz
+rm go1.25.8.linux-amd64.tar.gz
 
 echo 'export GOROOT=/usr/local/go' >> ~/.bashrc
 echo 'export GOPATH=$HOME/go' >> ~/.bashrc
 echo 'export PATH=$PATH:$GOROOT/bin:$GOPATH/bin' >> ~/.bashrc
 source ~/.bashrc
 
-# Verify
+# Verify — must print 1.25.8 or higher
 go version
 ```
 
-### 2. Build stocd
+> For ARM64 (Apple Silicon, ARM VPS) replace `amd64` with `arm64` in the URL.
+
+### 2. Install Ignite CLI v29+
+
+Ignite CLI is the recommended build tool. It auto-regenerates protobuf and links ldflags.
+
+```bash
+curl https://get.ignite.com/cli | bash
+sudo mv ignite /usr/local/bin/
+
+# Verify
+ignite version
+```
+
+If `ignite chain build` later fails with `go: cannot find "go1.25.8" in PATH`, install the Go toolchain launcher so Go's auto-switching mechanism can find the required version:
+
+```bash
+go install golang.org/dl/go1.25.8@latest
+$(go env GOPATH)/bin/go1.25.8 download
+
+# Make sure $GOPATH/bin is in PATH (step 1 added it)
+```
+
+### 3. Build stocd
+
+**Option A — Using Ignite CLI (recommended)**
+
+Fastest path: single command handles proto-gen + tidy + build + install.
 
 ```bash
 git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
 cd STOC-Blockchain-Mainnet
 
-# Option A: Using make (recommended)
-make install
-
-# Option B: Using Ignite CLI (requires Ignite v29+)
+# Build and install stocd
 ignite chain build
+
+# Ignite prints a lot of init logs — final line should be:
+#   🗃  Installed. Use with: stocd
 
 # Verify
 stocd version
 ```
 
-> **Alternative**: If you cannot build from source, download the pre-built binary from [here](https://drive.google.com/file/d/1FWjVfsqQ7Y6qR1U2aAIzk0pm08spMiq-/view?usp=sharing).
+> Ignite places the binary in `$(go env GOPATH)/bin/stocd`. Make sure that directory is on your `PATH` (step 1 handled this).
 
-### 3. Initialize Node
+**Option B — Using `make install` (no Ignite required)**
+
+Pure Go path with fewer dependencies. Useful when Ignite is unavailable or when you want a `stocd version` string with branch + commit metadata.
+
+```bash
+cd STOC-Blockchain-Mainnet
+make install
+stocd version
+```
+
+`make install` runs `go install -mod=readonly` with ldflags that embed the branch name and commit hash into the binary — helpful for debugging which build is running on each node.
+
+> **Pre-built binary**: If you cannot build from source, download the latest pre-built binary from [here](https://drive.google.com/file/d/1FWjVfsqQ7Y6qR1U2aAIzk0pm08spMiq-/view?usp=sharing).
+
+### 4. Initialize Node
 
 ```bash
 stocd init <your_moniker_name> --chain-id stoc
 ```
 
-### 4. Download Genesis
+### 5. Download Genesis
 
 ```bash
 curl -s https://rpc-stoc-mainnet.stochainscan.io/genesis | jq '.result.genesis' > ~/.stoc/config/genesis.json
@@ -100,7 +143,7 @@ curl -s https://rpc-stoc-mainnet.stochainscan.io/genesis | jq '.result.genesis' 
 stocd genesis validate ~/.stoc/config/genesis.json
 ```
 
-### 5. Configure Node
+### 6. Configure Node
 
 ```bash
 # Set minimum gas price
@@ -140,7 +183,7 @@ grep -A1 '^\[evm\]' ~/.stoc/config/app.toml
 > curl -s https://api-sync-stoc-mainnet.stochainscan.io/snapshots/addrbook | jq -r '.data.addrs[] | "\(.addr.id)@\(.addr.ip):\(.addr.port)"' | head -10
 > ```
 
-### 6. Setup systemd Service
+### 7. Setup systemd Service
 
 ```bash
 sudo tee /etc/systemd/system/stocd.service > /dev/null <<EOF
@@ -331,7 +374,10 @@ sudo systemctl stop stocd
 # 2. Pull latest source and rebuild
 cd /path/to/STOC-Blockchain-Mainnet
 git pull
-make install
+
+# Rebuild — pick ONE of:
+ignite chain build     # Recommended (auto proto-gen + tidy)
+# make install          # Alternative (pure-Go, faster, no Ignite needed)
 
 # 3. Verify new binary
 stocd version
@@ -370,7 +416,7 @@ sudo systemctl stop stocd
 
 cd /path/to/STOC-Blockchain-Mainnet
 git checkout <tag_or_branch_matching_upgrade>
-make install
+ignite chain build   # or: make install
 
 # Ensure evm-chain-id is set (see Option A step 4)
 sudo systemctl start stocd
