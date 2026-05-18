@@ -7,6 +7,11 @@ toolchain go1.24.3
 replace (
 	// required by cosmos/evm v0.6.0
 	github.com/99designs/keyring => github.com/cosmos/keyring v1.2.0
+	// STOChain v8-eth-mempool (2026-05-16): fork of cosmos/evm v0.6.0 with three
+	// Ethereum-mempool-semantics fixes (Bug A per-tx balance, Bug B iterator
+	// PopCurrentAccount helper, Bug C eth_getTransactionCount pending nonce).
+	// See app/upgrades.go UpgradeNameEthMempool block for the full rationale.
+	github.com/cosmos/evm => ./forks/cosmos-evm-v0.6.0
 	// replace with cosmos fork for EVM compatibility
 	github.com/ethereum/go-ethereum => github.com/cosmos/go-ethereum v1.16.2-cosmos-1
 	// fix upstream GHSA-h395-qcrw-5vmq vulnerability.

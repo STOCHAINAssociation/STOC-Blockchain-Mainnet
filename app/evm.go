@@ -11,7 +11,6 @@ import (
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"
 	"cosmossdk.io/x/tx/signing"
-	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -219,10 +218,13 @@ func (app *App) setEVMMempool() {
 		checkTxHandler := evmmempool.NewCheckTxHandler(evmMempool)
 		app.SetCheckTxHandler(checkTxHandler)
 
-		abciProposalHandler := baseapp.NewDefaultProposalHandler(evmMempool, app)
-		abciProposalHandler.SetSignerExtractionAdapter(evmmempool.NewEthSignerExtractionAdapter(sdkmempool.NewDefaultSignerExtractionAdapter()))
-		app.SetPrepareProposal(abciProposalHandler.PrepareProposalHandler())
-		app.SetProcessProposal(abciProposalHandler.ProcessProposalHandler())
+		// STOChain v8.1 (2026-05-17): wrap default proposal handler with
+		// PopCurrentAccount cascade-skip. See app/abci_proposal.go for the
+		// Bug B wire-up rationale.
+		signerExt := evmmempool.NewEthSignerExtractionAdapter(sdkmempool.NewDefaultSignerExtractionAdapter())
+		stocProposalHandler := NewSTOCProposalHandler(evmMempool, app, signerExt, app.Logger())
+		app.SetPrepareProposal(stocProposalHandler.PrepareProposalHandler())
+		app.SetProcessProposal(stocProposalHandler.ProcessProposalHandler())
 	}
 }
 

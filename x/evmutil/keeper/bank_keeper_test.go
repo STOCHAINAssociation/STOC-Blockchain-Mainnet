@@ -275,15 +275,15 @@ func TestSendCoins_CustomToken_Blocked(t *testing.T) {
 	require.Contains(t, err.Error(), "MYTOKEN_0")
 }
 
-func TestSendCoins_DustAmount_ReturnsError(t *testing.T) {
-	ebk, _ := setup(t)
+func TestSendCoins_DustAmount_RoundsUp(t *testing.T) {
+	ebk, mock := setup(t)
 	from, to := testAddr(), testAddr2()
 
-	// Send 1 wei (too small to convert to 1 ustoc) — rejected by dust remainder check
+	// Send 1 wei — rounds up to 1 ustoc (sender overpays <1 udstoc dust, prevents EVM tx rejection)
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(1)))
 	err := ebk.SendCoins(context.Background(), from, to, amt)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "dust remainder")
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(1), mock.lastSentCoins.AmountOf("ustoc"))
 }
 
 func TestSendCoins_MixedEvmAndCosmos(t *testing.T) {
@@ -330,13 +330,14 @@ func TestMintCoins_CustomToken_Blocked(t *testing.T) {
 	require.Contains(t, err.Error(), "custom token")
 }
 
-func TestMintCoins_DustAmount_ReturnsError(t *testing.T) {
-	ebk, _ := setup(t)
+func TestMintCoins_DustAmount_RoundsUp(t *testing.T) {
+	ebk, mock := setup(t)
 
+	// 1 wei rounds up to 1 ustoc on mint (prevents EVM op rejection from gas/fee precision mismatch)
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(1)))
 	err := ebk.MintCoins(context.Background(), "evm", amt)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "dust remainder")
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(1), mock.lastMintCoins.AmountOf("ustoc"))
 }
 
 // ===================== BurnCoins Tests =====================
@@ -351,14 +352,14 @@ func TestBurnCoins_EvmDenom_ConvertsAndBurns(t *testing.T) {
 	require.Equal(t, math.NewInt(5), mock.lastBurnCoins.AmountOf("ustoc"))
 }
 
-func TestBurnCoins_DustAmount_ReturnsError(t *testing.T) {
-	ebk, _ := setup(t)
+func TestBurnCoins_DustAmount_RoundsUp(t *testing.T) {
+	ebk, mock := setup(t)
 
-	// Not divisible by conversion multiplier
+	// 999 wei rounds up to 1 ustoc on burn
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(999)))
 	err := ebk.BurnCoins(context.Background(), "evm", amt)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "dust remainder")
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(1), mock.lastBurnCoins.AmountOf("ustoc"))
 }
 
 func TestBurnCoins_CustomToken_Blocked(t *testing.T) {

@@ -278,30 +278,25 @@ func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderMo
 	return k.bankKeeper.SendCoinsFromModuleToModule(ctx, senderModule, recipientModule, convertedAmt)
 }
 
-// convertAndValidateCoins converts EVM coins to Cosmos coins with dust remainder and zero-amount validation.
-// Rejects custom tokens and ensures converted amounts are non-zero.
+// convertAndValidateCoins converts EVM coins to Cosmos coins with dust round-up (ceiling) conversion.
+// Rounds up wei amounts to the next whole udstoc to prevent EVM tx rejection due to gas/fee precision
+// mismatch (gasPrice 1 gwei = 10^9 wei vs Cosmos minimum unit 10^12 wei). Sender overpays by at most
+// 1 udstoc (1e-6 dstoc) per coin, negligible cost in exchange for 1-click MetaMask UX.
+// Rejects custom tokens and zero-amount transfers.
 func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error) {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
 		if coin.Denom == k.getEvmDenom() {
-			// Reject amounts with dust remainder to prevent silent value loss
-			remainder := coin.Amount.Mod(types.ConversionMultiplier)
+			amount := coin.Amount
+			remainder := amount.Mod(types.ConversionMultiplier)
 			if !remainder.IsZero() {
-				return nil, fmt.Errorf(
-					"amount %s %s has dust remainder %s wei that would be lost in conversion. "+
-						"Use multiples of %s wei (1 %s)",
-					coin.Amount.String(), k.getEvmDenom(), remainder.String(),
-					types.ConversionMultiplier.String(), k.getCosmosDenom(),
-				)
+				amount = amount.Sub(remainder).Add(types.ConversionMultiplier)
 			}
-			cosmosCoin, err := ConvertEvmCoinToCosmosCoin(coin)
-			if err != nil {
-				return nil, err
-			}
-			if cosmosCoin.Amount.IsZero() {
+			cosmosAmount := amount.Quo(types.ConversionMultiplier)
+			if cosmosAmount.IsZero() {
 				return nil, fmt.Errorf("amount too small: %s %s converts to 0 %s", coin.Amount.String(), k.getEvmDenom(), k.getCosmosDenom())
 			}
-			convertedAmt = convertedAmt.Add(cosmosCoin)
+			convertedAmt = convertedAmt.Add(sdk.NewCoin(k.getCosmosDenom(), cosmosAmount))
 		} else if coin.Denom == k.getCosmosDenom() {
 			convertedAmt = convertedAmt.Add(coin)
 		} else {
