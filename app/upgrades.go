@@ -27,47 +27,50 @@ import (
 //                              MinGasPrice=10^9 (assumed 18-decimal scale, only
 //                              correct when paired with module-cache sed patch
 //                              that bypasses cosmos/evm v0.6.0 wrapper ×10^12).
-//   v4-fix-feemarket-source  — TBD: deprecate the sed patch dependency.
-//                              Overwrites stored MinGasPrice 10^9 → 0.001 in
-//                              BASE denom (udstoc). Vanilla v0.6.0 wrapper then
-//                              applies ×10^12 on read, yielding 10^9 adstoc/gas
-//                              = 1 gwei for eth_gasPrice. Pairs with vanilla
-//                              binary (built without scripts/patch-evm.sh).
-//   v5-enable-base-fee       — TBD: enable EIP-1559 dynamic base fee.
-//                              Sets NoBaseFee=false + BaseFee=0.001 in BASE
-//                              denom. cosmos/evm v0.6.0 sends baseFee to
-//                              fee_collector → validators (NOT burned). Fixes
-//                              MetaMask first-click "Gas estimation failed"
-//                              caused by inconsistent eth_feeHistory baseFeePerGas
-//                              under NoBaseFee=true. baseFee has built-in floor
-//                              at MinGasPrice (CalcGasBaseFee returns MaxDec)
-//                              so MetaMask UX stable even when chain idle.
+//   v4-final                 — TBD: consolidated post-v3 fixes for mainnet
+//                              rollout. Bundles the previously-iterated devnet
+//                              work (v4 feemarket source fix, v5 EIP-1559
+//                              enable, v6 dust round-up, v7 MaxPendingTxPerWallet
+//                              cap + bundle, v8 cosmos/evm fork mempool fixes,
+//                              v8.3 Bug B PrepareProposal cascade-skip wire)
+//                              into a single gov proposal + binary swap. See
+//                              UpgradeNameV4Final block below for the full list
+//                              of source/param changes shipped.
 const (
-	UpgradeName                   = "v2-evm"
-	UpgradeNameFixEVMDenom        = "v3-fix-evm-denom"
-	UpgradeNameFixFeemarketSource = "v4-fix-feemarket-source"
-	UpgradeNameEnableBaseFee      = "v5-enable-base-fee"
-	UpgradeNameFixDustRoundUp     = "v6-fix-dust-roundup"
-	// v7-combined-fixes bundles the v5+v6 source patches plus the new
-	// MaxPendingTxPerWalletDecorator (no on-chain params for the ante itself —
-	// the decorator activates as soon as the binary is loaded). Single gov
-	// proposal on devnet flips on:
-	//   - EIP-1559 base_fee (NoBaseFee=false, BaseFee=0.001 udstoc/gas)
-	//   - Min gas price 0.001 udstoc/gas (unchanged from v4, re-asserted for safety)
-	//   - Dust round-up (purely source — see x/evmutil/keeper/bank_keeper.go)
-	//   - Per-wallet pending-tx cap of 50 (source — app/ante/max_pending_tx.go)
-	UpgradeNameCombinedV7 = "v7-combined-fixes"
-	// v8-eth-mempool ships Ethereum-mempool-semantics fixes for cosmos/evm v0.6.0
-	// via a vendored fork at stoc-current-dev/forks/cosmos-evm-v0.6.0/.
-	// No on-chain params change — handler is a pure binary swap marker.
-	//   - Bug A: per-tx balance check (was sum-queued-cost reject) —
-	//            forks/cosmos-evm-v0.6.0/mempool/txpool/validation.go
-	//   - Bug B: iterator PopCurrentAccount helper for PrepareProposal skip-
-	//            and-mine — forks/cosmos-evm-v0.6.0/mempool/iterator.go
-	//            (helper exposed; tighter cascade-skip wrapper is future work)
-	//   - Bug C: eth_getTransactionCount(pending) reflects EVM pool nonce —
-	//            forks/cosmos-evm-v0.6.0/rpc/backend/account_info.go
-	UpgradeNameEthMempool = "v8-eth-mempool"
+	UpgradeName            = "v2-evm"
+	UpgradeNameFixEVMDenom = "v3-fix-evm-denom"
+	// UpgradeNameV4Final consolidates all post-v3 fixes into a single mainnet
+	// rollout. Replaces the devnet-only v4/v5/v6/v7/v8 iteration chain. Single
+	// gov proposal + binary swap delivers:
+	//
+	//   Params written by handler (gov-visible state changes):
+	//     - feemarket.NoBaseFee   = false   (enable EIP-1559)
+	//     - feemarket.BaseFee     = 0.001   (1 gwei after wrapper ×10^12)
+	//     - feemarket.MinGasPrice = 0.001   (1 gwei floor for mempool inclusion)
+	//
+	//   Source-only changes that ride along with the binary (no params needed):
+	//     - x/evmutil/keeper/bank_keeper.go     — wei→udstoc dust round-up
+	//                                            (fixes "amount has dust remainder"
+	//                                            MetaMask deduct-full-gas issue)
+	//     - app/ante/max_pending_tx.go          — MaxPendingTxPerWalletDecorator
+	//                                            cap 50 (Lê Minh 102-tx incident
+	//                                            mitigation)
+	//     - app/abci_proposal.go                — STOCProposalHandler wraps
+	//                                            DefaultProposalHandler to call
+	//                                            EVMMempoolIterator.PopCurrentAccount()
+	//                                            when EVM ante fails — Bug B
+	//                                            cascade-skip wired at runtime
+	//                                            (was helper-only in upstream)
+	//     - forks/cosmos-evm-v0.6.0/            — vendored cosmos/evm fork:
+	//         mempool/txpool/validation.go      — Bug A per-tx balance check
+	//                                            (was sum-queued-cost reject)
+	//         mempool/iterator.go               — Bug B PopCurrentAccount helper
+	//         rpc/backend/account_info.go       — Bug C eth_getTransactionCount
+	//                                            (pending) reflects pool nonce
+	//
+	// Idempotent: re-running the handler is safe — params are deterministic
+	// re-assertions and the source-only changes activate purely on binary load.
+	UpgradeNameV4Final = "v4-final"
 )
 
 // RegisterUpgradeHandlers registers the upgrade handlers for the app.
@@ -132,57 +135,13 @@ func (app *App) RegisterUpgradeHandlers() {
 		},
 	)
 
-	// v4-fix-feemarket-source: overwrite stored MinGasPrice from 10^9 (legacy patched-binary scale)
-	// to 0.001 in BASE denom (udstoc). Vanilla cosmos/evm v0.6.0 FeeMarketWrapper applies
-	// ConvertAmountTo18DecimalsLegacy (×10^12) on read, yielding 10^9 adstoc/gas = 1 gwei.
-	// Deprecates the build-time scripts/patch-evm.sh sed-patch dependency.
+	// v4-final: consolidated post-v3 rollout. See UpgradeNameV4Final const block
+	// above for the full list of source/param changes. Handler only writes the
+	// feemarket params here — source-only changes (dust round-up,
+	// MaxPendingTxPerWallet, Bug B wire, fork mempool fixes) activate at binary
+	// load and need no migration call.
 	app.UpgradeKeeper.SetUpgradeHandler(
-		UpgradeNameFixFeemarketSource,
-		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-			vm, err := app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
-			if err != nil {
-				return vm, err
-			}
-
-			sdkCtx := sdk.UnwrapSDKContext(ctx)
-			params := app.FeeMarketKeeper.GetParams(sdkCtx)
-			params.MinGasPrice = math.LegacyNewDecWithPrec(1, 3)
-			if err := app.FeeMarketKeeper.SetParams(sdkCtx, params); err != nil {
-				return vm, fmt.Errorf("failed to overwrite feemarket MinGasPrice: %w", err)
-			}
-
-			return vm, nil
-		},
-	)
-
-	// v6-fix-dust-roundup: fix EVM gas/fee precision mismatch causing MetaMask "deduct full gas cost"
-	// error (e.g., "amount 1079383000000000 adstoc has dust remainder 383000000000 wei").
-	// Cosmos minimum unit = 1 udstoc (10^12 wei) but EVM gasPrice operates at 1 gwei (10^9 wei) granularity.
-	// gasUsed × gasPrice in wei is rarely a multiple of 10^12 → previously rejected → MetaMask click-twice.
-	// v6 patches x/evmutil/keeper/bank_keeper.go convertAndValidateCoins to round UP wei → udstoc instead
-	// of rejecting. Sender overpays by at most 1 udstoc (1e-6 dstoc) per coin, negligible. Result:
-	// 1-click MetaMask contract deploy works. Pure source patch, no params change required.
-	app.UpgradeKeeper.SetUpgradeHandler(
-		UpgradeNameFixDustRoundUp,
-		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-			return app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
-		},
-	)
-
-	// v5-enable-base-fee: enable EIP-1559 dynamic base fee for proper MetaMask UX.
-	// Under NoBaseFee=true (v2/v3/v4 era), eth_feeHistory returns mixed 0/non-zero
-	// baseFeePerGas, causing MetaMask EIP-1559 estimator to underestimate fees on
-	// first deploy attempt ("Gas estimation failed: insufficient funds for intrinsic
-	// transaction cost"). User must click Send Transaction twice for MetaMask to
-	// re-estimate via eth_gasPrice fallback. Enabling EIP-1559 base_fee fixes this:
-	//   - eth_feeHistory.baseFeePerGas becomes consistent (always >= MinGasPrice floor)
-	//   - MetaMask estimation works first try
-	//   - cosmos/evm v0.6.0 sends baseFee + tip to fee_collector → validators
-	//     (NOT burned, validators receive baseFee revenue)
-	//   - Floor enforced by CalcGasBaseFee returning MaxDec(baseFee.Sub(num), minGasPrice)
-	//     so baseFee never drops below MinGasPrice even when chain idle.
-	app.UpgradeKeeper.SetUpgradeHandler(
-		UpgradeNameEnableBaseFee,
+		UpgradeNameV4Final,
 		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
 			vm, err := app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
 			if err != nil {
@@ -192,55 +151,13 @@ func (app *App) RegisterUpgradeHandlers() {
 			sdkCtx := sdk.UnwrapSDKContext(ctx)
 			params := app.FeeMarketKeeper.GetParams(sdkCtx)
 			params.NoBaseFee = false
-			params.BaseFee = math.LegacyNewDecWithPrec(1, 3) // 0.001 udstoc/gas, wrapper x10^12 -> 10^9 wei = 1 gwei
+			params.BaseFee = math.LegacyNewDecWithPrec(1, 3)     // 0.001 udstoc/gas → 1 gwei via ×10^12
+			params.MinGasPrice = math.LegacyNewDecWithPrec(1, 3) // 0.001 udstoc/gas floor
 			if err := app.FeeMarketKeeper.SetParams(sdkCtx, params); err != nil {
-				return vm, fmt.Errorf("failed to enable feemarket base_fee: %w", err)
+				return vm, fmt.Errorf("failed to apply v4-final feemarket params: %w", err)
 			}
 
 			return vm, nil
-		},
-	)
-
-	// v7-combined-fixes: ship v5+v6 source patches + MaxPendingTxPerWalletDecorator
-	// in a single binary swap. Params written here:
-	//   - feemarket.NoBaseFee   = false       (enable EIP-1559)
-	//   - feemarket.BaseFee     = 0.001       (1 gwei after wrapper x10^12)
-	//   - feemarket.MinGasPrice = 0.001       (re-assert v4 value as a floor)
-	// Source-only changes that ride along with the binary (no params needed):
-	//   - x/evmutil/keeper/bank_keeper.go convertAndValidateCoins → dust round-up
-	//   - app/ante/max_pending_tx.go MaxPendingTxPerWalletDecorator (cap 50)
-	// Idempotent: re-running the v7 handler on a node that already applied v5
-	// is safe; values are simply re-asserted.
-	app.UpgradeKeeper.SetUpgradeHandler(
-		UpgradeNameCombinedV7,
-		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-			vm, err := app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
-			if err != nil {
-				return vm, err
-			}
-
-			sdkCtx := sdk.UnwrapSDKContext(ctx)
-			params := app.FeeMarketKeeper.GetParams(sdkCtx)
-			params.NoBaseFee = false
-			params.BaseFee = math.LegacyNewDecWithPrec(1, 3)     // 1 gwei
-			params.MinGasPrice = math.LegacyNewDecWithPrec(1, 3) // 1 gwei floor
-			if err := app.FeeMarketKeeper.SetParams(sdkCtx, params); err != nil {
-				return vm, fmt.Errorf("failed to apply v7 feemarket params: %w", err)
-			}
-
-			return vm, nil
-		},
-	)
-
-	// v8-eth-mempool: pure binary swap, no params change. Three fixes ship in
-	// the vendored fork at stoc-current-dev/forks/cosmos-evm-v0.6.0/ (Bug A
-	// per-tx balance, Bug B iterator Pop helper, Bug C eth_getTransactionCount
-	// pending nonce). Handler only runs migrations to honour the upgrade plan
-	// commit. Idempotent.
-	app.UpgradeKeeper.SetUpgradeHandler(
-		UpgradeNameEthMempool,
-		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-			return app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
 		},
 	)
 
@@ -263,7 +180,7 @@ func (app *App) RegisterUpgradeHandlers() {
 		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
 	}
 
-	// v3-fix-evm-denom: no new stores needed, only param update
+	// v3-fix-evm-denom + v4-final: no new stores needed, only param updates.
 }
 
 // setEvmDenomFromStaking derives and sets EVM denom config from staking bond_denom.
