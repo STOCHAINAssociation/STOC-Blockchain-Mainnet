@@ -88,6 +88,7 @@ var (
 	pendingReplaceMeter   = metrics.NewRegisteredMeter("txpool/pending/replace", nil)
 	pendingRateLimitMeter = metrics.NewRegisteredMeter("txpool/pending/ratelimit", nil) // Dropped due to rate limiting
 	pendingNofundsMeter   = metrics.NewRegisteredMeter("txpool/pending/nofunds", nil)   // Dropped due to out-of-funds
+	pendingEvictionMeter  = metrics.NewRegisteredMeter("txpool/pending/eviction", nil)  // STOChain: dropped from pending due to lifetime (stuck unminable)
 
 	// Metrics for the queued pool
 	queuedDiscardMeter   = metrics.NewRegisteredMeter("txpool/queued/discard", nil)
@@ -166,7 +167,9 @@ var DefaultConfig = Config{
 	AccountQueue: 64,
 	GlobalQueue:  1024,
 
-	Lifetime: 3 * time.Hour,
+	// STOChain (2026-05-22): 1h to match CometBFT mempool ttl-duration=1h
+	// (config.toml). Both layers evict stuck txs after 1h idle for consistency.
+	Lifetime: 1 * time.Hour,
 }
 
 // sanitize checks the provided user configurations and changes anything that's
@@ -380,6 +383,26 @@ func (pool *LegacyPool) loop() {
 						pool.removeTx(tx.Hash(), true, true)
 					}
 					queuedEvictionMeter.Mark(int64(len(list)))
+				}
+			}
+			// STOChain fix (2026-05-22): also evict STALE PENDING txs.
+			// Upstream go-ethereum only lifetime-evicts the queued bucket,
+			// assuming pending (executable) txs always mine within blocks. On
+			// Cosmos-EVM that assumption breaks: a pending tx can be permanently
+			// unminable (sender drained by an earlier tx so cumulative cost
+			// exceeds balance, or feeCap < baseFee after a feemarket change) yet
+			// stays in the pending bucket forever — pool grows unbounded
+			// (observed: 3896 stuck pending txs on devnet 2026-05-22, chain
+			// nonce frozen). An account idle longer than Lifetime with txs still
+			// pending is definitively stuck: drop them so the pool drains.
+			// Legit pending txs mine in seconds and never reach Lifetime.
+			for addr := range pool.pending {
+				if time.Since(pool.beats[addr]) > pool.config.Lifetime {
+					list := pool.pending[addr].Flatten()
+					for _, tx := range list {
+						pool.removeTx(tx.Hash(), true, true)
+					}
+					pendingEvictionMeter.Mark(int64(len(list)))
 				}
 			}
 			pool.mu.Unlock()
