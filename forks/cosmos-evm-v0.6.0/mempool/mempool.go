@@ -432,6 +432,32 @@ func (m *ExperimentalEVMMempool) Close() error {
 	return errors.Join(errs...)
 }
 
+// IsOrphanEVMTx returns true if the given tx bytes encode an EVM tx whose
+// hash is no longer present in the legacypool. Used by the CheckTx wrapper
+// on RecheckTx to drop CometBFT mempool entries that legacypool has already
+// evicted (e.g. cumulative-balance reject, replacement, eviction). Without
+// this hook the CometBFT mempool grows unbounded: legacypool drops a stale
+// tx, CometBFT recheck sees ante pass on the single-tx view, tx never mines.
+//
+// Returns false if tx can't be decoded, has != 1 msg, or msg isn't an EVM tx
+// — in those cases let the normal CheckTx path decide.
+func (m *ExperimentalEVMMempool) IsOrphanEVMTx(txBytes []byte) bool {
+	tx, err := m.txConfig.TxDecoder()(txBytes)
+	if err != nil {
+		return false
+	}
+	msgs := tx.GetMsgs()
+	if len(msgs) != 1 {
+		return false
+	}
+	ethMsg, ok := msgs[0].(*evmtypes.MsgEthereumTx)
+	if !ok {
+		return false
+	}
+	hash := ethMsg.AsTransaction().Hash()
+	return !m.legacyTxPool.Has(hash)
+}
+
 // getEVMMessage validates that the transaction contains exactly one message and returns it if it's an EVM message.
 // Returns an error if the transaction has no messages, multiple messages, or the single message is not an EVM transaction.
 func (m *ExperimentalEVMMempool) getEVMMessage(tx sdk.Tx) (*evmtypes.MsgEthereumTx, error) {

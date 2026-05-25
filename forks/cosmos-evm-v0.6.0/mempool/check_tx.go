@@ -5,6 +5,8 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	errorsmod "cosmossdk.io/errors"
+
 	"github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
@@ -15,6 +17,23 @@ import (
 // Returns a handler function that processes ABCI CheckTx requests and manages EVM transaction sequencing.
 func NewCheckTxHandler(mempool *ExperimentalEVMMempool) types.CheckTxHandler {
 	return func(runTx types.RunTx, request *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
+		// STOChain fix 2026-05-25: drop orphan EVM txs on RecheckTx.
+		// An EVM tx may live in the CometBFT mempool while legacypool has
+		// already evicted it (cumulative balance reject after sender drain,
+		// replacement-by-fee, lifetime evict, etc). Without an explicit drop
+		// signal CometBFT keeps the tx forever — single-tx ante passes on
+		// recheck but proposer's legacypool view rejects every block. Pool
+		// observed growing 85 → 1579 over 2 days on devnet (2026-05-25).
+		//
+		// On Recheck, if the tx hash is gone from legacypool, return an error
+		// CheckTx response so CometBFT removes it from its mempool too.
+		if request.Type == abci.CheckTxType_Recheck && mempool.IsOrphanEVMTx(request.Tx) {
+			return sdkerrors.ResponseCheckTxWithEvents(
+				errorsmod.Wrap(sdkerrors.ErrInvalidRequest,
+					"EVM tx orphan: dropped by legacypool (likely cumulative-balance reject)"),
+				0, 0, nil, false), nil
+		}
+
 		gInfo, result, anteEvents, err := runTx(request.Tx, nil)
 		if err != nil {
 			// detect if there is a nonce gap error (only returned for EVM transactions)
