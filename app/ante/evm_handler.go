@@ -12,7 +12,16 @@ import (
 func newMonoEVMAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHandler {
 	evmParams := options.EvmKeeper.GetParams(ctx)
 	feemarketParams := options.FeeMarketKeeper.GetParams(ctx)
+
+	maxPending := options.MaxPendingTxPerWallet
+	if maxPending <= 0 {
+		maxPending = DefaultMaxPendingTxPerWallet
+	}
+
 	decorators := []sdk.AnteDecorator{
+		// v4-final fix: per-wallet pending-tx cap. Prevents a single sender
+		// from filling the EVM mempool head and starving other users.
+		NewMaxPendingTxPerWalletDecorator(options.GetEVMMempool, maxPending),
 		evmante.NewEVMMonoDecorator(
 			options.AccountKeeper,
 			options.FeeMarketKeeper,

@@ -11,7 +11,6 @@ import (
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"
 	"cosmossdk.io/x/tx/signing"
-	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -217,14 +216,32 @@ func (app *App) setEVMMempool() {
 		evmMempool := evmmempool.NewExperimentalEVMMempool(app.CreateQueryContext, app.Logger(), app.EVMKeeper, app.FeeMarketKeeper, app.txConfig, app.clientCtx, mempoolConfig, 5000)
 		app.EVMMempool = evmMempool
 
+		// Audit fix H1: boot-time sanity check. If EVMMempool is set but the
+		// concrete type is not *ExperimentalEVMMempool, the GetEVMMempool getter
+		// in MaxPendingTxPerWalletDecorator silently returns nil and the
+		// per-wallet pending-tx cap becomes a no-op. Panic at startup so the
+		// misconfiguration is surfaced before block production.
+		if _, ok := app.EVMMempool.(*evmmempool.ExperimentalEVMMempool); !ok {
+			panic(fmt.Sprintf(
+				"app.EVMMempool wired but concrete type is %T, expected *evmmempool.ExperimentalEVMMempool; MaxPendingTxPerWalletDecorator would be a silent no-op",
+				app.EVMMempool,
+			))
+		}
+
 		app.SetMempool(evmMempool)
 		checkTxHandler := evmmempool.NewCheckTxHandler(evmMempool)
 		app.SetCheckTxHandler(checkTxHandler)
 
-		abciProposalHandler := baseapp.NewDefaultProposalHandler(evmMempool, app)
-		abciProposalHandler.SetSignerExtractionAdapter(evmmempool.NewEthSignerExtractionAdapter(sdkmempool.NewDefaultSignerExtractionAdapter()))
-		app.SetPrepareProposal(abciProposalHandler.PrepareProposalHandler())
-		app.SetProcessProposal(abciProposalHandler.ProcessProposalHandler())
+		// v4-final Bug B fix: wrap the default proposal handler with the
+		// STOChain cascade-skip iterator. When an EVM tx fails ante verification
+		// in PrepareProposal, the wrapper calls EVMMempoolIterator.PopCurrentAccount
+		// to drop the sender's entire bucket from the price-and-nonce heap, instead
+		// of walking through the sender's (now-invalid) subsequent nonces.
+		// See app/abci_proposal.go for the wrapper rationale.
+		signerExt := evmmempool.NewEthSignerExtractionAdapter(sdkmempool.NewDefaultSignerExtractionAdapter())
+		stocProposalHandler := NewSTOCProposalHandler(evmMempool, app, signerExt, app.Logger())
+		app.SetPrepareProposal(stocProposalHandler.PrepareProposalHandler())
+		app.SetProcessProposal(stocProposalHandler.ProcessProposalHandler())
 	}
 }
 

@@ -103,6 +103,7 @@ import (
 	sdkmempool "github.com/cosmos/cosmos-sdk/types/mempool"
 	evmante "github.com/cosmos/evm/ante"
 	antetypes "github.com/cosmos/evm/ante/types"
+	evmmempool "github.com/cosmos/evm/mempool"
 	erc20keeper "github.com/cosmos/evm/x/erc20/keeper"
 	evmkeeper "github.com/cosmos/evm/x/vm/keeper"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
@@ -440,6 +441,17 @@ func New(
 			IBCKeeper: app.IBCKeeper,
 		},
 		StocKeeper: app.StocKeeper,
+		// Late-binding getter for the ExperimentalEVMMempool. The mempool is
+		// constructed below by setEVMMempool() after SetAnteHandler. The
+		// decorator queries it lazily at CheckTx time via this closure.
+		GetEVMMempool: func() *evmmempool.ExperimentalEVMMempool {
+			if app.EVMMempool == nil {
+				return nil
+			}
+			m, _ := app.EVMMempool.(*evmmempool.ExperimentalEVMMempool)
+			return m
+		},
+		MaxPendingTxPerWallet: stocappante.DefaultMaxPendingTxPerWallet,
 	}
 	if err := anteOptions.Validate(); err != nil {
 		panic(err)

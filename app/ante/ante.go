@@ -15,6 +15,17 @@ import (
 type StocAnteOptions struct {
 	ante.HandlerOptions
 	StocKeeper stockeeper.Keeper
+
+	// GetEVMMempool is a deferred getter for the experimental EVM mempool used
+	// by MaxPendingTxPerWalletDecorator. The mempool is constructed after the
+	// ante handler in app.go, so the decorator must look it up lazily at
+	// AnteHandle time. May return nil during the startup window before
+	// setEVMMempool runs.
+	GetEVMMempool MempoolGetter
+
+	// MaxPendingTxPerWallet caps the simultaneously-pending EVM transactions
+	// per sender in the legacy pool. If zero, DefaultMaxPendingTxPerWallet is used.
+	MaxPendingTxPerWallet int
 }
 
 // NewAnteHandler returns an ante handler responsible for attempting to route an
