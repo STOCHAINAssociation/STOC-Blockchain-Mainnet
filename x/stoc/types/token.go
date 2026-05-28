@@ -88,13 +88,21 @@ func IsNativeDenom(denom string) bool {
 // safeIsNativeDenom wraps IsNativeDenom with panic recovery.
 // IsNativeDenom calls evmutil.GetEvmDenom() which panics if sdk.DefaultBondDenom
 // is not properly initialized (e.g., "stake" in tests instead of "ustoc").
-func safeIsNativeDenom(denom string) (isNative bool) {
+//
+// Returns (isNative=false, panicked=true) when the underlying call panics. Callers
+// in production state-validation paths (ValidateState, etc.) MUST fail closed when
+// panicked=true to avoid the audit-fix H2 collision scenario where a token with
+// symbol "stoc"/"astoc" is accepted during the early upgrade window before
+// DefaultBondDenom is initialized, then later collides with the real native denom.
+func safeIsNativeDenom(denom string) (isNative bool, panicked bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			isNative = false
+			panicked = true
 		}
 	}()
-	return IsNativeDenom(denom)
+	isNative = IsNativeDenom(denom)
+	return isNative, false
 }
 
 // ValidateState validates a token for state persistence (post-creation mutations like burn/mint).
@@ -116,7 +124,16 @@ func ValidateState(token Token) error {
 	// Block native denom symbols to prevent confusion and genesis injection attacks.
 	// Use recover because IsNativeDenom calls GetEvmDenom() which can panic
 	// if sdk.DefaultBondDenom is not properly initialized (e.g., in tests).
-	if isNative := safeIsNativeDenom(token.Symbol); isNative {
+	//
+	// Audit fix H2: fail closed if the underlying native-denom check panicked.
+	// A panic indicates DefaultBondDenom is uninitialized, which is the same
+	// window during which a token with symbol "stoc"/"astoc" could be accepted
+	// and later collide with the real native denom once initialization completes.
+	isNative, panicked := safeIsNativeDenom(token.Symbol)
+	if panicked {
+		return fmt.Errorf("cannot validate token symbol %q: native denom configuration not initialized", token.Symbol)
+	}
+	if isNative {
 		return fmt.Errorf("token symbol %q conflicts with native chain denom", token.Symbol)
 	}
 	if token.Decimals > 18 {
@@ -193,7 +210,12 @@ func Validate(token Token) error {
 		return fmt.Errorf("token symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
 	// Block native denom symbols to prevent confusion (mirrors ValidateState check)
-	if isNative := safeIsNativeDenom(token.Symbol); isNative {
+	// Audit fix H2: fail closed if native-denom check panicked (see safeIsNativeDenom comment).
+	isNative, panicked := safeIsNativeDenom(token.Symbol)
+	if panicked {
+		return fmt.Errorf("cannot validate token symbol %q: native denom configuration not initialized", token.Symbol)
+	}
+	if isNative {
 		return fmt.Errorf("token symbol %q conflicts with native chain denom", token.Symbol)
 	}
 

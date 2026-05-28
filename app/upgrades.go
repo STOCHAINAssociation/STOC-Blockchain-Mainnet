@@ -23,6 +23,18 @@ const (
 	// UpgradeNameFixEVMDenom fixes the EVM denom from default "atest" to correct value
 	// derived from staking bond_denom (e.g. "ustoc" → "astoc", "utstoc" → "atstoc")
 	UpgradeNameFixEVMDenom = "v3-fix-evm-denom"
+	// UpgradeNameV4Final bundles eight post-v3 fixes for mainnet rollout:
+	//   1. Fee market activation (EIP-1559 enabled)
+	//   2. wei→base-unit dust precision round-up (x/evmutil bank wrapper)
+	//   3. Per-wallet pending-tx cap (MaxPendingTxPerWalletDecorator)
+	//   4. Per-tx balance check (forks/cosmos-evm-v0.6.0/mempool/txpool/validation.go)
+	//   5. PrepareProposal cascade-skip wire (STOCProposalHandler)
+	//   6. eth_getTransactionCount(pending) reflects EVM legacy pool
+	//   7. L2 legacy pool stuck-pending eviction (extend evict loop to pending bucket)
+	//   8. L1 CometBFT mempool orphan eviction (RecheckTx wrapper)
+	//
+	// Handler writes feemarket params; source-only changes activate on binary load.
+	UpgradeNameV4Final = "v4-final"
 )
 
 // RegisterUpgradeHandlers registers the upgrade handlers for the app.
@@ -39,8 +51,11 @@ func (app *App) RegisterUpgradeHandlers() {
 			// Set feemarket params: disable dynamic base fee for initial EVM deployment.
 			// This ensures existing gas price config (0.01 ustoc) in wallets/FE remains valid.
 			// Can be re-enabled later via governance proposal once ecosystem is ready.
+			//
+			// Read existing params and apply targeted overrides so any future governance
+			// changes to unrelated fields are preserved across handler re-runs (audit fix H3).
 			sdkCtx := sdk.UnwrapSDKContext(ctx)
-			feemarketParams := feemarkettypes.DefaultParams()
+			feemarketParams := app.FeeMarketKeeper.GetParams(sdkCtx)
 			feemarketParams.NoBaseFee = true
 			feemarketParams.BaseFee = math.LegacyZeroDec()
 			feemarketParams.MinGasPrice = math.LegacyZeroDec()
@@ -75,12 +90,39 @@ func (app *App) RegisterUpgradeHandlers() {
 
 			// Fix feemarket MinGasPrice: v2-evm set it to 0 allowing free EVM tx spam.
 			// Set 10^9 astoc/gas = 0.001 ustoc/gas = 1 gwei, matching Cosmos min-gas-prices.
-			feemarketParams := feemarkettypes.DefaultParams()
+			//
+			// Read existing params and apply targeted overrides so any future governance
+			// changes to unrelated fields are preserved across handler re-runs (audit fix H3).
+			feemarketParams := app.FeeMarketKeeper.GetParams(sdkCtx)
 			feemarketParams.NoBaseFee = true
 			feemarketParams.BaseFee = math.LegacyZeroDec()
 			feemarketParams.MinGasPrice = math.LegacyNewDec(1_000_000_000)
 			if err := app.FeeMarketKeeper.SetParams(sdkCtx, feemarketParams); err != nil {
 				return vm, fmt.Errorf("failed to set feemarket MinGasPrice: %w", err)
+			}
+
+			return vm, nil
+		},
+	)
+
+	// v4-final: enable EIP-1559 base fee and set deterministic fee floor.
+	// Source-only changes (mempool fork patches, ante decorators, proposal handler
+	// wrapper) activate on binary load and require no migration call.
+	app.UpgradeKeeper.SetUpgradeHandler(
+		UpgradeNameV4Final,
+		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
+			vm, err := app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
+			if err != nil {
+				return vm, err
+			}
+
+			sdkCtx := sdk.UnwrapSDKContext(ctx)
+			params := app.FeeMarketKeeper.GetParams(sdkCtx)
+			params.NoBaseFee = false
+			params.BaseFee = math.LegacyNewDecWithPrec(1, 3)     // 0.001 base-unit/gas (1 gwei after wrapper ×10^12)
+			params.MinGasPrice = math.LegacyNewDecWithPrec(1, 3) // 0.001 base-unit/gas mempool inclusion floor
+			if err := app.FeeMarketKeeper.SetParams(sdkCtx, params); err != nil {
+				return vm, fmt.Errorf("failed to apply v4-final feemarket params: %w", err)
 			}
 
 			return vm, nil
