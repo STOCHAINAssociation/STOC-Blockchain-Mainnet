@@ -1,55 +1,193 @@
-# This workflow is useful if you want to automate the process of:
-#
-# a) Creating a new prelease when you push a new tag with a "v" prefix (version).
-#
-#    This type of prerelease is meant to be used for production: alpha, beta, rc, etc. types of releases.
-#    After the prerelease is created, you need to make your changes on the release page at the relevant
-#    Github page and publish your release.
-#
-# b) Creating/updating the "latest" prerelease when you push to your default branch.
-#
-#    This type of prelease is useful to make your bleeding-edge binaries available to advanced users.
-#
-# The workflow will not run if there is no tag pushed with a "v" prefix and no change pushed to your
-# default branch.
-on: push
+name: Release Binary
+
+# Trigger: push tag like v5.0.0, v5.0.0-rc1, v5.0.1, etc.
+# Builds 7 platform binaries + .deb package, publishes GitHub Release.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write       # required to create GitHub Release + upload assets
 
 jobs:
-  might_release:
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux glibc (Ubuntu 22.04 base = works on 20.04 / 22.04 / 24.04 / Debian / RHEL / Fedora)
+          - { name: linux-amd64,       os: ubuntu-22.04,  goos: linux,   goarch: amd64, cc: 'zig cc -target x86_64-linux-gnu' }
+          - { name: linux-arm64,       os: ubuntu-22.04,  goos: linux,   goarch: arm64, cc: 'zig cc -target aarch64-linux-gnu' }
+
+          # Linux musl (static binary, zero glibc deps — runs on Alpine, embedded, containers)
+          - { name: linux-amd64-musl,  os: ubuntu-22.04,  goos: linux,   goarch: amd64, cc: 'zig cc -target x86_64-linux-musl',  ldflags_extra: '-linkmode external -extldflags "-static"' }
+          - { name: linux-arm64-musl,  os: ubuntu-22.04,  goos: linux,   goarch: arm64, cc: 'zig cc -target aarch64-linux-musl', ldflags_extra: '-linkmode external -extldflags "-static"' }
+
+          # macOS Intel + Apple Silicon (native runners, no cross-compile)
+          - { name: darwin-amd64,      os: macos-latest,  goos: darwin,  goarch: amd64 }
+          - { name: darwin-arm64,      os: macos-latest,  goos: darwin,  goarch: arm64 }
+
+          # Windows AMD64 (native MSYS2 MinGW for CGO secp256k1)
+          - { name: windows-amd64,     os: windows-latest, goos: windows, goarch: amd64, ext: '.exe' }
+
+    runs-on: ${{ matrix.os }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0    # full history for commit hash in version string
 
-      - name: Prepare Release Variables
-        id: vars
-        uses: ignite/cli/actions/release/vars@main
-
-      - name: Issue Release Assets
-        uses: ignite/cli/actions/cli@main
-        if: ${{ steps.vars.outputs.should_release == 'true' }}
+      - uses: actions/setup-go@v5
         with:
-          args: chain build --release --release.prefix ${{ steps.vars.outputs.tarball_prefix }} -t linux:amd64 -t darwin:amd64 -t darwin:arm64 -y
+          go-version: '1.24'
+          cache: true
+
+      # zig for Linux cross-compile (also handles glibc + musl + arm64)
+      - name: Install zig (Linux only)
+        if: matrix.goos == 'linux'
+        run: |
+          ZIG_VERSION="0.14.0"
+          wget -q https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz
+          tar -xf zig-linux-x86_64-${ZIG_VERSION}.tar.xz
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> $GITHUB_PATH
+
+      # MSYS2 MinGW for Windows CGO build
+      - name: Setup MSYS2 (Windows only)
+        if: matrix.goos == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+          path-type: inherit
+
+      - name: Build stocd
+        shell: bash
         env:
-          DO_NOT_TRACK: 1
+          CGO_ENABLED: 1
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+        run: |
+          set -e
+          VERSION=${GITHUB_REF#refs/tags/}
+          COMMIT=$(git rev-parse --short HEAD)
+          BINARY="stocd-${VERSION}-${{ matrix.name }}${{ matrix.ext }}"
+          BUILD_TAGS="netgo,stocrelease"
 
-      - name: Delete the "latest" Release
-        uses: dev-drprasad/delete-tag-and-release@v0.2.1
-        if: ${{ steps.vars.outputs.is_release_type_latest == 'true' }}
-        with:
-          tag_name: ${{ steps.vars.outputs.tag_name }}
-          delete_release: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Windows override: MSYS2's MinGW gcc
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            export CC="x86_64-w64-mingw32-gcc"
+          fi
 
-      - name: Publish the Release
-        uses: softprops/action-gh-release@v1
-        if: ${{ steps.vars.outputs.should_release == 'true' }}
+          go build -tags "${BUILD_TAGS}" -trimpath \
+            -ldflags "-s -w \
+              -X github.com/cosmos/cosmos-sdk/version.Name=stoc \
+              -X github.com/cosmos/cosmos-sdk/version.AppName=stocd \
+              -X github.com/cosmos/cosmos-sdk/version.Version=${VERSION#v} \
+              -X github.com/cosmos/cosmos-sdk/version.Commit=${COMMIT} \
+              ${{ matrix.ldflags_extra }}" \
+            -o "${BINARY}" ./cmd/stocd
+
+          # SHA256 checksum (platform-specific tool)
+          if [[ "${{ matrix.goos }}" == "darwin" ]]; then
+            shasum -a 256 "${BINARY}" > "${BINARY}.sha256"
+          elif [[ "${{ matrix.goos }}" == "windows" ]]; then
+            powershell.exe -Command "(Get-FileHash -Algorithm SHA256 '${BINARY}').Hash.ToLower() + '  ${BINARY}'" > "${BINARY}.sha256"
+          else
+            sha256sum "${BINARY}" > "${BINARY}.sha256"
+          fi
+
+          # Archive bundle
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            powershell.exe -Command "Compress-Archive -Path '${BINARY}','${BINARY}.sha256' -DestinationPath 'stocd-${VERSION}-${{ matrix.name }}.zip'"
+          else
+            tar -czf "stocd-${VERSION}-${{ matrix.name }}.tar.gz" "${BINARY}" "${BINARY}.sha256"
+          fi
+
+      - uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.vars.outputs.tag_name }}
-          files: release/*
-          prerelease: true
+          name: stocd-${{ matrix.name }}
+          path: |
+            stocd-*.tar.gz
+            stocd-*.zip
+            stocd-*.sha256
+          retention-days: 7
+
+  # Ubuntu .deb package (1-line install via dpkg / apt)
+  deb-package:
+    name: Build .deb package
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download linux-amd64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: stocd-linux-amd64
+          path: ./dist
+
+      - name: Build .deb
+        run: |
+          set -e
+          VERSION=${GITHUB_REF#refs/tags/}
+          VER=${VERSION#v}
+          PKG_DIR="stocd-deb"
+          mkdir -p "${PKG_DIR}/DEBIAN" "${PKG_DIR}/usr/local/bin"
+
+          tar -xzf "./dist/stocd-${VERSION}-linux-amd64.tar.gz" -C "${PKG_DIR}/usr/local/bin/"
+          mv "${PKG_DIR}/usr/local/bin/stocd-${VERSION}-linux-amd64" "${PKG_DIR}/usr/local/bin/stocd"
+          chmod 755 "${PKG_DIR}/usr/local/bin/stocd"
+          rm "${PKG_DIR}/usr/local/bin/stocd-${VERSION}-linux-amd64.sha256"
+
+          cat > "${PKG_DIR}/DEBIAN/control" <<EOF
+          Package: stocd
+          Version: ${VER}
+          Architecture: amd64
+          Maintainer: Minh Anh Corp <noreply@minhanh-corp.io>
+          Section: net
+          Priority: optional
+          Description: STOChain daemon — Cosmos SDK + EVM blockchain
+           STOC is a Cosmos SDK + EVM dual-chain for security token issuance.
+           This package installs the stocd binary to /usr/local/bin/stocd.
+          EOF
+
+          dpkg-deb --build "${PKG_DIR}" "stocd_${VER}_amd64.deb"
+          sha256sum "stocd_${VER}_amd64.deb" > "stocd_${VER}_amd64.deb.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stocd-deb
+          path: |
+            stocd_*.deb
+            stocd_*.deb.sha256
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: [build, deb-package]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: ./dist
+
+      - name: List release assets
+        run: ls -la ./dist
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./dist/stocd-*.tar.gz
+            ./dist/stocd-*.zip
+            ./dist/stocd-*.sha256
+            ./dist/stocd_*.deb
+            ./dist/stocd_*.deb.sha256
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
