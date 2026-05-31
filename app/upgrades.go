@@ -27,24 +27,24 @@ import (
 //                              MinGasPrice=10^9 (assumed 18-decimal scale, only
 //                              correct when paired with module-cache sed patch
 //                              that bypasses cosmos/evm v0.6.0 wrapper ×10^12).
-//   v4-final                 — TBD: consolidated post-v3 fixes for mainnet
+//   v5.0.0                 — TBD: consolidated post-v3 fixes for mainnet
 //                              rollout. Bundles the previously-iterated devnet
 //                              work (v4 feemarket source fix, v5 EIP-1559
 //                              enable, v6 dust round-up, v7 MaxPendingTxPerWallet
 //                              cap + bundle, v8 cosmos/evm fork mempool fixes,
 //                              v8.3 Bug B PrepareProposal cascade-skip wire)
 //                              into a single gov proposal + binary swap. See
-//                              UpgradeNameV4Final block below for the full list
+//                              UpgradeNameV5 block below for the full list
 //                              of source/param changes shipped.
 const (
 	UpgradeName            = "v2-evm"
 	UpgradeNameFixEVMDenom = "v3-fix-evm-denom"
-	// UpgradeNameV4Final consolidates all post-v3 fixes into a single mainnet
+	// UpgradeNameV5 consolidates all post-v3 fixes into a single mainnet
 	// rollout. Replaces the devnet-only v4/v5/v6/v7/v8 iteration chain. Single
 	// gov proposal + binary swap delivers:
 	//
 	// =========================================================================
-	// ISSUES FIXED BY v4-final (explicit list):
+	// ISSUES FIXED BY v5.0.0 (explicit list):
 	// =========================================================================
 	//
 	//   Issue #1 — feemarket disabled / MetaMask 2-popup UX bug
@@ -135,7 +135,7 @@ const (
 	//          ExperimentalEVMMempool.IsOrphanEVMTx() exposes lookup.
 	//
 	// =========================================================================
-	// State changes applied by v4-final handler:
+	// State changes applied by v5.0.0 handler:
 	// =========================================================================
 	//
 	//   Gov-visible params:
@@ -163,7 +163,7 @@ const (
 	// MAINNET ROLLOUT: 1 gov prop applying this handler on top of current
 	// mainnet v3-fix-evm-denom state → 1 halt + 1 binary swap → all 6 issues
 	// fixed at once.
-	UpgradeNameV4Final = "v4-final"
+	UpgradeNameV5 = "v5.0.0"
 )
 
 // RegisterUpgradeHandlers registers the upgrade handlers for the app.
@@ -246,13 +246,13 @@ func (app *App) RegisterUpgradeHandlers() {
 		},
 	)
 
-	// v4-final: consolidated post-v3 rollout. See UpgradeNameV4Final const block
+	// v5.0.0: consolidated post-v3 rollout. See UpgradeNameV5 const block
 	// above for the full list of source/param changes. Handler only writes the
 	// feemarket params here — source-only changes (dust round-up,
 	// MaxPendingTxPerWallet, Bug B wire, fork mempool fixes) activate at binary
 	// load and need no migration call.
 	app.UpgradeKeeper.SetUpgradeHandler(
-		UpgradeNameV4Final,
+		UpgradeNameV5,
 		func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
 			vm, err := app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
 			if err != nil {
@@ -281,7 +281,7 @@ func (app *App) RegisterUpgradeHandlers() {
 			params.BaseFee = math.LegacyNewDecWithPrec(1, 3)     // 0.001 ustoc/gas = 1 gwei effective
 			params.MinGasPrice = math.LegacyNewDecWithPrec(1, 3) // same — feemarket floor
 			if err := app.FeeMarketKeeper.SetParams(cacheCtx, params); err != nil {
-				return vm, fmt.Errorf("failed to apply v4-final feemarket params: %w", err)
+				return vm, fmt.Errorf("failed to apply v5.0.0 feemarket params: %w", err)
 			}
 
 			writeCache()
@@ -308,7 +308,7 @@ func (app *App) RegisterUpgradeHandlers() {
 		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
 	}
 
-	// v3-fix-evm-denom + v4-final: no new stores needed, only param updates.
+	// v3-fix-evm-denom + v5.0.0: no new stores needed, only param updates.
 }
 
 // setEvmDenomFromStaking derives and sets EVM denom config from staking bond_denom.
