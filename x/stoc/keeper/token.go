@@ -162,7 +162,24 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 		return err
 	}
 
-	// Persist state — already validated above, SetToken re-validates defensively
+	// Persist state AFTER all bank ops succeed.
+	//
+	// AUDIT NOTE — NOT A CEI VIOLATION (reviewed April 2026, PR #80):
+	// In Solidity, state updates must come BEFORE external calls to prevent
+	// re-entrancy attacks (Checks-Effects-Interactions pattern). In Cosmos SDK,
+	// this concern does NOT apply because:
+	//   1. bankKeeper.MintCoins and SendCoinsFromModuleToAccount are synchronous
+	//      in-process calls, not external contract calls — no re-entrancy vector.
+	//   2. The entire msg handler runs inside BaseApp.cacheTxContext (baseapp.go:975).
+	//      If SetToken fails here, the handler returns an error, and BaseApp
+	//      discards the cache — ALL prior bank ops (MintCoins, SendCoins) revert
+	//      atomically. No orphan coins, no supply desync.
+	//   3. Pre-validation above (ValidateState) ensures SetToken will not reject
+	//      the updated state under normal conditions. SetToken re-validates
+	//      defensively but should never fail after pre-validation passes.
+	//
+	// DO NOT reorder SetToken before bank ops — manual rollback on bank failure
+	// is error-prone and unnecessary given cosmos-sdk tx atomicity.
 	if err := k.SetToken(ctx, token); err != nil {
 		return err
 	}

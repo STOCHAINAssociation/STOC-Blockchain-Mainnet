@@ -28,12 +28,14 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 
 // Validate validates the set of params.
 //
-// SA-L2 audit-2026-05-29: this is intentionally a no-op because the Params
-// struct currently has no fields. If you ADD any field to proto/stoc/stoc/
-// params.proto, you MUST add a corresponding range/format check here AND
-// extend the keeper-level MsgUpdateParams handler to call Validate() so that
-// governance cannot install invalid values. ParamSetPairs() above is also a
-// no-op for the same reason — keep both in sync when fields land.
+// SA-L2 audit-2026-05-29: intentionally a no-op because the Params struct
+// currently has no fields. When a field is added (e.g. a gov-adjustable cap
+// on tax percentage or token supply), this function MUST check bounds,
+// address formats and cross-field invariants before returning nil. The
+// keeper-level MsgUpdateParams handler must also be extended to call
+// Validate() so governance cannot install out-of-range values that later
+// crash consensus or silently disable enforcement. ParamSetPairs() above is
+// a no-op for the same reason — keep both in sync when fields land.
 func (p Params) Validate() error {
 	return nil
 }

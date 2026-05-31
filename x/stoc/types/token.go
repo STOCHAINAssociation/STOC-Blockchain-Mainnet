@@ -8,6 +8,7 @@ import (
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 
 	evmutiltypes "stoc/x/evmutil/types"
 )
@@ -25,6 +26,37 @@ var MaxTaxPercent = math.LegacyNewDecWithPrec(5, 1) // 0.5 = 50%
 
 // MaxDistributions limits the number of distribution entries to prevent gas griefing
 const MaxDistributions = 20
+
+// blockedTaxRecipientModules lists module accounts that must never receive
+// token tax payments. Each of these accounts either rejects inbound transfers
+// or is controlled by chain-level logic unrelated to the issuing company, so
+// routing tax there would permanently brick transfers of the taxed token.
+//
+//   - distribution:          validator reward pool, credits through a separate code path
+//   - gov:                   governance deposit pool, returns deposits only on proposal resolution
+//   - bonded_tokens_pool:    staking bonded collateral, accepts only Delegate / Undelegate flows
+//   - not_bonded_tokens_pool: staking unbonding collateral, same restriction as bonded pool
+//   - stoc:                  this module's own account, reserved for CreateToken / Release / Burn bookkeeping
+var blockedTaxRecipientModules = []string{
+	"distribution",
+	"gov",
+	"bonded_tokens_pool",
+	"not_bonded_tokens_pool",
+	ModuleName,
+}
+
+// BlockedTaxRecipientModule reports whether the given account address matches
+// one of the module accounts forbidden from receiving token tax. On match it
+// returns the module name; otherwise it returns an empty string. The caller
+// should reject the token or transaction when match is true.
+func BlockedTaxRecipientModule(addr sdk.AccAddress) string {
+	for _, name := range blockedTaxRecipientModules {
+		if addr.Equals(sdk.AccAddress(authtypes.NewModuleAddress(name))) {
+			return name
+		}
+	}
+	return ""
+}
 
 // IsNativeDenom dynamically checks if a denom is a native chain denom.
 // Uses sdk.DefaultBondDenom and evmutil.GetEvmDenom() as single source of truth:
@@ -200,8 +232,16 @@ func ValidateState(token Token) error {
 			if token.Tax.RecipientAddress == "" {
 				return fmt.Errorf("tax enabled but recipient address missing")
 			}
-			if _, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress); err != nil {
+			taxAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
+			if err != nil {
 				return fmt.Errorf("invalid tax recipient address in state: %s", err)
+			}
+			// Reject module accounts that would trap tax revenue and brick every
+			// subsequent taxable transfer. The same check runs at message
+			// validation for MsgCreateToken; repeating it here protects genesis
+			// import and any future direct state-write path from corrupt input.
+			if mod := BlockedTaxRecipientModule(taxAddr); mod != "" {
+				return fmt.Errorf("tax recipient cannot be module account %s (%s)", mod, token.Tax.RecipientAddress)
 			}
 		}
 	}

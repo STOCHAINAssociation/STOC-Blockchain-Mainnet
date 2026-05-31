@@ -130,8 +130,16 @@ func (m *MsgCreateToken) ValidateBasic() error {
 			if m.Tax.RecipientAddress == "" {
 				return errorsmod.Wrap(ErrInvalidTaxRecipient, "tax recipient address is required when tax > 0")
 			}
-			if _, err := sdk.AccAddressFromBech32(m.Tax.RecipientAddress); err != nil {
+			taxAddr, err := sdk.AccAddressFromBech32(m.Tax.RecipientAddress)
+			if err != nil {
 				return errorsmod.Wrapf(ErrInvalidTaxRecipient, "invalid tax recipient address: %s", err)
+			}
+			// Reject module account addresses as tax recipient. Tax collection
+			// sends the tax coin to this address on every taxable transfer;
+			// pointing it at a chain-managed module account would cause every
+			// subsequent transfer to fail and permanently brick the token.
+			if mod := BlockedTaxRecipientModule(taxAddr); mod != "" {
+				return errorsmod.Wrapf(ErrInvalidTaxRecipient, "tax recipient cannot be module account %s (%s)", mod, m.Tax.RecipientAddress)
 			}
 		}
 	}

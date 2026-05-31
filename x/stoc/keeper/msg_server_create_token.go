@@ -126,8 +126,14 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 	token.RemainingSupply = remainingSupply
 
-	// NOTE: SetToken is called AFTER all minting succeeds (see below).
-	// This follows CEI pattern — if MintCoins/SendCoins fails, no orphan token is left in state.
+	// NOTE: SetToken + SetTokenCounter are called AFTER all minting succeeds (see below).
+	// AUDIT NOTE — NOT A CEI VIOLATION (reviewed April 2026, PR #80):
+	// In Cosmos SDK, the entire msg handler runs inside BaseApp.cacheTxContext.
+	// If any MintCoins/SendCoins call fails mid-loop, the handler returns error,
+	// BaseApp discards the cache, and ALL bank mutations revert atomically.
+	// No orphan coins, no counter pollution, no partial token state.
+	// See MintToken in token.go for detailed rationale on why Solidity CEI patterns
+	// do not apply to Cosmos SDK (no re-entrancy, no external calls).
 
 	// Distribute initial supply according to distribution list
 	// (distributions always has >= 1 entry: defaults to [{Creator, 100%}] when msg.Distributions is empty)

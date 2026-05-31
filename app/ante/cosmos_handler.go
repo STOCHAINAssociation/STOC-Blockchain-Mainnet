@@ -38,7 +38,8 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewValidateBasicDecorator(),
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
-		stocante.NewIBCCustomTokenRestriction(options.StocKeeper), // block custom token IBC transfers
+		stocante.NewIBCCustomTokenRestriction(options.StocKeeper),      // block custom token IBC transfers
+		stocante.NewCustomTokenChainOpsRestriction(options.StocKeeper), // block custom token in gov/pool/vesting/group/erc20 (tax evasion + chain entanglement)
 		// SA-L6 audit-2026-05-29: run IBC redundant-relay check BEFORE fee
 		// deduct + signature verification so duplicate relays are rejected at
 		// CheckTx without burning validator CPU on full signature math or

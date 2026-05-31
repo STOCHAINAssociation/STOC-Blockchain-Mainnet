@@ -218,6 +218,12 @@ func (app *App) blockPrecompileTransfers() {
 // Fail loudly via panic so misconfiguration is caught at boot, not at first
 // consensus failure under load.
 func (app *App) setEVMMempool() {
+	// SA-M3 audit-2026-05-29: STOChain ALWAYS runs with EVM enabled. main's
+	// upstream pattern (silent skip when ChainConfig == nil) would result in
+	// STOCProposalHandler not wired (Bug B cascade-skip missing),
+	// CheckTxHandler not set (orphan eviction inactive), and
+	// MaxPendingTxPerWalletDecorator becoming a no-op. Fail loudly at boot
+	// instead of silently degrading at first consensus failure under load.
 	if evmtypes.GetChainConfig() == nil {
 		panic("setEVMMempool: evmtypes.GetChainConfig() returned nil — EVM module not initialized; STOChain requires EVM enabled (STOCProposalHandler + orphan eviction + per-wallet cap would silently no-op)")
 	}

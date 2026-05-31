@@ -78,7 +78,7 @@ func (d IBCCustomTokenRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Msg, de
 				return err
 			}
 		case *authz.MsgExec:
-			if depth >= maxAuthzUnwrapDepth {
+			if depth >= stoctypes.MaxAuthzUnwrapDepth {
 				return fmt.Errorf("authz MsgExec nesting depth exceeded (%d) in IBC restriction check", depth)
 			}
 			innerMsgs, err := m.GetMessages()

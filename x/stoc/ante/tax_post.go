@@ -13,9 +13,6 @@ import (
 	stoctypes "stoc/x/stoc/types"
 )
 
-// maxAuthzUnwrapDepth limits recursive MsgExec unwrapping to prevent DoS via deeply nested authz messages.
-const maxAuthzUnwrapDepth = 3
-
 type TaxPostDecorator struct {
 	k   keeper.Keeper
 	cdc codec.BinaryCodec
@@ -86,7 +83,7 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 				}
 			}
 		case *authz.MsgExec:
-			if depth >= maxAuthzUnwrapDepth {
+			if depth >= stoctypes.MaxAuthzUnwrapDepth {
 				return fmt.Errorf("authz MsgExec nesting depth exceeded (%d), rejecting to prevent tax evasion", depth)
 			}
 			innerMsgs, err := m.GetMessages()
@@ -138,9 +135,12 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 		// SA-L1 audit-2026-05-29: reject 1-unit transfers of taxable custom
 		// tokens to close the micro-spam evasion vector. A 1-unit transfer can
 		// only carry 0 or 1 tax; setting taxAmount=0 here (to preserve "1 unit
-		// reaches recipient") meant 1,000,000 × 1-unit txs paid zero tax. Force
-		// a 2-unit minimum so 1 unit can always go to the tax recipient and
-		// 1 unit reaches the receiver.
+		// reaches recipient") meant an attacker could split N tokens into
+		// N × 1-unit transfers paying 0 total tax instead of N × Percent.
+		// Example: 1,000,000 × 1-unit txs → 0 tax instead of 500,000 at 50% rate.
+		// Gas cost per tx (~21 ustoc) is trivially low compared to securities
+		// token value. Force a 2-unit minimum so 1 unit can always go to the
+		// tax recipient and 1 unit reaches the receiver.
 		if coin.Amount.LTE(math.OneInt()) {
 			return fmt.Errorf(
 				"transfer of %s %s below minimum taxable amount: tax-enabled custom tokens require amount >= 2 (1 unit tax + 1 unit recipient)",
@@ -148,8 +148,9 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			)
 		}
 
-		// Calculate tax — enforce minimum 1 unit to prevent tax evasion via transaction splitting,
-		// but ensure recipient always retains at least 1 unit on micro-transfers.
+		// Calculate tax — enforce minimum 1 unit to prevent rounding-to-zero
+		// evasion via transaction splitting, but ensure recipient always
+		// retains at least 1 unit on micro-transfers (cap at half + floor 1).
 		taxAmount := coin.Amount.ToLegacyDec().Mul(taxPercent).TruncateInt()
 		if taxAmount.IsZero() {
 			taxAmount = math.OneInt()
@@ -159,16 +160,11 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 		if taxAmount.GT(halfAmount) {
 			taxAmount = halfAmount
 		}
-		// Ensure recipient retains at least 1 unit — skip tax on 1-unit transfers
+		// Ensure recipient retains at least 1 unit (defensive — with amount >= 2
+		// and tax capped at half, this should always hold, but guard anyway)
 		if coin.Amount.Sub(taxAmount).LT(math.OneInt()) {
-			if coin.Amount.LTE(math.OneInt()) {
-				taxAmount = math.ZeroInt()
-			} else {
-				taxAmount = coin.Amount.Sub(math.OneInt())
-			}
+			taxAmount = coin.Amount.Sub(math.OneInt())
 		}
-
-		// Early exit: micro-transfer protection set tax to zero
 		if taxAmount.IsZero() {
 			continue
 		}

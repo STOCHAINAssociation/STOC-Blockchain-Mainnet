@@ -53,7 +53,9 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 		return nil, err
 	}
 
-	// Update remaining supply
+	// Persist state AFTER bank op succeeds.
+	// AUDIT NOTE — NOT A CEI VIOLATION: See MintToken in token.go for full rationale.
+	// Cosmos SDK tx atomicity (cacheTxContext) reverts all bank ops if SetToken fails.
 	token.RemainingSupply = token.RemainingSupply.Sub(msg.Amount)
 	if err := k.SetToken(ctx, token); err != nil {
 		return nil, err

@@ -55,10 +55,10 @@ See [Node Setup Guide](./documents/chain/readme.md) for full instructions includ
 
 | Component | Version |
 |-----------|---------|
-| Cosmos SDK | v0.53.4 |
-| CometBFT | v0.38.18 |
-| IBC | v10.2.0 |
-| Cosmos EVM | v1.0.0-rc2 |
+| Cosmos SDK | v0.53.6 |
+| CometBFT | v0.38.21 |
+| IBC | v10.5.0 |
+| Cosmos EVM | v0.6.0 |
 | Go | 1.24.3 |
 
 ## Architecture
