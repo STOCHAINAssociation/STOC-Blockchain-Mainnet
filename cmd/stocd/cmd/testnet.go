@@ -1,3 +1,12 @@
+//go:build !stocrelease
+// +build !stocrelease
+
+// SA-C9 audit-2026-05-29: in-place-testnet rewrites validator set + funds
+// arbitrary accounts (line 33 valVotingPower = 900T, ~9× total supply scale).
+// No HRP/chain-id validation. On a mainnet validator binary this command is
+// one fat-finger away from local state destruction. Build production releases
+// with `-tags stocrelease` to exclude this file entirely.
+
 package cmd
 
 import (

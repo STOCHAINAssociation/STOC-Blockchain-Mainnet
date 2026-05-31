@@ -221,7 +221,18 @@ func (b *Backend) GetTransactionCount(address common.Address, blockNum rpctypes.
 	// regardless of which mempool layer currently holds the in-flight tx.
 	if includePending && b.Mempool != nil {
 		if pool := b.Mempool.GetTxPool(); pool != nil {
-			if poolNonce := pool.PoolNonce(address); poolNonce > nonce {
+			// SA-H25 audit-2026-05-29: snapshot chain head BEFORE reading pool
+			// nonce, then re-query chain nonce at that height to ensure consistent
+			// TOCTOU-safe pair. If a new block commits between the two reads, the
+			// caller would receive a stale max (chainNonce moved up, poolNonce
+			// stale) leading wallets to sign with already-used nonce → replay /
+			// rejection. Recheck after pool read.
+			poolNonce := pool.PoolNonce(address)
+			// Re-fetch chain nonce after pool snapshot to absorb head-advance race.
+			if nonce2, err2 := b.getAccountNonce(address, false, blockNum.Int64(), b.Logger); err2 == nil && nonce2 > nonce {
+				nonce = nonce2
+			}
+			if poolNonce > nonce {
 				nonce = poolNonce
 			}
 		}

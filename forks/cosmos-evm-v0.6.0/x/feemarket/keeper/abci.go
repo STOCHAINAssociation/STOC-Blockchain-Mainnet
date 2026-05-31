@@ -3,6 +3,7 @@ package keeper
 import (
 	"errors"
 	"fmt"
+	stdmath "math"
 
 	"github.com/cosmos/evm/x/feemarket/types"
 
@@ -28,6 +29,14 @@ func (k *Keeper) BeginBlock(ctx sdk.Context) error {
 		if err != nil {
 			ctx.Logger().Error("error converting base fee to float64", "error", err.Error())
 			return
+		}
+		// SA-L9 audit-2026-05-29: float32 saturates to +Inf above ~3.4e38.
+		// At sustained-spike feemarket scenarios (10^38+ wei baseFee) the
+		// telemetry gauge would emit Inf, breaking downstream Prometheus
+		// scrapers and dashboards. Clamp to math.MaxFloat32 so the gauge
+		// remains a finite, monotonically-increasing approximation.
+		if floatBaseFee > stdmath.MaxFloat32 {
+			floatBaseFee = stdmath.MaxFloat32
 		}
 		// there'll be no panic if fails to convert to float32. Will only loose precision
 		telemetry.SetGauge(float32(floatBaseFee), "feemarket", "base_fee")

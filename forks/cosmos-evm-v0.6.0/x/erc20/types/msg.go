@@ -94,6 +94,17 @@ func (m *MsgRegisterERC20) ValidateBasic() error {
 		return errorsmod.Wrap(err, "invalid signer address")
 	}
 
+	// SA-M11 audit-2026-05-29: cap batch size to prevent consensus-stall via
+	// gov-prop registering thousands of ERC20 contracts in one tx (each entry
+	// triggers 3 EVM static calls to read name/symbol/decimals → unbounded
+	// DeliverTx execution time).
+	const maxRegisterERC20Batch = 50
+	if len(m.Erc20Addresses) > maxRegisterERC20Batch {
+		return errortypes.ErrInvalidRequest.Wrapf(
+			"too many ERC20 addresses in single Msg (%d > %d)",
+			len(m.Erc20Addresses), maxRegisterERC20Batch)
+	}
+
 	for _, addr := range m.Erc20Addresses {
 		if !common.IsHexAddress(addr) {
 			return errortypes.ErrInvalidAddress.Wrapf("invalid ERC20 contract address: %s", addr)

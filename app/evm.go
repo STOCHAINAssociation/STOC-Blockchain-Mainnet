@@ -142,6 +142,14 @@ func (app *App) registerEVMModules(appOpts servertypes.AppOptions) error {
 }
 
 func (app *App) postRegisterEVMModules() error {
+	// SA-H19 audit-2026-05-29: status = NOT A REAL BUG (defense-in-depth only).
+	// Existing `blockPrecompileTransfers` SendRestriction correctly rejects
+	// MsgSend → precompile addr (verified live: "cannot send to EVM precompile
+	// address" code:1). Audit concern was MintCoins-direct bypass, but no
+	// current module mints directly to precompile addrs. If future modules
+	// add precompile-targeted mints, register them in this restriction or
+	// add bank BlockedModuleAccountsOverride at depinject time.
+
 	// v0.6.0: Use DefaultStaticPrecompiles with custom bech32 + p256 precompiles
 	const bech32PrecompileBaseGas = 6_000
 
@@ -199,33 +207,57 @@ func (app *App) blockPrecompileTransfers() {
 
 // setEVMMempool sets the EVM priority nonce mempool
 // it is required for the ethereum json rpc server to work
+//
+// SA-M3 audit-2026-05-29: STOChain always runs with EVM enabled. If
+// evmtypes.GetChainConfig() returns nil at this point, the EVM module was
+// not initialized correctly — silent skip would result in:
+//   - STOCProposalHandler not wired → Bug B PopCurrentAccount cascade-skip
+//     missing → consensus failure on orphan EVM tx batches
+//   - CheckTxHandler not set → orphan eviction inactive
+//   - app.EVMMempool == nil → MaxPendingTxPerWalletDecorator no-op
+// Fail loudly via panic so misconfiguration is caught at boot, not at first
+// consensus failure under load.
 func (app *App) setEVMMempool() {
-	if evmtypes.GetChainConfig() != nil {
-		// NOTE: MaxTx limit is not available in EVMMempoolConfig for cosmos/evm v1.0.0-rc2.
-		// DoS mitigation: minimum gas price (validator config) + ante handler gas validation.
-		// BlockGasLimit 100M is standard for Cosmos EVM chains (similar to Evmos).
-		// TODO: Add MaxTx when cosmos/evm supports it, or implement custom mempool wrapper.
-		mempoolConfig := &evmmempool.EVMMempoolConfig{
-			AnteHandler:   app.BaseApp.AnteHandler(),
-			BlockGasLimit: 100_000_000,
-		}
-
-		// v0.6.0: cosmosPoolMaxTx=5000 limits pending Cosmos txs in EVM mempool (DoS mitigation)
-		evmMempool := evmmempool.NewExperimentalEVMMempool(app.CreateQueryContext, app.Logger(), app.EVMKeeper, app.FeeMarketKeeper, app.txConfig, app.clientCtx, mempoolConfig, 5000)
-		app.EVMMempool = evmMempool
-
-		app.SetMempool(evmMempool)
-		checkTxHandler := evmmempool.NewCheckTxHandler(evmMempool)
-		app.SetCheckTxHandler(checkTxHandler)
-
-		// STOChain v8.1 (2026-05-17): wrap default proposal handler with
-		// PopCurrentAccount cascade-skip. See app/abci_proposal.go for the
-		// Bug B wire-up rationale.
-		signerExt := evmmempool.NewEthSignerExtractionAdapter(sdkmempool.NewDefaultSignerExtractionAdapter())
-		stocProposalHandler := NewSTOCProposalHandler(evmMempool, app, signerExt, app.Logger())
-		app.SetPrepareProposal(stocProposalHandler.PrepareProposalHandler())
-		app.SetProcessProposal(stocProposalHandler.ProcessProposalHandler())
+	if evmtypes.GetChainConfig() == nil {
+		panic("setEVMMempool: evmtypes.GetChainConfig() returned nil — EVM module not initialized; STOChain requires EVM enabled (STOCProposalHandler + orphan eviction + per-wallet cap would silently no-op)")
 	}
+
+	// NOTE: MaxTx limit is not available in EVMMempoolConfig for cosmos/evm v1.0.0-rc2.
+	// DoS mitigation: minimum gas price (validator config) + ante handler gas validation.
+	// BlockGasLimit 100M is standard for Cosmos EVM chains (similar to Evmos).
+	// TODO: Add MaxTx when cosmos/evm supports it, or implement custom mempool wrapper.
+	mempoolConfig := &evmmempool.EVMMempoolConfig{
+		AnteHandler:   app.BaseApp.AnteHandler(),
+		BlockGasLimit: 100_000_000,
+	}
+
+	// v0.6.0: cosmosPoolMaxTx=5000 limits pending Cosmos txs in EVM mempool (DoS mitigation)
+	evmMempool := evmmempool.NewExperimentalEVMMempool(app.CreateQueryContext, app.Logger(), app.EVMKeeper, app.FeeMarketKeeper, app.txConfig, app.clientCtx, mempoolConfig, 5000)
+	app.EVMMempool = evmMempool
+
+	// Audit fix H1: boot-time sanity check. If EVMMempool is set but the
+	// concrete type is not *ExperimentalEVMMempool, the GetEVMMempool getter
+	// in MaxPendingTxPerWalletDecorator (app/ante/max_pending_tx.go) silently
+	// returns nil and the per-wallet pending-tx cap becomes a no-op. Panic at
+	// startup so the misconfiguration is surfaced before block production.
+	if _, ok := app.EVMMempool.(*evmmempool.ExperimentalEVMMempool); !ok {
+		panic(fmt.Sprintf(
+			"app.EVMMempool wired but concrete type is %T, expected *evmmempool.ExperimentalEVMMempool; MaxPendingTxPerWalletDecorator would be a silent no-op",
+			app.EVMMempool,
+		))
+	}
+
+	app.SetMempool(evmMempool)
+	checkTxHandler := evmmempool.NewCheckTxHandler(evmMempool)
+	app.SetCheckTxHandler(checkTxHandler)
+
+	// STOChain v8.1 (2026-05-17): wrap default proposal handler with
+	// PopCurrentAccount cascade-skip. See app/abci_proposal.go for the
+	// Bug B wire-up rationale.
+	signerExt := evmmempool.NewEthSignerExtractionAdapter(sdkmempool.NewDefaultSignerExtractionAdapter())
+	stocProposalHandler := NewSTOCProposalHandler(evmMempool, app, signerExt, app.Logger())
+	app.SetPrepareProposal(stocProposalHandler.PrepareProposalHandler())
+	app.SetProcessProposal(stocProposalHandler.ProcessProposalHandler())
 }
 
 // RegisterPendingTxListener a function that registers a listener for pending transactions.

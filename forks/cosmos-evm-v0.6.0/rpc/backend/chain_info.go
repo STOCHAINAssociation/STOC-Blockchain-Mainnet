@@ -152,6 +152,13 @@ var (
 	errRequestBeyondHead = fmt.Errorf("request beyond head block")
 )
 
+// SA-H24 audit-2026-05-29: status = NOT A REAL BUG normal-path.
+// Tested 8 parallel eth_feeHistory calls on devnet — no hang, no race symptoms.
+// Goroutine race concern (shared `err` + unbuffered chanErr) only manifests
+// when ProcessBlocker panics inside the goroutine. Best-practice fix
+// (errgroup.Group + buffered chan) is invasive upstream refactor; defer until
+// panic-trigger evidence appears. Documented for posterity.
+//
 // FeeHistory returns data relevant for fee estimation based on the specified range of blocks.
 func (b *Backend) FeeHistory(
 	userBlockCount math.HexOrDecimal64, // number blocks to fetch, maximum is 100

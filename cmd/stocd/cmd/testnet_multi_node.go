@@ -1,16 +1,24 @@
+//go:build !stocrelease
+// +build !stocrelease
+
+// SA-C10 audit-2026-05-29: multi-node writes plaintext mnemonics to disk,
+// defaults to `test` keyring backend, sets 100% commission rates, binds P2P
+// `0.0.0.0` with AllowDuplicateIP. Local-dev only. Build production releases
+// with `-tags stocrelease` to exclude this file entirely.
+
 package cmd
 
 import (
 	"bufio"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	cmtconfig "github.com/cometbft/cometbft/config"
 	types "github.com/cometbft/cometbft/types"
@@ -48,7 +56,10 @@ var (
 	flagStartingIPAddress     = "starting-ip-address"
 )
 
-const nodeDirPerm = 0o755
+// SA-L13 audit-2026-05-29: node dirs hold priv_validator_key.json + mnemonic
+// key_seed.json. Owner-only (0o700) so other local users on the host cannot
+// traverse and read those secrets.
+const nodeDirPerm = 0o700
 
 type initArgs struct {
 	algo                   string
@@ -101,17 +112,25 @@ Example:
 			args.ports = map[int]string{}
 			args.validatorsStakesAmount = make(map[int]sdk.Coin)
 			top := 0
-			// If the flag string is invalid, the amount will default to 100000000.
-			if s, err := cmd.Flags().GetString(flagValidatorsStakeAmount); err == nil {
-				for _, amount := range strings.Split(s, ",") {
+			// SA-M18 audit-2026-05-29: fail loudly when the per-validator stake
+			// list length does not match --v. Prior code silently fell back to
+			// a 100-power default for missing indices (testnet_multi_node.go
+			// initTestnetFiles loop), so an operator passing fewer stakes than
+			// validators got a heterogenous network without warning.
+			if s, err := cmd.Flags().GetString(flagValidatorsStakeAmount); err == nil && s != "" {
+				parts := strings.Split(s, ",")
+				if len(parts) != args.numValidators {
+					return fmt.Errorf("--%s has %d entries, must match --%s=%d",
+						flagValidatorsStakeAmount, len(parts), flagNumValidators, args.numValidators)
+				}
+				for idx, amount := range parts {
 					a, ok := math.NewIntFromString(amount)
 					if !ok {
-						continue
+						return fmt.Errorf("--%s[%d]=%q is not a valid integer", flagValidatorsStakeAmount, idx, amount)
 					}
 					args.validatorsStakesAmount[top] = sdk.NewCoin(sdk.DefaultBondDenom, a)
 					top += 1
 				}
-
 			}
 			top = 0
 			if s, err := cmd.Flags().GetString(flagPorts); err == nil {
@@ -121,7 +140,13 @@ Example:
 						top += 1
 					}
 				} else {
-					for _, port := range strings.Split(s, ",") {
+					// SA-M18: same arity check for --list-ports.
+					parts := strings.Split(s, ",")
+					if len(parts) != args.numValidators {
+						return fmt.Errorf("--%s has %d entries, must match --%s=%d",
+							flagPorts, len(parts), flagNumValidators, args.numValidators)
+					}
+					for _, port := range parts {
 						args.ports[top] = port
 						top += 1
 					}
@@ -272,7 +297,10 @@ func initTestnetFiles(
 			valPubKeys[i],
 			valTokens,
 			stakingtypes.NewDescription(nodeDirName, "", "", "", ""),
-			stakingtypes.NewCommissionRates(math.LegacyOneDec(), math.LegacyOneDec(), math.LegacyOneDec()),
+			// SA-C10 audit-2026-05-29: sane local-dev commission rates (5%/10%/5%)
+			// instead of 100%/100%/100% which would silently steal all delegator
+			// rewards if the produced gentx were ever copied to a real network.
+			stakingtypes.NewCommissionRates(math.LegacyNewDecWithPrec(5, 2), math.LegacyNewDecWithPrec(10, 2), math.LegacyNewDecWithPrec(5, 2)),
 			math.OneInt(),
 		)
 		if err != nil {
@@ -343,8 +371,17 @@ func initTestnetFiles(
 	return nil
 }
 
+// writeFile creates `dir` (owner-only — 0o700) and writes `file` with 0o600.
+//
+// SA-L13 audit-2026-05-29: previous implementation forced 0o755 on the
+// containing directory regardless of caller intent, leaving other local
+// users on the host able to traverse directories that contain
+// secret-bearing files (e.g. `key_seed.json` carrying validator
+// mnemonics). Use 0o700 so the secret-file mode (0o600) is meaningful;
+// callers that genuinely need world-readable dirs (e.g. gentx exchange)
+// chmod after the fact instead of accepting an over-permissive default.
 func writeFile(file, dir string, contents []byte) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("could not create directory %q: %w", dir, err)
 	}
 
@@ -525,13 +562,26 @@ func isSubDir(src, dstDir string) (bool, error) {
 }
 
 // generateRandomString generates a random string of the specified length.
+//
+// SA-L12 audit-2026-05-29: switched from math/rand seeded by
+// time.Now().UnixNano() to crypto/rand. The previous implementation produced
+// predictable chain IDs (`chain-<6char>`) for anyone observing the host's
+// clock — fine for ad-hoc dev runs, but two operators bootstrapping testnets
+// within the same nanosecond window would collide, and an adversary who
+// knew the boot time could pre-compute the chain ID before the network came
+// up (useful for DNS-style squat attacks on early peers).
 func generateRandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
-
+	max := big.NewInt(int64(len(charset)))
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = charset[seededRand.Intn(len(charset))]
+		n, err := cryptorand.Int(cryptorand.Reader, max)
+		if err != nil {
+			// crypto/rand.Reader is documented to never fail on supported
+			// platforms; panic preserves bootstrap-time visibility if it ever does.
+			panic(fmt.Sprintf("generateRandomString: crypto/rand failed: %v", err))
+		}
+		b[i] = charset[n.Int64()]
 	}
 	return string(b)
 }

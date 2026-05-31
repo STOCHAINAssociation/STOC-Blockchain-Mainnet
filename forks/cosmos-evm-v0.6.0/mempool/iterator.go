@@ -39,6 +39,13 @@ type EVMMempoolIterator struct {
 
 	/** Blockchain Access **/
 	blockchain *Blockchain
+
+	// SA-H6 audit-2026-05-29: track which iterator actually produced the last
+	// returned tx so advanceCurrentIterator can advance the right one even when
+	// EVM conversion failed mid-iteration (would otherwise advance EVM but return
+	// Cosmos, causing the same Cosmos tx to repeat → duplicate-tx ProcessProposal
+	// reject).
+	lastReturnedFromEVM bool
 }
 
 // NewEVMMempoolIterator creates a new unified iterator over EVM and Cosmos transactions.
@@ -241,22 +248,30 @@ func (i *EVMMempoolIterator) getPreferredTransaction(nextEVMTx *txpool.LazyTrans
 		// Prefer EVM transaction if available and convertible
 		if nextEVMTx != nil {
 			if evmTx := i.convertEVMToSDKTx(nextEVMTx); evmTx != nil {
+				i.lastReturnedFromEVM = true
 				return evmTx
 			}
 		}
 		// Fall back to Cosmos if EVM is not available or conversion fails
 		i.logger.Debug("EVM transaction conversion failed, falling back to Cosmos transaction")
+		i.lastReturnedFromEVM = false
 		return nextCosmosTx
 	}
 
 	// Prefer Cosmos transaction
 	i.logger.Debug("preferring Cosmos transaction based on fee comparison")
+	i.lastReturnedFromEVM = false
 	return nextCosmosTx
 }
 
 // advanceCurrentIterator advances the appropriate iterator based on which transaction was used
 func (i *EVMMempoolIterator) advanceCurrentIterator() {
-	useEVM := i.shouldUseEVM()
+	// SA-H6 audit-2026-05-29: use the cached `lastReturnedFromEVM` field rather
+	// than re-querying shouldUseEVM(). On the EVM-conversion-fail fallback path
+	// getPreferredTransaction returns Cosmos, but shouldUseEVM still reports EVM
+	// (head unchanged) — re-querying advances the wrong iterator and the same
+	// Cosmos tx repeats forever.
+	useEVM := i.lastReturnedFromEVM
 
 	if useEVM {
 		i.logger.Debug("advancing EVM iterator")

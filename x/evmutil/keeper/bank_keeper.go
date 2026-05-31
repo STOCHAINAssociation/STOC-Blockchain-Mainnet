@@ -75,10 +75,11 @@ func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, deno
 }
 
 // SendCoins transfers coins from one account to another.
-// For EVM denom, it converts and uses Cosmos denom under the hood.
-// Custom tokens (created via STOC module) are NOT transferable from EVM.
+// SA-C8 audit-2026-05-29: outflow → round DOWN (caller-bears-dust).
+// Prevents contract-internal Transfer(N) corruption where round-UP would
+// overcharge sender and skew downstream contract accounting.
 func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(amt)
 	if err != nil {
 		return err
 	}
@@ -86,10 +87,10 @@ func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, a
 }
 
 // MintCoins mints coins to the module account.
-// For EVM denom, it converts to Cosmos denom.
-// Custom tokens cannot be minted from EVM context.
+// SA-C7 audit-2026-05-29: outflow (creates supply) → round DOWN.
+// Round-UP would over-mint vs caller intent, breaking supply accounting.
 func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(amt)
 	if err != nil {
 		return err
 	}
@@ -97,10 +98,10 @@ func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk
 }
 
 // BurnCoins burns coins from the module account.
-// For EVM denom, it converts to Cosmos denom.
-// Custom tokens cannot be burned from EVM context.
+// SA-C7 audit-2026-05-29: outflow (destroys supply) → round DOWN.
+// Round-UP would over-burn vs caller intent.
 func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(amt)
 	if err != nil {
 		return err
 	}
@@ -108,9 +109,11 @@ func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk
 }
 
 // SendCoinsFromModuleToAccount transfers coins from module to account.
-// Custom tokens cannot be transferred from EVM context.
+// SA-C7 audit-2026-05-29: outflow (e.g., RefundGas from FeeCollector) → round DOWN.
+// Round-UP here gifted 1 ustoc per non-aligned-leftover-gas tx from FeeCollector to user.
+// At zero-gas spam rates (post-SA-C1) this was a quantifiable validator-reward drain.
 func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(amt)
 	if err != nil {
 		return err
 	}
@@ -118,9 +121,11 @@ func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderM
 }
 
 // SendCoinsFromAccountToModule transfers coins from account to module.
-// Custom tokens cannot be transferred from EVM context.
+// SA-C7 audit-2026-05-29: inflow (e.g., fee collection, deposit) → round UP.
+// Caller overpays at most 1 udstoc; protects module-account accounting from
+// sub-ustoc dust loss.
 func (k EvmBankKeeper) SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForInflow(amt)
 	if err != nil {
 		return err
 	}
@@ -269,23 +274,28 @@ func (k EvmBankKeeper) SpendableCoin(ctx context.Context, addr sdk.AccAddress, d
 }
 
 // SendCoinsFromModuleToModule transfers coins between modules.
-// Custom tokens cannot be transferred from EVM context.
+// SA-C7 audit-2026-05-29: outflow → round DOWN.
 func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderModule string, recipientModule string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(amt)
 	if err != nil {
 		return err
 	}
 	return k.bankKeeper.SendCoinsFromModuleToModule(ctx, senderModule, recipientModule, convertedAmt)
 }
 
-// convertAndValidateCoins converts EVM coins to Cosmos coins with dust round-up (ceiling) conversion.
-// Rounds up wei amounts to the next whole udstoc to prevent EVM tx rejection due to gas/fee precision
-// mismatch (gasPrice 1 gwei = 10^9 wei vs Cosmos minimum unit 10^12 wei). Sender overpays by at most
-// 1 udstoc (1e-6 dstoc) per coin, negligible cost in exchange for 1-click MetaMask UX.
-// Rejects custom tokens and zero-amount transfers.
-func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error) {
+// convertCoinsForInflow converts EVM coins to Cosmos coins with round-UP (ceiling).
+// Use only for inflow paths (account → module fee deposit). Caller overpays at
+// most 1 udstoc (1e-6 STOC) per coin entry — negligible cost protecting module
+// accounting from sub-ustoc dust loss. Justified UX for fee-collection only.
+func (k EvmBankKeeper) convertCoinsForInflow(amt sdk.Coins) (sdk.Coins, error) {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
+		if coin.Amount.IsNegative() {
+			return nil, errorsmod.Wrapf(types.ErrInvalidDenom, "negative amount %s for denom %s", coin.Amount.String(), coin.Denom)
+		}
+		if coin.Amount.IsZero() {
+			continue // SA-C7: skip zero-amount to prevent phantom 1-udstoc charge
+		}
 		if coin.Denom == k.getEvmDenom() {
 			amount := coin.Amount
 			remainder := amount.Mod(types.ConversionMultiplier)
@@ -304,6 +314,49 @@ func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error)
 		}
 	}
 	return convertedAmt, nil
+}
+
+// convertCoinsForOutflow converts EVM coins to Cosmos coins with round-DOWN (truncation).
+// Use for all outflow paths: SendCoins, MintCoins, BurnCoins,
+// SendCoinsFromModuleToAccount (incl. RefundGas), SendCoinsFromModuleToModule.
+// Round-DOWN prevents:
+//   - SA-C7 FeeCollector drain via RefundGas rounding-up sub-ustoc leftover gas.
+//   - SA-C8 contract-internal Transfer(N) corruption where caller intent diverges
+//     from on-chain debit.
+//
+// Caller's astoc balance shows the truncated amount; dust below 1 ustoc is
+// burned by the conversion (not leaked to anyone) and cannot be recovered.
+// Zero converted amount is rejected.
+func (k EvmBankKeeper) convertCoinsForOutflow(amt sdk.Coins) (sdk.Coins, error) {
+	convertedAmt := sdk.NewCoins()
+	for _, coin := range amt {
+		if coin.Amount.IsNegative() {
+			return nil, errorsmod.Wrapf(types.ErrInvalidDenom, "negative amount %s for denom %s", coin.Amount.String(), coin.Denom)
+		}
+		if coin.Amount.IsZero() {
+			continue
+		}
+		if coin.Denom == k.getEvmDenom() {
+			// Round DOWN: truncate sub-ustoc remainder.
+			cosmosAmount := coin.Amount.Quo(types.ConversionMultiplier)
+			if cosmosAmount.IsZero() {
+				return nil, fmt.Errorf("amount too small: %s %s rounds to 0 %s (outflow truncates dust)", coin.Amount.String(), k.getEvmDenom(), k.getCosmosDenom())
+			}
+			convertedAmt = convertedAmt.Add(sdk.NewCoin(k.getCosmosDenom(), cosmosAmount))
+		} else if coin.Denom == k.getCosmosDenom() {
+			convertedAmt = convertedAmt.Add(coin)
+		} else {
+			return nil, errorsmod.Wrapf(types.ErrInvalidDenom, "custom token %s cannot be transferred from EVM context", coin.Denom)
+		}
+	}
+	return convertedAmt, nil
+}
+
+// convertAndValidateCoins is kept as a deprecated alias to the inflow variant.
+// All keeper methods have been migrated to the directional helpers above.
+// Deprecated: use convertCoinsForInflow or convertCoinsForOutflow per direction.
+func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error) {
+	return k.convertCoinsForInflow(amt)
 }
 
 // SetDenomMetaData sets the metadata for a denom.

@@ -191,6 +191,13 @@ var (
 		erc20types.ModuleName,
 		feemarkettypes.ModuleName,
 		evmutiltypes.ModuleName,
+		// SA-C2 audit-2026-05-29: x/stoc module holds custom-token reserves; direct
+		// MsgSend to it would (a) permanently lock funds (no withdrawal path for
+		// non-managed denoms) and (b) inflate moduleBalance vs token.RemainingSupply
+		// → SupplyInvariant break → chain-halt-as-a-weapon via MsgVerifyInvariant.
+		// SendCoinsFromAccountToModule (used by MsgBurnToken) bypasses this check
+		// by SDK design, so legitimate keeper flows continue to work.
+		stocmoduletypes.ModuleName,
 		// We allow the following module accounts to receive funds:
 		// govtypes.ModuleName
 	}

@@ -217,13 +217,28 @@ func (k *Keeper) RegisterERC20(goCtx context.Context, req *types.MsgRegisterERC2
 // conversions according to the outcome of the vote.
 func (k *Keeper) ToggleConversion(goCtx context.Context, req *types.MsgToggleConversion) (*types.MsgToggleConversionResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	// Check if the conversion is globally enabled
-	if !k.IsERC20Enabled(ctx) {
-		return nil, types.ErrERC20Disabled.Wrap("toggle conversion is currently disabled by governance")
-	}
 
 	if err := k.validateAuthority(req.Authority); err != nil {
 		return nil, err
+	}
+
+	// SA-L10 audit-2026-05-29: only require the global ERC20-enabled flag
+	// when this toggle would TURN A PAIR ON. Turning a pair OFF must remain
+	// possible even after governance has disabled ERC20 globally, otherwise
+	// operators cannot clean up individual misbehaving pairs once they have
+	// locked the global switch (gov footgun: disable-global then can't
+	// disable-pair to prevent a future re-enable from re-activating it).
+	pairID := k.GetTokenPairID(ctx, req.Token)
+	if len(pairID) == 0 {
+		return nil, types.ErrTokenPairNotFound.Wrapf("token '%s' not registered by id", req.Token)
+	}
+	existing, found := k.GetTokenPair(ctx, pairID)
+	if !found {
+		return nil, types.ErrTokenPairNotFound.Wrapf("token '%s' not registered", req.Token)
+	}
+	willEnable := !existing.Enabled
+	if willEnable && !k.IsERC20Enabled(ctx) {
+		return nil, types.ErrERC20Disabled.Wrap("toggle-on requires ERC20 conversion globally enabled (toggle-off remains available)")
 	}
 
 	pair, err := k.toggleConversion(ctx, req.Token)

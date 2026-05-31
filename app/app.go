@@ -412,6 +412,16 @@ func New(
 		maxGasWanted = 50_000_000
 	}
 
+	// SA-L5 audit-2026-05-29: per-wallet pending EVM tx cap can be tuned via
+	// app.toml key `max-pending-tx-per-wallet` (or env var). Zero / unset
+	// falls back to DefaultMaxPendingTxPerWallet so existing deployments keep
+	// the audited default. Validators can raise the cap for high-throughput
+	// dapps or lower it during attack mitigation without a binary rebuild.
+	maxPendingTxPerWallet := cast.ToInt(appOpts.Get("max-pending-tx-per-wallet"))
+	if maxPendingTxPerWallet <= 0 {
+		maxPendingTxPerWallet = stocappante.DefaultMaxPendingTxPerWallet
+	}
+
 	anteOptions := stocappante.StocAnteOptions{
 		HandlerOptions: evmante.HandlerOptions{
 			Cdc:                    app.appCodec,
@@ -443,7 +453,7 @@ func New(
 			m, _ := app.EVMMempool.(*evmmempool.ExperimentalEVMMempool)
 			return m
 		},
-		MaxPendingTxPerWallet: stocappante.DefaultMaxPendingTxPerWallet,
+		MaxPendingTxPerWallet: maxPendingTxPerWallet,
 	}
 	if err := anteOptions.Validate(); err != nil {
 		panic(err)
@@ -635,6 +645,7 @@ func (app *App) blockCustomTokenIBCTransfers() {
 		// O(1) lookup with read lock
 		mu.RLock()
 		channelId, blocked := escrowAddrs[toAddr.String()]
+		_, fromEscrow := escrowAddrs[fromAddr.String()]
 		mu.RUnlock()
 
 		if blocked {
@@ -645,6 +656,24 @@ func (app *App) blockCustomTokenIBCTransfers() {
 			)
 			return toAddr, fmt.Errorf(
 				"IBC transfer of custom token %q is not allowed: custom tokens created via x/stoc are Cosmos-only and cannot be transferred cross-chain",
+				customDenom,
+			)
+		}
+
+		// SA-C6 audit-2026-05-29: also reject INBOUND credits from IBC escrow
+		// addresses for x/stoc custom denoms. Prevents foreign chain from minting
+		// collision-denom into a recipient via OnRecvPacket → SupplyInvariant break →
+		// chain halt via MsgVerifyInvariant. Effective gate even without IBC
+		// middleware install since OnRecvPacket internally uses SendCoinsFromModule
+		// to user, which routes through SendRestriction.
+		if fromEscrow {
+			sdkCtx.Logger().Warn("Blocked IBC inbound credit of custom token via SendRestriction",
+				"denom", customDenom,
+				"from_escrow", fromAddr.String(),
+				"to", toAddr.String(),
+			)
+			return toAddr, fmt.Errorf(
+				"IBC inbound credit of custom-token denom %q rejected: foreign chain cannot mint collision denoms",
 				customDenom,
 			)
 		}
@@ -675,16 +704,20 @@ func (app *App) DefaultGenesis() map[string]json.RawMessage {
 }
 
 // BlockedAddresses returns all the app's blocked account addresses.
+//
+// SA-M5 audit-2026-05-29: replaced silent fallback to GetMaccPerms() with
+// explicit panic. blockAccAddrs is an explicit security-critical allowlist
+// (see app_config.go) — falling back to "block every module account" on
+// accidental empty list would silently flip semantics (govtypes is
+// intentionally NOT blocked so gov can receive deposit). Fail loudly
+// instead of guessing.
 func BlockedAddresses() map[string]bool {
-	result := make(map[string]bool)
-	if len(blockAccAddrs) > 0 {
-		for _, addr := range blockAccAddrs {
-			result[addr] = true
-		}
-	} else {
-		for addr := range GetMaccPerms() {
-			result[addr] = true
-		}
+	if len(blockAccAddrs) == 0 {
+		panic("BlockedAddresses: blockAccAddrs is empty — refusing to derive blocklist from module permissions (SA-M5: would silently block govtypes deposits and other intentionally-allowed module accounts)")
+	}
+	result := make(map[string]bool, len(blockAccAddrs))
+	for _, addr := range blockAccAddrs {
+		result[addr] = true
 	}
 	return result
 }

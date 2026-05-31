@@ -54,18 +54,24 @@ func (tpd TaxPostDecorator) applyTaxes(ctx sdk.Context, tx sdk.Tx) error {
 }
 
 // applyTaxesForMsgs processes tax for a list of messages, supporting recursive authz MsgExec unwrapping.
-// Each top-level message uses its own cache context to prevent cross-message tax interference.
+//
+// SA-M1 audit-2026-05-29: tax state is intentionally CUMULATIVE across messages within a tx.
+// msg[i+1] observes balance changes from msg[i]'s tax deduction. This is required by SA-C5
+// fail-loud semantics: if msg[i] drains a recipient, msg[i+1]'s tax check on the same
+// recipient must see the reduced balance to detect drain-then-evade attacks.
+//
+// Prior versions wrapped each msg in ctx.CacheContext()/writeCache(), which was a no-op
+// decoration (Cosmos SDK PostHandler atomicity reverts the entire tx on any error anyway)
+// and the comment claiming per-msg "isolation" was misleading — writeCache committed
+// between iterations so msg[i+1] always observed msg[i]'s tax state. Removed the redundant
+// cache layer; behavior is unchanged.
 func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, depth int) error {
 	for _, msg := range msgs {
 		switch m := msg.(type) {
 		case *types.MsgSend:
-			// Use cache context per message so one message's tax state
-			// does not leak into another message's balance checks
-			cacheCtx, writeCache := ctx.CacheContext()
-			if err := tpd.applyTaxForRecipient(cacheCtx, m.ToAddress, m.Amount); err != nil {
+			if err := tpd.applyTaxForRecipient(ctx, m.ToAddress, m.Amount); err != nil {
 				return err
 			}
-			writeCache()
 		case *types.MsgMultiSend:
 			// Reject MsgMultiSend with too many inputs or outputs to prevent DoS
 			if len(m.Inputs) > stoctypes.MaxMultiSendOutputs {
@@ -74,13 +80,11 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 			if len(m.Outputs) > stoctypes.MaxMultiSendOutputs {
 				return fmt.Errorf("MsgMultiSend has too many outputs (%d > %d)", len(m.Outputs), stoctypes.MaxMultiSendOutputs)
 			}
-			cacheCtx, writeCache := ctx.CacheContext()
 			for _, output := range m.Outputs {
-				if err := tpd.applyTaxForRecipient(cacheCtx, output.Address, output.Coins); err != nil {
+				if err := tpd.applyTaxForRecipient(ctx, output.Address, output.Coins); err != nil {
 					return err
 				}
 			}
-			writeCache()
 		case *authz.MsgExec:
 			if depth >= maxAuthzUnwrapDepth {
 				return fmt.Errorf("authz MsgExec nesting depth exceeded (%d), rejecting to prevent tax evasion", depth)
@@ -90,12 +94,9 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 				// Return error instead of skipping — prevents tax evasion via corrupted authz messages
 				return fmt.Errorf("failed to unwrap authz MsgExec for tax: %w", err)
 			}
-			// Use CacheContext for consistent isolation with direct MsgSend path
-			cacheCtx, writeCache := ctx.CacheContext()
-			if err := tpd.applyTaxesForMsgs(cacheCtx, innerMsgs, depth+1); err != nil {
+			if err := tpd.applyTaxesForMsgs(ctx, innerMsgs, depth+1); err != nil {
 				return err
 			}
-			writeCache()
 		}
 	}
 	return nil
@@ -134,6 +135,19 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			continue
 		}
 
+		// SA-L1 audit-2026-05-29: reject 1-unit transfers of taxable custom
+		// tokens to close the micro-spam evasion vector. A 1-unit transfer can
+		// only carry 0 or 1 tax; setting taxAmount=0 here (to preserve "1 unit
+		// reaches recipient") meant 1,000,000 × 1-unit txs paid zero tax. Force
+		// a 2-unit minimum so 1 unit can always go to the tax recipient and
+		// 1 unit reaches the receiver.
+		if coin.Amount.LTE(math.OneInt()) {
+			return fmt.Errorf(
+				"transfer of %s %s below minimum taxable amount: tax-enabled custom tokens require amount >= 2 (1 unit tax + 1 unit recipient)",
+				coin.Amount.String(), coin.Denom,
+			)
+		}
+
 		// Calculate tax — enforce minimum 1 unit to prevent tax evasion via transaction splitting,
 		// but ensure recipient always retains at least 1 unit on micro-transfers.
 		taxAmount := coin.Amount.ToLegacyDec().Mul(taxPercent).TruncateInt()
@@ -165,21 +179,28 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			return fmt.Errorf("invalid tax recipient address: %v", err)
 		}
 
-		// Skip tax when recipient IS the tax recipient (no-op self-transfer)
-		if recipientAddr.Equals(taxRecipientAddr) {
-			continue
-		}
+		// SA-C5 audit-2026-05-29: do NOT skip on recipient==taxRecipient.
+		// Previous "skip self-tax" was a tax-evasion vector: attacker becomes
+		// tax recipient → all inbound transfers to them are tax-free → laundering
+		// hop. Apply tax even when recipient == taxRecipient — sender's net
+		// behavior unchanged (tax goes to same address), and external attackers
+		// can't use this short-circuit. Side effect: 0-coin self-tax-send is a
+		// no-op which bank.SendCoins handles gracefully (Amount.IsZero check).
+		_ = taxRecipientAddr // retained for SendCoins below
 
-		// Cap tax at recipient's available balance to avoid reverting the entire tx
+		// SA-C5 audit-2026-05-29: FAIL LOUD on insufficient balance instead of
+		// silent-skip. Previous silent-clamp let attackers drain recipient mid-tx
+		// (via nested MsgBurn / chained MsgSend) so PostHandler saw 0 balance and
+		// silently skipped tax. Now: if recipient balance < tax, the entire tx
+		// reverts atomically — including the drain msg. Compliance premise
+		// preserved at cost of legitimate edge cases (recipient receives + immediately
+		// spends within same tx) also reverting. Acceptable for security-token chain.
 		recipientBalance := tpd.k.GetBankKeeper().GetBalance(ctx, recipientAddr, coin.Denom)
 		if recipientBalance.Amount.LT(taxAmount) {
-			taxAmount = recipientBalance.Amount
+			return fmt.Errorf("tax %s%s exceeds recipient balance %s (drain-then-evade detected; reverting tx)",
+				taxAmount.String(), coin.Denom, recipientBalance.Amount.String())
 		}
 		if taxAmount.IsZero() {
-			ctx.Logger().Info("Tax skipped, recipient has zero balance",
-				"token_denom", coin.Denom,
-				"recipient", recipientAddress,
-			)
 			continue
 		}
 

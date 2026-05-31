@@ -154,13 +154,23 @@ func (b *Backend) SendRawTransaction(data hexutil.Bytes) (common.Hash, error) {
 		err = errorsmod.ABCIError(rsp.Codespace, rsp.Code, rsp.RawLog)
 	}
 	if err != nil {
-		// Check if this is a nonce gap error that was successfully queued
-		if b.Mempool != nil && strings.Contains(err.Error(), mempool.ErrNonceGap.Error()) {
-			// Transaction was successfully queued due to nonce gap, return success to client
-			b.Logger.Debug("transaction queued due to nonce gap", "hash", txHash.Hex())
+		// SA-M10 audit-2026-05-29: only treat as queued/already-in-flight when
+		// the error genuinely originates from a non-zero ABCI response code AND
+		// the mempool sentinel string is present. Plain transport errors (rsp
+		// == nil) must NOT be silently converted to success — otherwise a
+		// network/validator outage that happens to surface a message containing
+		// the sentinel substring would falsely tell clients the tx was queued.
+		// TODO(post-mainnet): register mempool.ErrNonceGap/ErrNonceLow as
+		// errorsmod.Register'd sentinels with a dedicated codespace so we can
+		// match on rsp.Codespace + rsp.Code instead of fragile substring.
+		fromABCIRsp := rsp != nil && rsp.Code != 0
+		if fromABCIRsp && b.Mempool != nil && strings.Contains(err.Error(), mempool.ErrNonceGap.Error()) {
+			// Transaction was successfully queued due to nonce gap, return success to client.
+			// Logged at Info so operators can monitor queued-tx volume (DoS observability).
+			b.Logger.Info("transaction queued due to nonce gap", "hash", txHash.Hex())
 			return txHash, nil
 		}
-		if b.Mempool != nil && strings.Contains(err.Error(), mempool.ErrNonceLow.Error()) {
+		if fromABCIRsp && b.Mempool != nil && strings.Contains(err.Error(), mempool.ErrNonceLow.Error()) {
 			from, err := ethSigner.Sender(tx)
 			if err != nil {
 				return common.Hash{}, fmt.Errorf("failed to get sender address: %w", err)
@@ -176,6 +186,7 @@ func (b *Backend) SendRawTransaction(data hexutil.Bytes) (common.Hash, error) {
 			}
 
 			// SendRawTransaction does not return error when committed nonce <= tx.Nonce < pending nonce
+			b.Logger.Info("transaction accepted at near-future nonce", "hash", txHash.Hex(), "tx_nonce", tx.Nonce(), "committed_nonce", nonce)
 			return txHash, nil
 		}
 

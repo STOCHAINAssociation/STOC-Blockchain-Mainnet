@@ -85,6 +85,20 @@ func (m *MockBankKeeper) IterateAccountBalances(ctx context.Context, addr sdk.Ac
 	}
 }
 
+// BlockedAddr stub for tests — no addresses are blocked. SA-H11/SA-L8 interface compliance.
+func (m *MockBankKeeper) BlockedAddr(addr sdk.AccAddress) bool { return false }
+
+// MockAccountKeeper implements types.AccountKeeper for tests. SA-L8 requires NewKeeper
+// to receive a non-nil AccountKeeper; returning nil from GetAccount preserves the
+// "account does not exist" path used by SimulateMsgs.
+type MockAccountKeeper struct{}
+
+func NewMockAccountKeeper() *MockAccountKeeper { return &MockAccountKeeper{} }
+
+func (m *MockAccountKeeper) GetAccount(ctx context.Context, addr sdk.AccAddress) sdk.AccountI {
+	return nil
+}
+
 func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.Context, *MockBankKeeper) {
 	storeKey := storetypes.NewKVStoreKey(types.StoreKey)
 	db := dbm.NewMemDB()
@@ -97,6 +111,7 @@ func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.C
 	authority := authtypes.NewModuleAddress(govtypes.ModuleName)
 
 	mockBank := NewMockBankKeeper()
+	mockAcc := NewMockAccountKeeper()
 
 	k := keeper.NewKeeper(
 		cdc,
@@ -104,7 +119,7 @@ func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.C
 		log.NewNopLogger(),
 		authority.String(),
 		mockBank,
-		nil,
+		mockAcc,
 	)
 
 	ctx := sdk.NewContext(stateStore, cmtproto.Header{}, false, log.NewNopLogger())

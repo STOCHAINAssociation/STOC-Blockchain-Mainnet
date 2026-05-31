@@ -39,6 +39,13 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
 		stocante.NewIBCCustomTokenRestriction(options.StocKeeper), // block custom token IBC transfers
+		// SA-L6 audit-2026-05-29: run IBC redundant-relay check BEFORE fee
+		// deduct + signature verification so duplicate relays are rejected at
+		// CheckTx without burning validator CPU on full signature math or
+		// charging the relayer. The decorator only inspects message shape (no
+		// signer info required) and only fires on CheckTx/ReCheckTx, so moving
+		// it earlier is safe.
+		ibcante.NewRedundantRelayDecorator(options.IBCKeeper),
 		NewCosmosMinGasPriceDecorator(&feemarketParams),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
 		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeChecker),
@@ -48,7 +55,6 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewSigGasConsumeDecorator(options.AccountKeeper, options.SigGasConsumer),
 		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler),
 		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
-		ibcante.NewRedundantRelayDecorator(options.IBCKeeper),
 		evmante.NewGasWantedDecorator(options.EvmKeeper, options.FeeMarketKeeper, &feemarketParams),
 	)
 }

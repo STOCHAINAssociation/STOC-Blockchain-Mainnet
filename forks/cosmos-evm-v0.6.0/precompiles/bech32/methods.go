@@ -63,6 +63,13 @@ func (p Precompile) HexToBech32(
 // Bech32ToHex converts a bech32 address to its corresponding EIP-55 hex format. The Human Readable Prefix
 // (HRP) must be provided in the arguments. This function fails if the address is invalid or if the
 // bech32 conversion fails.
+//
+// SA-L11 audit-2026-05-29: HRP is whitelisted against the chain's account /
+// validator / consensus prefixes. Without the whitelist, an attacker could
+// pass `osmo1...`, `cosmos1...`, etc. and obtain the underlying 20-byte
+// payload — a downstream contract that "trusts" the returned hex as a local
+// STOC address would then be fooled by what is actually an address from a
+// different chain (cross-chain address-spoof / phishing).
 func (p Precompile) Bech32ToHex(
 	method *abi.Method,
 	args []interface{},
@@ -79,6 +86,20 @@ func (p Precompile) Bech32ToHex(
 	bech32Prefix := strings.SplitN(address, "1", 2)[0]
 	if bech32Prefix == address {
 		return nil, fmt.Errorf("invalid bech32 address: %s", address)
+	}
+
+	cfg := sdk.GetConfig()
+	allowedPrefixes := map[string]struct{}{
+		cfg.GetBech32AccountAddrPrefix():   {},
+		cfg.GetBech32ValidatorAddrPrefix(): {},
+		cfg.GetBech32ConsensusAddrPrefix(): {},
+	}
+	if _, ok := allowedPrefixes[bech32Prefix]; !ok {
+		return nil, fmt.Errorf(
+			"bech32 HRP %q not allowed; expected one of [%s, %s, %s] (cross-chain address spoofing prevented)",
+			bech32Prefix,
+			cfg.GetBech32AccountAddrPrefix(), cfg.GetBech32ValidatorAddrPrefix(), cfg.GetBech32ConsensusAddrPrefix(),
+		)
 	}
 
 	addressBz, err := sdk.GetFromBech32(address, bech32Prefix)

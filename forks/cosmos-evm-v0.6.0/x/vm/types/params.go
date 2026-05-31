@@ -95,10 +95,31 @@ func validateChannels(i interface{}) error {
 	return nil
 }
 
+// SA-H17 audit-2026-05-29: deny-list of ExtraEIPs that drastically reduce
+// SSTORE / opcode gas costs (state-bloat economic disaster if gov accidentally
+// or maliciously enables). Add to this list as new gas-reducer EIPs appear.
+// Operators wanting these EIPs must remove from deny-list via source patch
+// (not a runtime param), creating an effective "code timelock".
+var deniedExtraEIPs = map[int64]string{
+	// 0o002 is the STOChain-internal "SSTORE = 500 gas fixed" activator
+	// (forks/.../x/vm/eips/eips.go). Real EIP numbers don't conflict with
+	// this internal id-space. Block to prevent gov-prop from re-enabling
+	// the 44× SSTORE discount.
+	0o002: "EIP 0o002 (SSTORE fixed 500 gas) blocked by SA-H17 deny-list",
+}
+
 // Validate performs basic validation on evm parameters.
 func (p Params) Validate() error {
 	if err := validateEIPs(p.ExtraEIPs); err != nil {
 		return err
+	}
+
+	// SA-H17 audit-2026-05-29: reject deny-listed EIPs that would slash
+	// state-write costs and enable state-bloat archive-node-death attacks.
+	for _, eip := range p.ExtraEIPs {
+		if reason, denied := deniedExtraEIPs[eip]; denied {
+			return fmt.Errorf("%s", reason)
+		}
 	}
 
 	if err := ValidatePrecompiles(p.ActiveStaticPrecompiles); err != nil {

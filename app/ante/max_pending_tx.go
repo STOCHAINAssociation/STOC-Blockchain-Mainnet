@@ -13,12 +13,12 @@ import (
 
 // DefaultMaxPendingTxPerWallet is the cap on simultaneously pending EVM transactions
 // per sender address in the ExperimentalEVMMempool. Beyond this, the wallet is
-// considered to be self-DoSing the mempool (e.g., the Lê Minh 102-tx incident on
-// mainnet 2026-05-12 where one wallet filled the pool head and starved all other
-// users).
+// considered to be self-DoSing the mempool: a single sender filling the pool head
+// would starve all other users' transactions from inclusion.
 //
-// The cap is conservative: legitimate users rarely have >10 pending txs. Bots /
-// stuck nonces are the main producers of large per-address pending counts.
+// The cap is conservative: legitimate users rarely have more than ten pending
+// transactions concurrently. Bots and stuck-nonce situations are the primary
+// producers of large per-address pending counts.
 const DefaultMaxPendingTxPerWallet = 50
 
 // MempoolGetter is a deferred getter for the EVM mempool. The mempool is
@@ -64,10 +64,11 @@ func (d MaxPendingTxPerWalletDecorator) AnteHandle(
 	simulate bool,
 	next sdk.AnteHandler,
 ) (sdk.Context, error) {
-	// Only enforce during CheckTx (mempool admission). DeliverTx / ReCheck pass
-	// through — by that point the tx is already past mempool admission and
-	// re-counting would waste cycles. Simulation also skips.
-	if simulate || !ctx.IsCheckTx() || ctx.IsReCheckTx() {
+	// SA-H5 audit-2026-05-29: enforce on both CheckTx AND RecheckTx (was: only
+	// CheckTx). Previous gate allowed sender to maintain 50 pending forever via
+	// Recheck bypass — Recheck fires after every block, never re-counted toward
+	// cap. Now Recheck also enforces.
+	if simulate || !(ctx.IsCheckTx() || ctx.IsReCheckTx()) {
 		return next(ctx, tx, simulate)
 	}
 

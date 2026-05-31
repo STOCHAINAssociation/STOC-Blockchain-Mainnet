@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"runtime/debug"
+	"strings"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -71,7 +73,21 @@ func NewSTOCProposalHandler(
 // All other invariants (signer sequence dedup, gas/byte cap via TxSelector,
 // invalid-tx removal after iteration) match the upstream default handler.
 func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandler {
-	return func(ctx sdk.Context, req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
+	return func(ctx sdk.Context, req *abci.RequestPrepareProposal) (resp *abci.ResponsePrepareProposal, err error) {
+		// SA-C4 audit-2026-05-29: CometBFT does NOT wrap PrepareProposal in
+		// panic-recover. A malformed signer extension, corrupt iterator, or
+		// stale evmIter.PopCurrentAccount call can crash the proposer. Every
+		// proposer hitting the same adversarial tx → chain liveness halt.
+		// Fall back to inner default handler on panic so the block still
+		// proposes (loses Bug B cascade-skip benefit for THIS block only).
+		defer func() {
+			if r := recover(); r != nil {
+				h.logger.Error("PrepareProposal panic — falling back to default handler",
+					"panic", r, "stack", string(debug.Stack()))
+				resp, err = h.inner.PrepareProposalHandler()(ctx, req)
+			}
+		}()
+
 		var maxBlockGas uint64
 		if b := ctx.ConsensusParams().Block; b != nil {
 			maxBlockGas = uint64(b.MaxGas)
@@ -103,11 +119,34 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 		// Direct iterator — bypass SelectBy so we keep concrete type access.
 		iter := h.mp.Select(ctx, req.Txs)
 
+		// SA-H4 audit-2026-05-29: defense against potential infinite loop where
+		// PopCurrentAccount no-ops (e.g. shouldUseEVM flips between caller's
+		// CurrentIsEVM check and the actual Pop), causing the loop to re-fetch
+		// the same memTx. Force iter.Next() if we see same Tx pointer twice
+		// consecutively.
+		var prevMemTx sdk.Tx
+		var sameTxCount int
+
 		for iter != nil {
 			memTx := iter.Tx()
 			if memTx == nil {
 				break
 			}
+
+			// SA-H4: detect non-advancing iterator and force-Next to escape loop.
+			if memTx == prevMemTx {
+				sameTxCount++
+				if sameTxCount >= 2 {
+					h.logger.Warn("PrepareProposal: iter not advancing on same memTx, forcing Next()",
+						"iter_stuck_count", sameTxCount)
+					iter = iter.Next()
+					sameTxCount = 0
+					continue
+				}
+			} else {
+				sameTxCount = 0
+			}
+			prevMemTx = memTx
 
 			evmIter, _ := iter.(*evmmempool.EVMMempoolIterator)
 
@@ -143,15 +182,28 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 			if err != nil {
 				invalidTxs = append(invalidTxs, memTx)
 
-				// Bug B wire: if current head is an EVM tx, pop the entire
-				// sender bucket so we don't cascade through its (now nonce-
-				// too-high) subsequent txs. PopCurrentAccount already advances
-				// the underlying heap, so do NOT also call iter.Next() — the
-				// next loop iteration's iter.Tx() will surface the new head.
-				if evmIter != nil && evmIter.CurrentIsEVM() {
+				// SA-H3 audit-2026-05-29: only pop sender bucket on PERMANENT
+				// nonce errors. Transient errors (insufficient funds mid-block,
+				// IBC redundant relay, fee market fluctuation) should fall through
+				// to iter.Next() — popping wide on transient = censoring legitimate
+				// downstream tx of the same sender.
+				errMsg := err.Error()
+				isPermanentNonceErr :=
+					strings.Contains(errMsg, "nonce too high") ||
+						strings.Contains(errMsg, "nonce too low") ||
+						strings.Contains(errMsg, "intrinsic gas") ||
+						strings.Contains(errMsg, "invalid nonce")
+
+				// Bug B wire: if current head is an EVM tx AND the err is a
+				// permanent nonce-class error, pop the entire sender bucket so we
+				// don't cascade through its (now nonce-too-high) subsequent txs.
+				// PopCurrentAccount already advances the underlying heap, so do
+				// NOT also call iter.Next() — the next loop iteration's iter.Tx()
+				// will surface the new head.
+				if evmIter != nil && evmIter.CurrentIsEVM() && isPermanentNonceErr {
 					h.logger.Debug(
-						"Bug B cascade-skip: dropping sender bucket after ante fail",
-						"err", err.Error(),
+						"Bug B cascade-skip: dropping sender bucket after permanent ante fail",
+						"err", errMsg,
 					)
 					evmIter.PopCurrentAccount()
 					continue

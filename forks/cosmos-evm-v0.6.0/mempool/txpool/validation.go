@@ -239,16 +239,20 @@ func ValidateTransactionWithState(tx *types.Transaction, signer types.Signer, op
 	if balance.Cmp(cost) < 0 {
 		return fmt.Errorf("%w: balance %v, tx cost %v, overshot %v", core.ErrInsufficientFunds, balance, cost, new(big.Int).Sub(cost, balance))
 	}
-	// STOChain v8 Bug A fix (2026-05-16): per-tx balance check only, was sum-queued-cost.
-	// Upstream geth rejects whole batch when sigma(pending-cost) + new-tx-cost > balance.
-	// For STOChain devnet/mainnet semantics, validate each tx against current balance only
-	// (line 239 above). Underfunded txs naturally drop at PrepareProposal/ProcessProposal
-	// time as state evolves (see Bug B patch). This matches mainnet-Ethereum reality:
-	// 99/100 OK even when cumulative cost across the queue overshoots starting balance.
-	//
-	// We still honour the per-account pool-slot cap (UsedAndLeftSlots) and replacement-tx
-	// semantics (ExistingCost prev != nil means already in pool, no new slot).
+	// SA-H2 audit-2026-05-29: restore upstream geth cumulative-balance check.
+	// Bug A patch removed this, opening a 6144-slot DoS surface: attacker submits N
+	// txs each individually-affordable but cumulatively > balance; only first mines,
+	// rest pin queue slots for ~1h Lifetime. Re-enable cumulative check on NEW slots
+	// (replacement txs at same nonce skip — handled below).
 	if prev := opts.ExistingCost(from, tx.Nonce()); prev == nil {
+		if opts.ExistingExpenditure != nil {
+			pending := opts.ExistingExpenditure(from)
+			totalCost := new(big.Int).Add(pending, cost)
+			if balance.Cmp(totalCost) < 0 {
+				return fmt.Errorf("%w: balance %v, cumulative cost %v (pending %v + new %v)",
+					core.ErrInsufficientFunds, balance, totalCost, pending, cost)
+			}
+		}
 		// Transaction takes a new nonce value out of the pool. Ensure it doesn't
 		// overflow the number of permitted transactions from a single account
 		// (i.e. max cancellable via out-of-bound transaction).

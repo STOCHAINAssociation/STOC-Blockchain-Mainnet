@@ -11,18 +11,49 @@ import (
 	stoctypes "stoc/x/stoc/types"
 )
 
-// IBCCustomTokenRestriction is an AnteDecorator that blocks IBC transfers
+// IBCCustomTokenRestriction is an AnteDecorator that blocks outgoing IBC transfers
 // of custom tokens created via x/stoc. Custom tokens are Cosmos-only and
 // should not be sent cross-chain because:
-// 1. Tax enforcement cannot be applied on other chains
-// 2. Token metadata/rules are lost when crossing chains
-// 3. Returning tokens via IBC would bypass tax on the outgoing path
+//  1. Tax enforcement cannot be applied on other chains
+//  2. Token metadata/rules are lost when crossing chains
+//  3. Returning tokens via IBC would bypass tax on the outgoing path
 //
-// IBC is ONLY allowed for native chain denoms (detected dynamically via sdk.DefaultBondDenom):
-//   - Mainnet: ustoc, astoc, stoc
-//   - Testnet: utstoc, atstoc, tstoc
+// Allowed denom categories for outgoing IBC transfers (MsgTransfer):
+//   - Native chain denom (Cosmos / EVM / display variants) — pass via IsNativeDenom()
+//   - Foreign IBC-wrapped denoms (prefix "ibc/...") — pass through (fall-through path)
 //
-// All tokens created via x/stoc module (e.g., MYTOKEN_0) are blocked from IBC.
+// Blocked: any denom registered in x/stoc keeper (token storage), which means
+// every token created via x/stoc MsgCreateToken (e.g. "MYTOKEN_0").
+//
+// =============================================================================
+// FUTURE WORK — Foreign Asset Integration (e.g. USDC via Noble)
+// =============================================================================
+// The current decorator only blocks outgoing transfers of x/stoc-created tokens.
+// Inbound foreign assets (USDC from Noble, USDT from Kava, etc.) are minted by
+// the ibctransfer module as "ibc/<HASH>" denoms and the chain can then forward
+// or return them via standard IBC paths. No changes are required at the ante
+// layer to support new inbound foreign assets — the existing fall-through path
+// permits them automatically.
+//
+// However, when integrating new foreign assets, the operator MUST also confirm:
+//   1. An IBC channel and connection are established with the counterparty
+//      chain (governance / relayer coordination).
+//   2. x/bank "SendEnabled" parameter does not include a per-denom block for
+//      the foreign denom — by default bank allows all denoms; if an explicit
+//      block list is added in the future, foreign denoms must be excluded.
+//   3. x/erc20 token-pair registration (if EVM exposure of the foreign asset
+//      is desired) is performed via governance proposal, mapping the IBC denom
+//      to an ERC-20 contract address.
+//   4. The custom-token block list above (x/stoc keeper lookup) remains
+//      authoritative for chain-native custom tokens. Foreign assets must NOT
+//      be registered through x/stoc MsgCreateToken — they are already provided
+//      as IBC-wrapped denoms by their origin chain.
+//
+// Summary of denom flows:
+//   Native STOC denom out ........ allowed (used as fee / cross-chain settlement)
+//   Foreign IBC denom out ........ allowed (USDC/USDT return path, etc.)
+//   x/stoc custom token out ...... BLOCKED (this decorator)
+//   Inbound IBC packets .......... not handled here (see OnRecvPacket in ibctransfer)
 type IBCCustomTokenRestriction struct {
 	k keeper.Keeper
 }

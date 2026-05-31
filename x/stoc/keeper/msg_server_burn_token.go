@@ -6,9 +6,7 @@ import (
 	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
-	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 // BurnToken allows ANY token holder to burn their own tokens (similar to ERC20 burn).
@@ -81,32 +79,30 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	if isManaged {
 		token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
 
-		// If TotalSupply dropped below RemainingSupply, burn excess from module account
-		if token.RemainingSupply.GT(token.TotalSupply) {
-			excess := token.RemainingSupply.Sub(token.TotalSupply)
-
-			// Check actual module balance to avoid BurnCoins failure on stale state
-			moduleAddr := authtypes.NewModuleAddress(types.ModuleName)
-			moduleBalance := k.bankKeeper.GetBalance(ctx, moduleAddr, msg.Denom)
-			actualBurnable := math.MinInt(excess, moduleBalance.Amount)
-
-			if actualBurnable.IsPositive() {
-				ctx.Logger().Warn("Burning excess module tokens after user burn",
-					"denom", token.MinimalDenom,
-					"excess", excess.String(),
-					"actual_burnable", actualBurnable.String(),
-					"remaining_before", token.RemainingSupply.String(),
-					"total_after", token.TotalSupply.String(),
-				)
-				excessCoins := sdk.NewCoins(sdk.NewCoin(msg.Denom, actualBurnable))
-				if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, excessCoins); err != nil {
-					return nil, sdkerrors.Wrap(err, "failed to burn excess module tokens")
-				}
-			}
-			// Track actual amount burned from module — prevents invariant violation
-			// when actualBurnable < excess (e.g., stale state)
-			token.RemainingSupply = token.RemainingSupply.Sub(actualBurnable)
-		}
+		// SA-H9-v2 audit-2026-05-30 (user policy clarification):
+		// REMOVED the auto module-reserve burn entirely.
+		//
+		// BUSINESS RULE (user explicit 2026-05-30):
+		//   MsgBurnToken = burn token holder ĐANG SỞ HỮU (universal user action).
+		//   Creator KHÔNG có privilege đặc biệt — phải sở hữu mới burn được.
+		//   Để giảm RemainingSupply (reserve), creator MUST use 2-step flow:
+		//     1) MsgReleaseTokens (creator-only) → move reserve to creator balance
+		//     2) MsgBurnToken → burn the released balance
+		//
+		// Why this is better than auto-trigger reserve burn:
+		//   - Clean audit trail: 2 explicit events (Release + Burn) instead of
+		//     1 implicit cascade.
+		//   - Compliance: regulated security token requires authorized intent
+		//     declaration per reserve change.
+		//   - State drift safety: auto-reconcile MASKS drift. Manual reconcile
+		//     FORCES creator notice + investigate via SupplyInvariant warning
+		//     (SA-H14 soft fail emits drift event).
+		//   - Separation of concerns: MsgBurnToken = balance action,
+		//     MsgReleaseTokens = reserve action. Don't collapse.
+		//
+		// If RemainingSupply > TotalSupply drift happens (shouldn't in normal
+		// flows), SupplyInvariant logs warning + emits stoc_supply_drift event
+		// (see x/stoc/keeper/invariants.go). Creator reconciles via Release+Burn.
 
 		if err := k.SetToken(ctx, token); err != nil {
 			return nil, err

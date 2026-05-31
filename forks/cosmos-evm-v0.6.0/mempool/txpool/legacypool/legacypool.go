@@ -80,6 +80,11 @@ var (
 var (
 	evictionInterval    = time.Minute     // Time interval to check for evictable transactions
 	statsReportInterval = 8 * time.Second // Time interval to report transaction pool stats
+	// pendingHardEvictAfter caps how long a fee-stuck pending bucket can
+	// stay in the pool (SA-M8). Beyond this absolute age the bucket is
+	// evicted regardless of feemarket state, so a permanently-elevated
+	// baseFee cannot grow the pool without bound.
+	pendingHardEvictAfter = 24 * time.Hour
 )
 
 var (
@@ -385,25 +390,52 @@ func (pool *LegacyPool) loop() {
 					queuedEvictionMeter.Mark(int64(len(list)))
 				}
 			}
-			// STOChain fix (2026-05-22): also evict STALE PENDING txs.
+			// STOChain fix: also evict stale PENDING txs.
 			// Upstream go-ethereum only lifetime-evicts the queued bucket,
 			// assuming pending (executable) txs always mine within blocks. On
 			// Cosmos-EVM that assumption breaks: a pending tx can be permanently
 			// unminable (sender drained by an earlier tx so cumulative cost
 			// exceeds balance, or feeCap < baseFee after a feemarket change) yet
-			// stays in the pending bucket forever — pool grows unbounded
-			// (observed: 3896 stuck pending txs on devnet 2026-05-22, chain
-			// nonce frozen). An account idle longer than Lifetime with txs still
-			// pending is definitively stuck: drop them so the pool drains.
-			// Legit pending txs mine in seconds and never reach Lifetime.
+			// stays in the pending bucket forever — the pool then grows unbounded
+			// and the account's on-chain nonce stops advancing.
+			// An account idle longer than Lifetime with txs still pending is
+			// definitively stuck: drop them so the pool drains. Legitimate
+			// pending txs mine within seconds and never reach Lifetime.
+			//
+			// SA-M8 audit-2026-05-29: distinguish fee-stuck buckets from
+			// definitively-stuck ones. A bucket whose lowest-nonce tx has
+			// GasFeeCap < currentBaseFee is waiting on a feemarket cool-down,
+			// not permanently broken — eviction would force the user to
+			// re-broadcast after baseFee drops anyway, wasting their tx fee
+			// signal. Skip eviction in that case until the absolute
+			// pendingHardEvictAfter bound is reached (safety cap for never-
+			// recovering feemarket scenarios).
 			for addr := range pool.pending {
-				if time.Since(pool.beats[addr]) > pool.config.Lifetime {
-					list := pool.pending[addr].Flatten()
-					for _, tx := range list {
-						pool.removeTx(tx.Hash(), true, true)
-					}
-					pendingEvictionMeter.Mark(int64(len(list)))
+				age := time.Since(pool.beats[addr])
+				if age <= pool.config.Lifetime {
+					continue
 				}
+				list := pool.pending[addr].Flatten()
+				if age < pendingHardEvictAfter && len(list) > 0 {
+					if head := pool.currentHead.Load(); head != nil && head.BaseFee != nil {
+						if list[0].GasFeeCap().Cmp(head.BaseFee) < 0 {
+							// Lowest-nonce tx is fee-stuck. All higher
+							// nonces wait on it anyway — give the bucket
+							// time to drain when baseFee falls back.
+							continue
+						}
+					}
+				}
+				for _, tx := range list {
+					pool.removeTx(tx.Hash(), true, true)
+				}
+				pendingEvictionMeter.Mark(int64(len(list)))
+				// SA-H7 audit-2026-05-29: removeTx's pending-bucket branch
+				// does NOT delete pool.beats[addr]. Stale beats entry causes
+				// next-tx-for-addr (re-queued gapped nonce) to inherit the
+				// old timestamp → premature 1min-evict instead of 1h. Drop
+				// the beats entry here when we evict the entire bucket.
+				delete(pool.beats, addr)
 			}
 			pool.mu.Unlock()
 		}

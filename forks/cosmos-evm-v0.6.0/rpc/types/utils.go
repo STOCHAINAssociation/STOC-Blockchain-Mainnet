@@ -145,6 +145,16 @@ func MakeHeader(
 	// maxFeePerGas=0 and got rejected by the validator mempool floor, opening
 	// a second popup. Hiding the field when feemarket is disabled forces MM
 	// to use legacy Type-0 gas estimation (single popup).
+	//
+	// SA-M11 audit-2026-05-29 (FALSE POSITIVE — mitigated by config default):
+	// hiding BaseFee causes some wallets to emit legacy (Type-0) transactions.
+	// Modern wallets (MetaMask, WalletConnect) attach EIP-155 chain-id to
+	// legacy txs and remain replay-safe. Cross-chain replay only becomes
+	// possible if a *pre*-EIP-155 tx (no chain id in signature) is submitted,
+	// which is rejected at the JSON-RPC layer when AllowUnprotectedTxs is
+	// false — the shipped default (config.DefaultAllowUnprotectedTxs = false,
+	// see rpc/backend/call_tx.go SendRawTransaction). Operators who manually
+	// enable allow-unprotected-txs=true accept the cross-chain replay risk.
 	if evmtypes.GetEthChainConfig().IsLondon(header.Number) && baseFee != nil && baseFee.Sign() > 0 {
 		header.BaseFee = baseFee
 	}

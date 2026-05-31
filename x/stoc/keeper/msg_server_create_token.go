@@ -69,6 +69,35 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		return nil, sdkerrors.Wrap(err, "invalid token")
 	}
 
+	// SA-H11 audit-2026-05-29: reject Tax.RecipientAddress that is bank-blocked.
+	// Bank-blocked recipient (module account, etc.) makes every taxable transfer
+	// fail at the PostHandler's SendCoins call → token is soft-rugged: all
+	// holders permanently unable to transfer it. Creator cannot self-remediate
+	// because Tax fields require gov via MsgUpdateParams.
+	if token.Tax.RecipientAddress != "" {
+		taxRecipient, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
+		if err == nil && k.bankKeeper.BlockedAddr(taxRecipient) {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidTokenAmount,
+				"tax recipient %s is a blocked address; choose a non-module/non-precompile address",
+				token.Tax.RecipientAddress)
+		}
+	}
+
+	// SA-H13 REVERTED rc2g (user policy 2026-05-30):
+	// Name / Symbol / Display CAN collide on-chain. Multiple creators with same
+	// Symbol "USDC" → each gets unique MinimalDenom via global counter
+	// ("USDC_3", "USDC_47", etc).
+	//
+	// BUSINESS RULE — Trust verification lives at BE indexer layer
+	// (`stochain-explorer/stoc-backend-sync-chain`), like Etherscan verified-
+	// contract pattern. BE maintains `token_verification` registry; explorer +
+	// wallet UI consult BE API to render "✓ Verified" / "⚠️ Unverified" /
+	// "🚫 Scam" badges per token. On-chain layer stays permissionless.
+	//
+	// MinimalDenom uniqueness preserved via counter (see line 41 + 178 below).
+	// SafeIsNativeDenom (SA-H8) still blocks ustoc/astoc symbol collision.
+	// Tax recipient blocklist (SA-H11) still blocks soft-rug.
+
 	// Validate generated denom against SDK rules
 	if err := sdk.ValidateDenom(minimalDenom); err != nil {
 		return nil, sdkerrors.Wrapf(types.ErrInvalidTokenSymbol, "generated denom %s is invalid: %v", minimalDenom, err)

@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"sync"
 
+	xxhash "github.com/cespare/xxhash/v2"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/holiman/uint256"
 
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -33,7 +36,21 @@ const (
 	SubscriberName = "evm"
 	// fallbackBlockGasLimit is the default block gas limit is 0 or missing in genesis file
 	fallbackBlockGasLimit = 100_000_000
+	// orphanDecodeCacheSize bounds the LRU cache that memoizes IsOrphanEVMTx
+	// decode results (SA-M7 audit-2026-05-29). Sized to cover full CometBFT
+	// mempool worst-case (5000 cosmos + ~5000 EVM) plus headroom for in-flight
+	// recheck churn so steady-state hit rate ≈ 100%.
+	orphanDecodeCacheSize = 16384
 )
+
+// orphanDecodeEntry caches the decoded shape of a tx byte sequence used by
+// IsOrphanEVMTx. Only the EVM tx hash + isEVM flag are cached; the
+// legacypool.Has() check is still performed on every call so cache entries
+// stay valid across legacypool mutations.
+type orphanDecodeEntry struct {
+	ethHash ethcommon.Hash
+	isEVM   bool
+}
 
 type (
 	// ExperimentalEVMMempool is a unified mempool that manages both EVM and Cosmos SDK transactions.
@@ -63,6 +80,12 @@ type (
 		mtx sync.Mutex
 
 		eventBus *cmttypes.EventBus
+
+		// orphanDecodeCache memoizes IsOrphanEVMTx decode results (SA-M7).
+		// Lookup keyed by xxhash(txBytes) (8-byte fingerprint); value caches
+		// the decoded shape so we skip repeated proto unmarshals during the
+		// RecheckTx burst that fires every block for the full CometBFT mempool.
+		orphanDecodeCache *lru.Cache[uint64, orphanDecodeEntry]
 	}
 )
 
@@ -179,17 +202,24 @@ func NewExperimentalEVMMempool(
 	cosmosPoolConfig.MaxTx = cosmosPoolMaxTx
 	cosmosPool = sdkmempool.NewPriorityMempool(*cosmosPoolConfig)
 
+	decodeCache, err := lru.New[uint64, orphanDecodeEntry](orphanDecodeCacheSize)
+	if err != nil {
+		// lru.New only errors on size <= 0; orphanDecodeCacheSize is a positive const.
+		panic(fmt.Sprintf("failed to create orphan decode LRU cache: %v", err))
+	}
+
 	evmMempool := &ExperimentalEVMMempool{
-		vmKeeper:      vmKeeper,
-		txPool:        txPool,
-		legacyTxPool:  txPool.Subpools[0].(*legacypool.LegacyPool),
-		cosmosPool:    cosmosPool,
-		logger:        logger,
-		txConfig:      txConfig,
-		blockchain:    blockchain,
-		blockGasLimit: config.BlockGasLimit,
-		minTip:        config.MinTip,
-		anteHandler:   config.AnteHandler,
+		vmKeeper:          vmKeeper,
+		txPool:            txPool,
+		legacyTxPool:      txPool.Subpools[0].(*legacypool.LegacyPool),
+		cosmosPool:        cosmosPool,
+		logger:            logger,
+		txConfig:          txConfig,
+		blockchain:        blockchain,
+		blockGasLimit:     config.BlockGasLimit,
+		minTip:            config.MinTip,
+		anteHandler:       config.AnteHandler,
+		orphanDecodeCache: decodeCache,
 	}
 
 	vmKeeper.SetEvmMempool(evmMempool)
@@ -439,22 +469,58 @@ func (m *ExperimentalEVMMempool) Close() error {
 // this hook the CometBFT mempool grows unbounded: legacypool drops a stale
 // tx, CometBFT recheck sees ante pass on the single-tx view, tx never mines.
 //
-// Returns false if tx can't be decoded, has != 1 msg, or msg isn't an EVM tx
-// — in those cases let the normal CheckTx path decide.
+// SA-H1 audit-2026-05-29: decode failure on RecheckTx now returns true (drop).
+// The tx passed initial CheckTx (which also calls TxDecoder), so a subsequent
+// decode failure indicates the bytes are no longer round-trippable (proto
+// registry change, soft fork, or codec drift). Leaving such bytes in the
+// CometBFT mempool re-opens the original orphan bug the patch was meant to
+// close. Shape failures (len(msgs) != 1, not MsgEthereumTx) are NOT EVM txs
+// at all — leave alone (return false → let normal CheckTx decide).
+//
+// SA-M6 audit-2026-05-29 (FALSE POSITIVE — TOCTOU benign): the read of
+// m.legacyTxPool.Has(hash) at line below is not synchronized with concurrent
+// txPool.Insert. A sub-ms race is possible (orphan→drop-from-CometBFT while
+// peer re-injects into legacypool). This is benign because:
+//   1. Block proposal in getIterators() reads EVM pending set directly from
+//      m.txPool.Pending(), NOT from CometBFT mempool. A tx present in
+//      legacypool is still proposed regardless of CometBFT bookkeeping.
+//   2. If the dropped tx is re-broadcast by any peer (or re-submitted by
+//      the original sender), normal CheckTx adds it back to CometBFT.
+// Adding a lock here would serialize a hot per-RecheckTx path for no
+// correctness gain.
 func (m *ExperimentalEVMMempool) IsOrphanEVMTx(txBytes []byte) bool {
+	// SA-M7 audit-2026-05-29: memoize decode result. RecheckTx fires every
+	// block for every CometBFT mempool entry — at 5000 entries the proto
+	// decode consumed ~6% of block budget. The legacypool.Has() lookup is
+	// still performed on every call (O(1) map) so cached entries remain
+	// correct as the pool churns.
+	cacheKey := xxhash.Sum64(txBytes)
+	if entry, ok := m.orphanDecodeCache.Get(cacheKey); ok {
+		if !entry.isEVM {
+			return false
+		}
+		return !m.legacyTxPool.Has(entry.ethHash)
+	}
+
 	tx, err := m.txConfig.TxDecoder()(txBytes)
 	if err != nil {
-		return false
+		// Tx that was admitted once and no longer decodes is dead — drop.
+		// Do NOT cache: a transient decode error should not pin a "drop"
+		// verdict if the codec recovers (e.g. proto registry reloads).
+		return true
 	}
 	msgs := tx.GetMsgs()
 	if len(msgs) != 1 {
+		m.orphanDecodeCache.Add(cacheKey, orphanDecodeEntry{isEVM: false})
 		return false
 	}
 	ethMsg, ok := msgs[0].(*evmtypes.MsgEthereumTx)
 	if !ok {
+		m.orphanDecodeCache.Add(cacheKey, orphanDecodeEntry{isEVM: false})
 		return false
 	}
 	hash := ethMsg.AsTransaction().Hash()
+	m.orphanDecodeCache.Add(cacheKey, orphanDecodeEntry{ethHash: hash, isEVM: true})
 	return !m.legacyTxPool.Has(hash)
 }
 

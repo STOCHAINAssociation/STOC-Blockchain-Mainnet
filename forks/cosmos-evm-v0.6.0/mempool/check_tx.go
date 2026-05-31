@@ -17,13 +17,13 @@ import (
 // Returns a handler function that processes ABCI CheckTx requests and manages EVM transaction sequencing.
 func NewCheckTxHandler(mempool *ExperimentalEVMMempool) types.CheckTxHandler {
 	return func(runTx types.RunTx, request *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
-		// STOChain fix 2026-05-25: drop orphan EVM txs on RecheckTx.
-		// An EVM tx may live in the CometBFT mempool while legacypool has
-		// already evicted it (cumulative balance reject after sender drain,
-		// replacement-by-fee, lifetime evict, etc). Without an explicit drop
-		// signal CometBFT keeps the tx forever — single-tx ante passes on
-		// recheck but proposer's legacypool view rejects every block. Pool
-		// observed growing 85 → 1579 over 2 days on devnet (2026-05-25).
+		// STOChain fix: drop orphan EVM txs on RecheckTx.
+		// An EVM tx may live in the CometBFT mempool while the legacy pool has
+		// already evicted it (cumulative-balance reject after sender drain,
+		// replacement-by-fee, lifetime evict, etc.). Without an explicit drop
+		// signal, CometBFT keeps the tx indefinitely — single-tx ante passes on
+		// recheck but the proposer's legacy-pool view rejects every block, and
+		// the CometBFT mempool grows unbounded.
 		//
 		// On Recheck, if the tx hash is gone from legacypool, return an error
 		// CheckTx response so CometBFT removes it from its mempool too.

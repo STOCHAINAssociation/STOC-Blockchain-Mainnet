@@ -57,6 +57,11 @@ func DefaultParams() Params {
 	}
 }
 
+// SA-H23 audit-2026-05-29: cap BaseFee/MinGasPrice to prevent gov-prop misconfig
+// from bricking the chain. 10^18 raw Dec = effective max ~10^6 gwei after wrapper —
+// far above any realistic gas price, but bounded.
+var MaxFeemarketGasPrice = math.LegacyNewDec(1_000_000_000_000_000_000)
+
 // Validate performs basic validation on fee market parameters.
 func (p Params) Validate() error {
 	if p.BaseFeeChangeDenominator == 0 {
@@ -65,6 +70,11 @@ func (p Params) Validate() error {
 
 	if p.BaseFee.IsNegative() {
 		return fmt.Errorf("initial base fee cannot be negative: %s", p.BaseFee)
+	}
+
+	// SA-H23 audit-2026-05-29: cap BaseFee to prevent gov-misconfig EVM halt.
+	if p.BaseFee.GT(MaxFeemarketGasPrice) {
+		return fmt.Errorf("base fee exceeds max allowed (%s > %s)", p.BaseFee, MaxFeemarketGasPrice)
 	}
 
 	if p.EnableHeight < 0 {
@@ -79,7 +89,18 @@ func (p Params) Validate() error {
 		return err
 	}
 
-	return validateMinGasPrice(p.MinGasPrice)
+	if err := validateMinGasPrice(p.MinGasPrice); err != nil {
+		return err
+	}
+
+	// SA-H23 audit-2026-05-29: enforce BaseFee >= MinGasPrice invariant.
+	// If BaseFee floats below MinGasPrice, the dynamic-fee floor pinches the
+	// effective price to MinGasPrice and feemarket signaling drifts.
+	if !p.NoBaseFee && p.BaseFee.LT(p.MinGasPrice) {
+		return fmt.Errorf("base fee (%s) must be >= min gas price (%s)", p.BaseFee, p.MinGasPrice)
+	}
+
+	return nil
 }
 
 func (p Params) IsBaseFeeEnabled(height int64) bool {
@@ -93,6 +114,12 @@ func validateMinGasPrice(gasPrice math.LegacyDec) error {
 
 	if gasPrice.IsNegative() {
 		return fmt.Errorf("value cannot be negative: %s", gasPrice)
+	}
+
+	// SA-H23 audit-2026-05-29: cap MinGasPrice to prevent gov-misconfig
+	// from rejecting all Cosmos txs (chain halt).
+	if gasPrice.GT(MaxFeemarketGasPrice) {
+		return fmt.Errorf("min gas price exceeds max allowed (%s > %s)", gasPrice, MaxFeemarketGasPrice)
 	}
 
 	return nil

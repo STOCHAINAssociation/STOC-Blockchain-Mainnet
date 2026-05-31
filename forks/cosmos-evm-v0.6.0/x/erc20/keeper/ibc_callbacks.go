@@ -98,18 +98,22 @@ func (k Keeper) OnRecvPacket(
 	// Case 1. token pair is not registered and is an IBC Coin
 	// by checking the prefix we ensure that only coins not native from this chain are evaluated.
 	case !found && strings.HasPrefix(coin.Denom, "ibc/"):
-		tokenPair, err := k.RegisterERC20Extension(ctx, coin.Denom)
-		if err != nil {
-			return channeltypes.NewErrorAcknowledgement(err)
-		}
-
+		// SA-M9 audit-2026-05-29: do NOT auto-register the token pair here.
+		// The surrounding ctx zeroes KV gas costs (line ~54) so a malicious
+		// counterparty chain or relayer can spray arbitrary synthesized
+		// `ibc/<hash>` denoms and force RegisterERC20Extension to write a new
+		// TokenPair entry per packet at no fee cost — unbounded state growth /
+		// IAVL bloat. Instead: accept the coin as a native Cosmos bank balance
+		// and require explicit governance (`MsgRegisterERC20`) to enable the
+		// ERC20 representation for any new IBC denom. Recipients can later
+		// convert via `MsgConvertCoin` once the pair is registered.
 		ctx.EventManager().EmitEvents(
 			sdk.Events{
 				sdk.NewEvent(
-					types.EventTypeRegisterERC20Extension,
+					"erc20_ibc_pair_not_registered",
 					sdk.NewAttribute(types.AttributeCoinSourceChannel, packet.SourceChannel),
-					sdk.NewAttribute(types.AttributeKeyERC20Token, tokenPair.Erc20Address),
-					sdk.NewAttribute(types.AttributeKeyCosmosCoin, tokenPair.Denom),
+					sdk.NewAttribute(types.AttributeKeyCosmosCoin, coin.Denom),
+					sdk.NewAttribute(types.AttributeKeyReceiver, recipient.String()),
 				),
 			},
 		)

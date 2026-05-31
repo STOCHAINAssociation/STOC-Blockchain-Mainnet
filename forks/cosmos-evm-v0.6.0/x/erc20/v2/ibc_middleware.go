@@ -86,7 +86,19 @@ func (im IBCMiddleware) OnRecvPacket(
 			Status: channeltypesv2.PacketStatus_Failure,
 		}
 	}
-	im.keeper.OnRecvPacket(ctx, packet, ack)
+	// SA-H22 audit-2026-05-29: propagate the keeper-returned acknowledgement.
+	// Previous code DROPPED keeper.OnRecvPacket return → ICS20-conversion failure
+	// (blocked recipient, MintingEnabled=false, ERC20 contract revert) was masked
+	// as success ack to counterparty → counterparty's escrow stayed locked while
+	// local mint failed = double-loss. Now: any ErrorAcknowledgement from the
+	// keeper turns the packet result into a Failure so counterparty refunds.
+	keeperAck := im.keeper.OnRecvPacket(ctx, packet, ack)
+	if keeperAck != nil && !keeperAck.Success() {
+		return channeltypesv2.RecvPacketResult{
+			Status:          channeltypesv2.PacketStatus_Failure,
+			Acknowledgement: keeperAck.Acknowledgement(),
+		}
+	}
 	return recvResult
 }
 

@@ -43,33 +43,126 @@ const (
 	// rollout. Replaces the devnet-only v4/v5/v6/v7/v8 iteration chain. Single
 	// gov proposal + binary swap delivers:
 	//
-	//   Params written by handler (gov-visible state changes):
+	// =========================================================================
+	// ISSUES FIXED BY v4-final (explicit list):
+	// =========================================================================
+	//
+	//   Issue #1 — feemarket disabled / MetaMask 2-popup UX bug
+	//     Symptom: MetaMask opens signing popup twice; first submit fails with
+	//              "Gas estimation failed: insufficient funds for intrinsic
+	//              transaction cost"; user must click Send Transaction twice.
+	//     Root cause: feemarket NoBaseFee=true under v3 era → eth_feeHistory
+	//                 returns mixed 0/non-zero baseFeePerGas → MetaMask EIP-1559
+	//                 estimator underestimates fee → first submit gets rejected
+	//                 by validator min-gas-price → MM auto-retries via gasPrice
+	//                 fallback → user sees second popup.
+	//     Fix: enable EIP-1559 base_fee with valid params (see params block below).
+	//
+	//   Issue #2 — wei→udstoc dust precision mismatch
+	//     Symptom: EVM tx with non-multiple-of-10^12-wei amount rejected with
+	//              "amount X adstoc has dust remainder Y wei"; MetaMask "deduct
+	//              full gas cost" error on contract deploy.
+	//     Root cause: Cosmos minimum unit = 1 udstoc (10^12 wei) but EVM
+	//                 gasPrice operates at 1 gwei (10^9 wei) granularity.
+	//                 gasUsed × gasPrice rarely a multiple of 10^12.
+	//     Fix: x/evmutil/keeper/bank_keeper.go convertAndValidateCoins rounds
+	//          UP wei → udstoc (sender overpays by ≤ 1 udstoc, negligible).
+	//
+	//   Issue #3 — High-volume sender mempool flood
+	//     Symptom: a single wallet submitting many pending EVM transactions can
+	//              fill the mempool head and starve other users' transactions
+	//              from inclusion.
+	//     Root cause: no per-wallet cap on pending EVM mempool txs.
+	//     Fix: app/ante/max_pending_tx.go MaxPendingTxPerWalletDecorator cap 50
+	//          (configurable). Plus nil-check on pool.GetTxPool() to prevent
+	//          startup-race panic during CheckTx.
+	//
+	//   Issue #4 — Bug A cosmos/evm mempool sum-queued-cost balance check
+	//     Symptom: tx rejected even though sender has enough balance for
+	//              individual tx, because sum of all pending tx costs exceeds.
+	//     Root cause: upstream geth-style aggregate balance check unsuited to
+	//                 Cosmos block-by-block balance semantics.
+	//     Fix: forks/cosmos-evm-v0.6.0/mempool/txpool/validation.go switches to
+	//          per-tx balance check (skip cumulative sum-queued cost).
+	//
+	//   Issue #5 — Bug B PrepareProposal cascade-skip (PARTIAL → wired)
+	//     Symptom: after EVM ante fails for sender A's tx, block builder
+	//              iterates ALL of A's subsequent pending txs (also fail with
+	//              nonce-too-high cascade), wasting BlockBuilding time.
+	//     Root cause: upstream cosmos/evm v0.6.0 only exposed PopCurrentAccount
+	//                 helper on EVMMempoolIterator — no caller invokes it.
+	//     Fix: app/abci_proposal.go STOCProposalHandler wraps DefaultProposal
+	//          handler, calls iter.PopCurrentAccount() when EVM ante fails.
+	//          Cascade-skip activates at runtime.
+	//
+	//   Issue #6 — Bug C eth_getTransactionCount pending nonce mismatch
+	//     Symptom: MetaMask gets stale nonce from chain (does not include
+	//              pending EVM mempool entries), submits tx with wrong nonce
+	//              → rejected → user confused.
+	//     Root cause: upstream cosmos/evm v0.6.0 eth_getTransactionCount
+	//                 (pending) only consulted CometBFT mempool, missed EVM
+	//                 legacypool queued/pending buckets.
+	//     Fix: forks/cosmos-evm-v0.6.0/rpc/backend/account_info.go pending
+	//          nonce = max(chainNonce, txpool.PoolNonce(addr)).
+	//
+	//   Issue #7 — L2 legacypool stuck pending eviction
+	//     Symptom: a wallet whose balance is depleted by other operations
+	//              accumulates pending transactions (cumulative cost > balance)
+	//              that never evict from the legacy pool, allowing the pool to
+	//              grow unbounded over time.
+	//     Root cause: upstream go-ethereum legacypool eviction loop only
+	//                 scanned pool.queue bucket, not pool.pending. Assumption
+	//                 (pending = always-mineable) breaks for Cosmos-EVM where
+	//                 a permanently-unminable pending tx is possible.
+	//     Fix: forks/cosmos-evm-v0.6.0/mempool/txpool/legacypool/legacypool.go
+	//          extend evict loop to also scan pool.pending and drop entries
+	//          where beats[addr] idle > Lifetime. Lifetime = 1h (matches
+	//          CometBFT ttl-duration for consistency).
+	//
+	//   Issue #8 — L1 CometBFT mempool orphan eviction
+	//     Symptom: a transaction may live in the CometBFT mempool while the
+	//              legacy pool has already evicted it (cumulative-balance reject,
+	//              replacement, pool lifetime). Single-tx ante validation passes
+	//              on Recheck so the CometBFT mempool retains the entry; the
+	//              proposer skips it every block because L2's view disagrees.
+	//              Without explicit cross-layer signalling, the CometBFT mempool
+	//              grows unbounded.
+	//     Root cause: no propagation from legacypool removal → CometBFT
+	//                 mempool. CheckTx wrapper had no orphan detection.
+	//     Fix: forks/cosmos-evm-v0.6.0/mempool/check_tx.go on RecheckTx flag,
+	//          query legacypool.Has(hash) — if false, return ErrInvalidRequest
+	//          so CometBFT drops from its mempool. Companion helper
+	//          ExperimentalEVMMempool.IsOrphanEVMTx() exposes lookup.
+	//
+	// =========================================================================
+	// State changes applied by v4-final handler:
+	// =========================================================================
+	//
+	//   Gov-visible params:
 	//     - feemarket.NoBaseFee   = false   (enable EIP-1559)
-	//     - feemarket.BaseFee     = 0.001   (1 gwei after wrapper ×10^12)
-	//     - feemarket.MinGasPrice = 0.001   (1 gwei floor for mempool inclusion)
+	//     - feemarket.BaseFee     = 0.001   (Cosmos scale: 0.001 ustoc/gas = 1 gwei effective)
+	//     - feemarket.MinGasPrice = 0.001   (same — feemarket floor for mempool admission)
+	//
+	//     Verified live devnet 2026-05-29: FeeChecker (in NewDeductFeeDecorator)
+	//     compares feeCap vs BaseFee in Cosmos scale directly; 0.001 enforces 1 gwei.
+	//     Custom CosmosMinGasPriceDecorator's .Quo(10^12) is dead code (silent passes;
+	//     FeeChecker catches with correct value afterward). SA-C1 audit finding was
+	//     a false positive — the dead decorator misled the static analysis.
 	//
 	//   Source-only changes that ride along with the binary (no params needed):
-	//     - x/evmutil/keeper/bank_keeper.go     — wei→udstoc dust round-up
-	//                                            (fixes "amount has dust remainder"
-	//                                            MetaMask deduct-full-gas issue)
-	//     - app/ante/max_pending_tx.go          — MaxPendingTxPerWalletDecorator
-	//                                            cap 50 (Lê Minh 102-tx incident
-	//                                            mitigation)
-	//     - app/abci_proposal.go                — STOCProposalHandler wraps
-	//                                            DefaultProposalHandler to call
-	//                                            EVMMempoolIterator.PopCurrentAccount()
-	//                                            when EVM ante fails — Bug B
-	//                                            cascade-skip wired at runtime
-	//                                            (was helper-only in upstream)
-	//     - forks/cosmos-evm-v0.6.0/            — vendored cosmos/evm fork:
-	//         mempool/txpool/validation.go      — Bug A per-tx balance check
-	//                                            (was sum-queued-cost reject)
-	//         mempool/iterator.go               — Bug B PopCurrentAccount helper
-	//         rpc/backend/account_info.go       — Bug C eth_getTransactionCount
-	//                                            (pending) reflects pool nonce
+	//     - x/evmutil/keeper/bank_keeper.go     — Issue #2 wei→udstoc round-up
+	//     - app/ante/max_pending_tx.go          — Issue #3 MaxPendingTxPerWallet
+	//                                              + nil-check defense
+	//     - app/abci_proposal.go                — Issue #5 Bug B cascade-skip
+	//                                              wire (STOCProposalHandler)
+	//     - forks/cosmos-evm-v0.6.0/...         — Issues #4 + #5-helper + #6
 	//
 	// Idempotent: re-running the handler is safe — params are deterministic
 	// re-assertions and the source-only changes activate purely on binary load.
+	//
+	// MAINNET ROLLOUT: 1 gov prop applying this handler on top of current
+	// mainnet v3-fix-evm-denom state → 1 halt + 1 binary swap → all 6 issues
+	// fixed at once.
 	UpgradeNameV4Final = "v4-final"
 )
 
@@ -84,25 +177,35 @@ func (app *App) RegisterUpgradeHandlers() {
 				return vm, err
 			}
 
+			// SA-C3 audit-2026-05-29: wrap discretionary post-migration writes in
+			// CacheContext so SetParams + setEvmDenomFromStaking commit atomically.
+			// RunMigrations stays outside (idempotent per SDK contract — re-runs
+			// against new fromVM skip already-migrated modules).
+			sdkCtx := sdk.UnwrapSDKContext(ctx)
+			cacheCtx, writeCache := sdkCtx.CacheContext()
+
 			// Set feemarket params: disable dynamic base fee for initial EVM deployment.
 			// This ensures existing gas price config (0.01 ustoc) in wallets/FE remains valid.
 			// Can be re-enabled later via governance proposal once ecosystem is ready.
-			sdkCtx := sdk.UnwrapSDKContext(ctx)
-			feemarketParams := feemarkettypes.DefaultParams()
+			//
+			// Read existing params and apply targeted overrides so any future governance
+			// changes to unrelated fields are preserved across handler re-runs (audit fix H3).
+			feemarketParams := app.FeeMarketKeeper.GetParams(cacheCtx)
 			feemarketParams.NoBaseFee = true
 			feemarketParams.BaseFee = math.LegacyZeroDec()
 			feemarketParams.MinGasPrice = math.LegacyZeroDec()
-			if err := app.FeeMarketKeeper.SetParams(sdkCtx, feemarketParams); err != nil {
+			if err := app.FeeMarketKeeper.SetParams(cacheCtx, feemarketParams); err != nil {
 				return vm, fmt.Errorf("failed to set feemarket params: %w", err)
 			}
 
 			// Fix EVM denom: sdk.DefaultBondDenom may not be set during upgrade init,
 			// causing default "atest" instead of correct denom.
 			// Derive from staking bond_denom (already loaded from genesis).
-			if err := setEvmDenomFromStaking(app, sdkCtx); err != nil {
+			if err := setEvmDenomFromStaking(app, cacheCtx); err != nil {
 				return vm, err
 			}
 
+			writeCache()
 			return vm, nil
 		},
 	)
@@ -116,21 +219,29 @@ func (app *App) RegisterUpgradeHandlers() {
 				return vm, err
 			}
 
+			// SA-C3 audit-2026-05-29: wrap discretionary post-migration writes
+			// (setEvmDenomFromStaking + SetParams) in CacheContext.
 			sdkCtx := sdk.UnwrapSDKContext(ctx)
-			if err := setEvmDenomFromStaking(app, sdkCtx); err != nil {
+			cacheCtx, writeCache := sdkCtx.CacheContext()
+
+			if err := setEvmDenomFromStaking(app, cacheCtx); err != nil {
 				return vm, err
 			}
 
 			// Fix feemarket MinGasPrice: v2-evm set it to 0 allowing free EVM tx spam.
 			// Set 10^9 astoc/gas = 0.001 ustoc/gas = 1 gwei, matching Cosmos min-gas-prices.
-			feemarketParams := feemarkettypes.DefaultParams()
+			//
+			// Read existing params and apply targeted overrides so any future governance
+			// changes to unrelated fields are preserved across handler re-runs (audit fix H3).
+			feemarketParams := app.FeeMarketKeeper.GetParams(cacheCtx)
 			feemarketParams.NoBaseFee = true
 			feemarketParams.BaseFee = math.LegacyZeroDec()
 			feemarketParams.MinGasPrice = math.LegacyNewDec(1_000_000_000)
-			if err := app.FeeMarketKeeper.SetParams(sdkCtx, feemarketParams); err != nil {
+			if err := app.FeeMarketKeeper.SetParams(cacheCtx, feemarketParams); err != nil {
 				return vm, fmt.Errorf("failed to set feemarket MinGasPrice: %w", err)
 			}
 
+			writeCache()
 			return vm, nil
 		},
 	)
@@ -148,15 +259,32 @@ func (app *App) RegisterUpgradeHandlers() {
 				return vm, err
 			}
 
+			// SA-C3 audit-2026-05-29: wrap discretionary post-migration writes
+			// in CacheContext. Only 1 write here but consistent pattern across handlers.
 			sdkCtx := sdk.UnwrapSDKContext(ctx)
-			params := app.FeeMarketKeeper.GetParams(sdkCtx)
+			cacheCtx, writeCache := sdkCtx.CacheContext()
+
+			// SA-C1 REVERT (audit 2026-05-29 + live devnet test):
+			// The fee-enforcement authority is `evmante.FeeChecker` (wired via
+			// `NewDeductFeeDecorator`'s txFeeChecker) — see
+			// forks/cosmos-evm-v0.6.0/ante/evm/fee_checker.go:99 `feeCap.LT(baseFee)`.
+			// FeeChecker uses BaseFee in COSMOS SCALE (ustoc/gas) DIRECTLY.
+			// Therefore 0.001 raw Dec = 0.001 ustoc/gas = 1 gwei effective floor. CORRECT.
+			// The STOChain custom `CosmosMinGasPriceDecorator.Quo(10^12)` is a no-op
+			// in practice — it runs before FeeChecker but its `.Quo` silent-passes;
+			// FeeChecker catches afterward at the right value.
+			// Live devnet 2026-05-29: tx with 1 udstoc fee + 200k gas rejected
+			// "got: 0.000005 udstoc/gas required: 0.001 udstoc/gas" — proves enforcement works.
+			// Reverting to 0.001 Dec.
+			params := app.FeeMarketKeeper.GetParams(cacheCtx)
 			params.NoBaseFee = false
-			params.BaseFee = math.LegacyNewDecWithPrec(1, 3)     // 0.001 udstoc/gas → 1 gwei via ×10^12
-			params.MinGasPrice = math.LegacyNewDecWithPrec(1, 3) // 0.001 udstoc/gas floor
-			if err := app.FeeMarketKeeper.SetParams(sdkCtx, params); err != nil {
+			params.BaseFee = math.LegacyNewDecWithPrec(1, 3)     // 0.001 ustoc/gas = 1 gwei effective
+			params.MinGasPrice = math.LegacyNewDecWithPrec(1, 3) // same — feemarket floor
+			if err := app.FeeMarketKeeper.SetParams(cacheCtx, params); err != nil {
 				return vm, fmt.Errorf("failed to apply v4-final feemarket params: %w", err)
 			}
 
+			writeCache()
 			return vm, nil
 		},
 	)
