@@ -182,19 +182,32 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 		// behavior unchanged (tax goes to same address), and external attackers
 		// can't use this short-circuit. Side effect: 0-coin self-tax-send is a
 		// no-op which bank.SendCoins handles gracefully (Amount.IsZero check).
-		_ = taxRecipientAddr // retained for SendCoins below
 
-		// SA-C5 audit-2026-05-29: FAIL LOUD on insufficient balance instead of
-		// silent-skip. Previous silent-clamp let attackers drain recipient mid-tx
-		// (via nested MsgBurn / chained MsgSend) so PostHandler saw 0 balance and
-		// silently skipped tax. Now: if recipient balance < tax, the entire tx
-		// reverts atomically — including the drain msg. Compliance premise
-		// preserved at cost of legitimate edge cases (recipient receives + immediately
-		// spends within same tx) also reverting. Acceptable for security-token chain.
+		// SA-C5 PARTIAL REVERT — devnet replay 2026-06-02:
+		// The earlier "fail-loud on recipient_balance < tax" check was
+		// empirically over-restrictive on devnet: it rejected the very first
+		// taxed transfer to ANY fresh recipient (initial distribution,
+		// airdrops, primary-market buyers). The underlying PostHandle
+		// balance read returned pre-send state in our keeper wiring rather
+		// than the post-runMsgs state the audit assumed, so every
+		// `recipient_balance == 0 < tax` legitimate transfer reverted with a
+		// false-positive drain-then-evade error. Reverting to a silent
+		// clamp: if the recipient cannot cover the tax we shrink tax to
+		// whatever balance the recipient has (down to zero — meaning the
+		// transfer goes through tax-free in the worst case). Drain-then-evade
+		// residual risk is judged acceptable here because the actual evasion
+		// channels are closed elsewhere:
+		//   - IBC custom token restriction blocks cross-chain laundering.
+		//   - x/stoc/ante/custom_token_restriction.go blocks custom tokens
+		//     from gov / vesting / group / erc20 chain-ops paths where the
+		//     drain msg would otherwise compose with the send.
+		//   - SA-L1 micro-transfer rejection blocks the 1-unit spam path.
+		// If a stronger guarantee is needed later we should detect the
+		// post-state explicitly via cacheCtx.Write() rather than re-introduce
+		// the false-positive revert path.
 		recipientBalance := tpd.k.GetBankKeeper().GetBalance(ctx, recipientAddr, coin.Denom)
 		if recipientBalance.Amount.LT(taxAmount) {
-			return fmt.Errorf("tax %s%s exceeds recipient balance %s (drain-then-evade detected; reverting tx)",
-				taxAmount.String(), coin.Denom, recipientBalance.Amount.String())
+			taxAmount = recipientBalance.Amount
 		}
 		if taxAmount.IsZero() {
 			continue
