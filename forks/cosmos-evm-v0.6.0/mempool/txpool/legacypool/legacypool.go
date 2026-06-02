@@ -642,14 +642,32 @@ func (pool *LegacyPool) validateTx(tx *types.Transaction) error {
 
 		FirstNonceGap:    nil, // Pool allows arbitrary arrival order, don't invalidate nonce gaps
 		UsedAndLeftSlots: nil, // Pool has own mechanism to limit the number of transactions
+		// SA-2026-06-02 MED-9 (senior-skeptic audit): the prior implementation
+		// only summed pool.pending[addr].totalcost, leaving the queued bucket
+		// invisible to cumulative-balance validation. A sender with ~1 ustoc
+		// balance could submit AccountQueue (64) gapped txs each individually
+		// affordable, fill the queued bucket, then evict legitimate queued txs
+		// when GlobalQueue truncated. Bug A regression on the queued side.
+		// Fix: also sum the queued bucket totalcost; promotion-time validation
+		// still drops anything that no longer fits but we no longer admit the
+		// flood in the first place.
 		ExistingExpenditure: func(addr common.Address) *big.Int {
+			total := new(big.Int)
 			if list := pool.pending[addr]; list != nil {
-				return list.totalcost.ToBig()
+				total.Add(total, list.totalcost.ToBig())
 			}
-			return new(big.Int)
+			if list := pool.queue[addr]; list != nil {
+				total.Add(total, list.totalcost.ToBig())
+			}
+			return total
 		},
 		ExistingCost: func(addr common.Address, nonce uint64) *big.Int {
 			if list := pool.pending[addr]; list != nil {
+				if tx := list.txs.Get(nonce); tx != nil {
+					return tx.Cost()
+				}
+			}
+			if list := pool.queue[addr]; list != nil {
 				if tx := list.txs.Get(nonce); tx != nil {
 					return tx.Cost()
 				}

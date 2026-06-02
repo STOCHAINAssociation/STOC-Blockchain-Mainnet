@@ -421,6 +421,14 @@ func initGenFiles(
 	}
 	appGenState[banktypes.ModuleName] = clientCtx.Codec.MustMarshalJSON(&bankGenState)
 
+	// SA-2026-06-02 LOW-11 (senior-skeptic audit): re-run ValidateGenesis on
+	// the assembled appGenState before persisting so operator-supplied
+	// inputs (--validators-stake-amount, manually-tampered DefaultGenesis,
+	// duplicate token IDs etc.) are caught now rather than at chain boot.
+	if err := mbm.ValidateGenesis(clientCtx.Codec, clientCtx.TxConfig, appGenState); err != nil {
+		return fmt.Errorf("assembled appGenState failed ValidateGenesis: %w", err)
+	}
+
 	appGenStateJSON, err := json.MarshalIndent(appGenState, "", "  ")
 	if err != nil {
 		return err

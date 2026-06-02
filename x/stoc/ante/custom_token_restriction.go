@@ -119,12 +119,19 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 			// (bypassing ante chain at execution time). We must check inner
 			// messages at submission time to prevent custom token leakage via
 			// group.MsgExec → bank.MsgSend → tax bypass.
+			//
+			// SA-2026-06-02 LOW-6 (senior-skeptic audit): the prior version
+			// unmarshalled inner messages BEFORE checking depth. A nested
+			// proposal with 100 inner msgs at depth N would force the
+			// validator to unmarshal 100 Any{} entries before the depth
+			// check refused, amplifying CheckTx CPU. Cheap depth check
+			// first now.
+			if depth >= stoctypes.MaxAuthzUnwrapDepth {
+				return fmt.Errorf("group MsgSubmitProposal nesting depth exceeded (%d)", depth)
+			}
 			innerMsgs, err := m.GetMsgs()
 			if err != nil {
 				return fmt.Errorf("failed to unwrap group MsgSubmitProposal inner messages: %w", err)
-			}
-			if depth >= stoctypes.MaxAuthzUnwrapDepth {
-				return fmt.Errorf("group MsgSubmitProposal nesting depth exceeded (%d)", depth)
 			}
 			if err := d.checkMsgs(ctx, innerMsgs, depth+1); err != nil {
 				return err

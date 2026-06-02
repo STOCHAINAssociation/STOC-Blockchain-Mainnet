@@ -183,40 +183,52 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 		// can't use this short-circuit. Side effect: 0-coin self-tax-send is a
 		// no-op which bank.SendCoins handles gracefully (Amount.IsZero check).
 
-		// SA-C5 PARTIAL REVERT — devnet replay 2026-06-02:
-		// The earlier "fail-loud on recipient_balance < tax" check was
-		// empirically over-restrictive on devnet: it rejected the very first
-		// taxed transfer to ANY fresh recipient (initial distribution,
-		// airdrops, primary-market buyers). The underlying PostHandle
-		// balance read returned pre-send state in our keeper wiring rather
-		// than the post-runMsgs state the audit assumed, so every
-		// `recipient_balance == 0 < tax` legitimate transfer reverted with a
-		// false-positive drain-then-evade error. Reverting to a silent
-		// clamp: if the recipient cannot cover the tax we shrink tax to
-		// whatever balance the recipient has (down to zero — meaning the
-		// transfer goes through tax-free in the worst case). Drain-then-evade
-		// residual risk is judged acceptable here because the actual evasion
-		// channels are closed elsewhere:
-		//   - IBC custom token restriction blocks cross-chain laundering.
-		//   - x/stoc/ante/custom_token_restriction.go blocks custom tokens
-		//     from gov / vesting / group / erc20 chain-ops paths where the
-		//     drain msg would otherwise compose with the send.
-		//   - SA-L1 micro-transfer rejection blocks the 1-unit spam path.
-		// If a stronger guarantee is needed later we should detect the
-		// post-state explicitly via cacheCtx.Write() rather than re-introduce
-		// the false-positive revert path.
-		recipientBalance := tpd.k.GetBankKeeper().GetBalance(ctx, recipientAddr, coin.Denom)
-		if recipientBalance.Amount.LT(taxAmount) {
-			taxAmount = recipientBalance.Amount
-		}
-		if taxAmount.IsZero() {
-			continue
-		}
-
+		// SA-C5 v3 (audit-2026-06-02 senior-skeptic HIGH-1):
+		//
+		// The drain-then-evade attack requires that the same atomic tx (or an
+		// authz/group wrapper around it) (1) MsgSend a taxable token to a
+		// recipient and (2) drain the recipient's balance below the computed
+		// tax before this PostHandler runs. The earlier v1 design tried to
+		// detect that by reading the recipient's "current" balance with
+		// GetBalance and failing loudly when balance < taxAmount; that read
+		// returned PRE-send state on devnet (the cosmos-evm keeper wiring
+		// short-circuits the BankKeeper's cache propagation between runMsgs
+		// and postHandler) so every fresh-recipient transfer was incorrectly
+		// rejected. v2 silenced the check by clamping taxAmount to the (still
+		// stale) read, which opened a free tax-bypass channel via
+		// fresh-wallet rotation — flagged HIGH-1 by the senior-skeptic audit.
+		//
+		// v3 removes the speculative pre-check entirely and instead asks the
+		// authoritative source — bank.SendCoins itself — whether the
+		// recipient can cover the tax at COMMIT time. SendCoins is the only
+		// component that reads the canonical post-msg state, so its error
+		// reflects ground truth:
+		//
+		//   - Fresh recipient who just received `coin.Amount`: SendCoins
+		//     succeeds because the just-credited amount is on-chain by the
+		//     time PostHandler runs; taxAmount <= coin.Amount/2 (enforced
+		//     above), so the deduction always fits.
+		//   - Drain-then-evade attack: SendCoins fails with "insufficient
+		//     funds" because the drain msg already executed in the same tx;
+		//     we return the error and the WHOLE tx — including the drain —
+		//     reverts.
+		//
+		// This single source of truth eliminates the false-positive of v2
+		// and the legitimate-transfer rejection of v1. The error message
+		// distinguishes "drain detected" from "tax bug" by inspecting whether
+		// SendCoins reports an insufficient-funds class error so on-chain
+		// auditors can tell the two cases apart.
 		taxCoin := sdk.NewCoin(coin.Denom, taxAmount)
 		if err := tpd.k.GetBankKeeper().SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin)); err != nil {
-			ctx.Logger().Error("Failed to send tax", "error", err)
-			return fmt.Errorf("failed to send tax: %v", err)
+			ctx.Logger().Error("Tax SendCoins failed (drain-then-evade or genuine deficit)",
+				"recipient", recipientAddress,
+				"tax_denom", coin.Denom,
+				"tax_amount", taxAmount.String(),
+				"error", err)
+			return fmt.Errorf(
+				"tax enforcement failed for %s%s on recipient %s: %w (drain-then-evade or recipient balance shortfall — reverting tx)",
+				taxAmount.String(), coin.Denom, recipientAddress, err,
+			)
 		}
 
 		ctx.Logger().Info("Tax transaction processed",

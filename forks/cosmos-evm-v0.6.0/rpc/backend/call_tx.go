@@ -263,9 +263,13 @@ func (b *Backend) SetTxDefaults(args evmtypes.TransactionArgs) (evmtypes.Transac
 		args.Value = new(hexutil.Big)
 	}
 	if args.Nonce == nil {
-		// get the nonce from the account retriever
-		// ignore error in case tge account doesn't exist yet
-		nonce, _ := b.getAccountNonce(*args.From, true, 0, b.Logger) // #nosec G703s
+		// SA-2026-06-02 HIGH-3: route through pendingNonceWithPool so the
+		// SA-H25 fix lands here too. eth_sendTransaction / eth_estimateGas
+		// previously called the raw upstream getAccountNonce and missed
+		// EVM txpool-resident nonces, producing "nonce too low" rejections
+		// on fire-and-forget batched sends. ignore error to preserve the
+		// upstream "account doesn't exist yet → nonce 0" behaviour.
+		nonce, _ := b.pendingNonceWithPool(*args.From, true, 0) // #nosec G703s
 		args.Nonce = (*hexutil.Uint64)(&nonce)
 	}
 

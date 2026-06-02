@@ -205,9 +205,15 @@ func initAppForTestnet(app *app.App, args valArgs) *app.App {
 
 	// Set validator signing info for our new validator.
 	newConsAddr := sdk.ConsAddress(args.newValAddr.Bytes())
+	// SA-2026-06-02 LOW-13: app.LastBlockHeight() returns 0 on a brand-new
+	// app; subtraction would underflow uint64 to MaxUint64. Clamp at 0.
+	startHeight := int64(0)
+	if h := app.LastBlockHeight(); h > 0 {
+		startHeight = h - 1
+	}
 	newValidatorSigningInfo := slashingtypes.ValidatorSigningInfo{
 		Address:     newConsAddr.String(),
-		StartHeight: app.LastBlockHeight() - 1,
+		StartHeight: startHeight,
 		Tombstoned:  false,
 	}
 	if err := app.SlashingKeeper.SetValidatorSigningInfo(ctx, newConsAddr, newValidatorSigningInfo); err != nil {
@@ -266,11 +272,23 @@ func getCommandArgs(appOpts servertypes.AppOptions) (valArgs, error) {
 	// validate  and set accounts to fund
 	accountsString := cast.ToString(appOpts.Get(flagAccountsToFund))
 
+	expectedPrefix := sdk.GetConfig().GetBech32AccountAddrPrefix()
 	for _, account := range strings.Split(accountsString, ",") {
 		if account != "" {
+			// SA-2026-06-02 LOW-12: sdk.AccAddressFromBech32 does NOT validate
+			// HRP, so a `cosmos1...` address typed by mistake would be funded
+			// from a `stoc1...` chain. Reject mismatched prefixes explicitly.
+			if !strings.HasPrefix(account, expectedPrefix+"1") {
+				return args, fmt.Errorf("address %q does not match expected bech32 prefix %q", account, expectedPrefix)
+			}
 			addr, err := sdk.AccAddressFromBech32(account)
 			if err != nil {
 				return args, fmt.Errorf("invalid bech32 address format %w", err)
+			}
+			// Round-trip check: re-encode the bytes and compare; rejects any
+			// canonicalisation drift.
+			if sdk.AccAddress(addr).String() != account {
+				return args, fmt.Errorf("address %q failed bech32 round-trip canonical check", account)
 			}
 			args.accountsToFund = append(args.accountsToFund, addr)
 		}

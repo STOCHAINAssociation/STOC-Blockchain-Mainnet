@@ -328,9 +328,18 @@ func getEVMChainID(appOpts servertypes.AppOptions) (uint64, error) {
 
 // cosmosChainIDToEVMChainID converts a Cosmos chain ID to an EVM chain ID.
 //
-// Supports two formats:
+// Supports the canonical format:
 //   - "name_EVMID-version" (e.g. stoc_1306-1) → extracts 1306
-//   - Any other string → FNV-1a hash (backward compatible)
+//
+// SA-2026-06-02 MED-6 (senior-skeptic audit): the prior implementation
+// accepted any number of leading zeros on EVMID via strconv.ParseUint,
+// so "stoc_1306-1", "stoc_01306-1" and "stoc_000001306-1" all resolved
+// to the same EVM chain ID. The Cosmos chain-id is byte-compared by
+// CometBFT during consensus but the derived EVM chain ID drives EIP-155
+// replay protection — a fork of one mainnet that re-uses the EVMID
+// portion with extra leading zeros would silently inherit the parent's
+// EIP-155 protection slot and replay every transaction. We now require
+// the canonical form and reject any non-canonical encoding explicitly.
 func cosmosChainIDToEVMChainID(chainID string) (uint64, error) {
 	// Try to parse "name_EVMID-version" format (e.g. stoc_1306-1, stoc_1999-1)
 	if idx := strings.LastIndex(chainID, "_"); idx != -1 {
@@ -339,7 +348,16 @@ func cosmosChainIDToEVMChainID(chainID string) (uint64, error) {
 		if dashIdx := strings.Index(suffix, "-"); dashIdx != -1 {
 			evmPart = suffix[:dashIdx] // "1306"
 		}
-		if evmID, err := strconv.ParseUint(evmPart, 10, 64); err == nil && evmID > 0 {
+		evmID, err := strconv.ParseUint(evmPart, 10, 64)
+		if err == nil && evmID > 0 {
+			// Reject leading zeros and any other non-canonical encoding
+			// before accepting the chain ID. MED-6 rationale above.
+			if strconv.FormatUint(evmID, 10) != evmPart {
+				return 0, fmt.Errorf(
+					"cosmos chain-id %q has non-canonical EVM chain ID %q (expected %q) — leading zeros are not allowed because they bypass EIP-155 replay protection slot aliasing",
+					chainID, evmPart, strconv.FormatUint(evmID, 10),
+				)
+			}
 			return evmID, nil
 		}
 	}

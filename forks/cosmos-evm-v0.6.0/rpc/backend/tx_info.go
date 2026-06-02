@@ -552,8 +552,13 @@ func (b *Backend) initAccessListTracer(args evmtypes.TransactionArgs, blockNum r
 	}
 
 	if args.Nonce == nil {
+		// SA-2026-06-02 HIGH-3: route through pendingNonceWithPool so the
+		// SA-H25 fix lands here too. eth_createAccessList previously used
+		// the raw upstream getAccountNonce and missed EVM-pool-resident
+		// nonces, mis-tracing the access list and rejecting valid burst-send
+		// patterns from DEX market-makers.
 		pending := blockNum == rpctypes.EthPendingBlockNumber
-		nonce, err := b.getAccountNonce(args.GetFrom(), pending, blockNum.Int64(), b.Logger)
+		nonce, err := b.pendingNonceWithPool(args.GetFrom(), pending, blockNum.Int64())
 		if err != nil {
 			b.Logger.Error("failed to get account nonce", "error", err)
 			return nil, nil, err

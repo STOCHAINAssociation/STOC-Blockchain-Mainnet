@@ -264,6 +264,25 @@ func (app *App) RegisterUpgradeHandlers() {
 			sdkCtx := sdk.UnwrapSDKContext(ctx)
 			cacheCtx, writeCache := sdkCtx.CacheContext()
 
+			// SA-2026-06-02 MED-5 (senior-skeptic audit): defense-in-depth
+			// re-read of feemarket params before we SetParams. If an
+			// upstream migration inside RunMigrations bumps the schema and
+			// happens to reset a field we care about (BaseFeeChangeDenominator,
+			// ElasticityMultiplier) to a known-broken zero value, our
+			// overwrites below would mask the breakage and ship a chain
+			// with a silently-zeroed knob. Read first, validate the
+			// non-overwritten fields, then patch only the ones this handler
+			// owns. If the read itself fails or returns a struct that fails
+			// internal validation, halt the upgrade loudly so operators
+			// recover from snapshot instead of booting a half-upgraded chain.
+			params := app.FeeMarketKeeper.GetParams(cacheCtx)
+			if params.BaseFeeChangeDenominator == 0 {
+				return vm, fmt.Errorf("v5.0.0 upgrade aborted: post-migration feemarket params have BaseFeeChangeDenominator=0 (would divide-by-zero at next base-fee update); upstream migration is corrupt — restore from snapshot")
+			}
+			if params.ElasticityMultiplier == 0 {
+				return vm, fmt.Errorf("v5.0.0 upgrade aborted: post-migration feemarket params have ElasticityMultiplier=0 (would freeze base-fee adjustment); upstream migration is corrupt — restore from snapshot")
+			}
+
 			// SA-C1 REVERT (audit 2026-05-29 + live devnet test):
 			// The fee-enforcement authority is `evmante.FeeChecker` (wired via
 			// `NewDeductFeeDecorator`'s txFeeChecker) — see
@@ -276,7 +295,6 @@ func (app *App) RegisterUpgradeHandlers() {
 			// Live devnet 2026-05-29: tx with 1 udstoc fee + 200k gas rejected
 			// "got: 0.000005 udstoc/gas required: 0.001 udstoc/gas" — proves enforcement works.
 			// Reverting to 0.001 Dec.
-			params := app.FeeMarketKeeper.GetParams(cacheCtx)
 			params.NoBaseFee = false
 			params.BaseFee = math.LegacyNewDecWithPrec(1, 3)     // 0.001 ustoc/gas = 1 gwei effective
 			params.MinGasPrice = math.LegacyNewDecWithPrec(1, 3) // same — feemarket floor
@@ -344,17 +362,31 @@ func setEvmDenomFromStaking(app *App, sdkCtx sdk.Context) error {
 		return fmt.Errorf("failed to set evm params: %w", err)
 	}
 
-	// Set bank denom_metadata — required for InitEvmCoinInfo to load decimals + display denom
-	app.BankKeeper.SetDenomMetaData(sdkCtx, banktypes.Metadata{
-		Base:    bondDenom,
-		Display: displayDenom,
-		DenomUnits: []*banktypes.DenomUnit{
-			{Denom: bondDenom, Exponent: 0},
-			{Denom: displayDenom, Exponent: 6},
-		},
-		Name:   strings.ToUpper(displayDenom),
-		Symbol: strings.ToUpper(displayDenom),
-	})
+	// Set bank denom_metadata — required for InitEvmCoinInfo to load decimals + display denom.
+	//
+	// SA-2026-06-02 MED-4 (senior-skeptic audit): the prior version constructed
+	// a fresh Metadata literal with zero-valued Description / URI / URIHash and
+	// passed it directly to SetDenomMetaData, which blanket-overwrites the bank
+	// store entry. Every time this handler ran (v2-evm, v3-fix-evm-denom, and
+	// v5.0.0 — and any cold-sync replay through all three) the chain silently
+	// dropped governance-curated metadata (chain registry description, logo
+	// URI, sha256 URI hash) that explorers + Keplr UI consume. Business rule
+	// (locked 2026-06-02): READ the existing metadata first, mutate only the
+	// fields this handler actually owns (Base/Display/DenomUnits/Name/Symbol),
+	// and write back. Description / URI / URIHash survive untouched. If no
+	// metadata existed previously we write a fresh zero-value record, matching
+	// prior behaviour for a brand-new chain.
+	existing, foundMeta := app.BankKeeper.GetDenomMetaData(sdkCtx, bondDenom)
+	existing.Base = bondDenom
+	existing.Display = displayDenom
+	existing.DenomUnits = []*banktypes.DenomUnit{
+		{Denom: bondDenom, Exponent: 0},
+		{Denom: displayDenom, Exponent: 6},
+	}
+	existing.Name = strings.ToUpper(displayDenom)
+	existing.Symbol = strings.ToUpper(displayDenom)
+	_ = foundMeta // keep for future telemetry if we want to log first-time writes
+	app.BankKeeper.SetDenomMetaData(sdkCtx, existing)
 
 	// Initialize EVM coin info from bank metadata + params → stores in KV store
 	if err := app.EVMKeeper.InitEvmCoinInfo(sdkCtx); err != nil {

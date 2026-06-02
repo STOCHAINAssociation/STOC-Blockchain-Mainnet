@@ -153,13 +153,28 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 			amount = initialSupply.MulRaw(int64(dist.Percent)).QuoRaw(100)
 		}
 
-		if amount.IsZero() || amount.IsNegative() {
-			// Zero: rounding caused 0 tokens. Negative: totalMinted exceeded initialSupply
-			// (should not happen with valid percent values, but guard against chain halt from sdk.NewCoin panic).
-			ctx.Logger().Warn("Distribution entry results in 0 or negative tokens",
-				"address", dist.Address, "percent", dist.Percent,
-				"amount", amount.String(), "initial_supply", initialSupply.String())
-			continue
+		if amount.IsNegative() {
+			// Should not happen with valid percent values, but guard against
+			// chain halt from sdk.NewCoin panic.
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+				"distribution entry %d (%s) computed negative amount %s — totalMinted exceeded initialSupply",
+				i, dist.Address, amount.String())
+		}
+		if amount.IsZero() {
+			// SA-2026-06-02 LOW-3 (senior-skeptic audit): the prior version
+			// silently `continue`-d on zero-rounded entries WITHOUT
+			// incrementing totalMinted, so the last-entry remainder branch
+			// at line 150 would push ALL unallocated supply to the last
+			// recipient — silently concentrating the entire initial supply
+			// in one address even though the creator listed many. For a
+			// security-token primary distribution this is a material
+			// misallocation that the indexer cannot detect after the fact.
+			// Reject loudly so the creator notices the InitialSupply is too
+			// small (or the percent slices too thin) for the requested
+			// recipient set, and can fix the input before submitting.
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+				"distribution entry %d (address %s, percent %d) rounds to 0 tokens at initial supply %s — increase InitialSupply or merge low-percent recipients",
+				i, dist.Address, dist.Percent, initialSupply.String())
 		}
 		totalMinted = totalMinted.Add(amount)
 

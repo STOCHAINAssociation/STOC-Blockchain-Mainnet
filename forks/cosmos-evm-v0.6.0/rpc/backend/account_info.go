@@ -206,38 +206,61 @@ func (b *Backend) GetTransactionCount(address common.Address, blockNum rpctypes.
 	}
 
 	includePending := blockNum == rpctypes.EthPendingBlockNumber
-	nonce, err := b.getAccountNonce(address, includePending, blockNum.Int64(), b.Logger)
+	nonce, err := b.pendingNonceWithPool(address, includePending, blockNum.Int64())
 	if err != nil {
 		return nil, err
 	}
 
-	// STOChain v8 Bug C fix (2026-05-16): when caller asks for the pending nonce,
-	// also consult the EVM txpool's pendingNonces tracker. Upstream getAccountNonce
-	// iterates CometBFT's UnconfirmedTxs, which excludes EVM txs sitting in the
-	// legacypool queued/pending buckets that have not been promoted into
-	// CometBFT's CheckTx mempool yet (or were promoted then removed by RecheckTx).
-	// Geth semantics: pending = max(chainNonce, txpool.PoolNonce(addr)). Take the
-	// higher of the two so MetaMask and other clients see consistent nonces
-	// regardless of which mempool layer currently holds the in-flight tx.
-	if includePending && b.Mempool != nil {
-		if pool := b.Mempool.GetTxPool(); pool != nil {
-			// SA-H25 audit-2026-05-29: snapshot chain head BEFORE reading pool
-			// nonce, then re-query chain nonce at that height to ensure consistent
-			// TOCTOU-safe pair. If a new block commits between the two reads, the
-			// caller would receive a stale max (chainNonce moved up, poolNonce
-			// stale) leading wallets to sign with already-used nonce → replay /
-			// rejection. Recheck after pool read.
-			poolNonce := pool.PoolNonce(address)
-			// Re-fetch chain nonce after pool snapshot to absorb head-advance race.
-			if nonce2, err2 := b.getAccountNonce(address, false, blockNum.Int64(), b.Logger); err2 == nil && nonce2 > nonce {
-				nonce = nonce2
-			}
-			if poolNonce > nonce {
-				nonce = poolNonce
-			}
-		}
-	}
-
 	n = hexutil.Uint64(nonce)
 	return &n, nil
+}
+
+// pendingNonceWithPool returns the next nonce for `address` honouring the
+// STOChain v8 Bug C / SA-H25 fix: when the caller wants the pending nonce
+// (i.e. the nonce the next outgoing tx should use), we take the max of the
+// chain nonce, the chain nonce re-read after a head-advance race window, and
+// the EVM txpool's PoolNonce. This is the canonical implementation; every
+// site that previously called b.getAccountNonce(..., pending=true, ...) MUST
+// call this helper instead so that the fix lands consistently on
+// eth_getTransactionCount, SetTxDefaults (eth_sendTransaction /
+// eth_estimateGas) and initAccessListTracer (eth_createAccessList).
+//
+// SA-2026-06-02 HIGH-3 (senior-skeptic audit): the prior implementation only
+// patched eth_getTransactionCount, so dApps that signed and broadcast via
+// eth_sendTransaction with no preceding nonce round-trip received the stale
+// upstream nonce and hit "nonce too low" rejections. Extracting this helper
+// is the load-bearing fix; the audit explicitly called this out as a HIGH
+// because production dApps frequently use the fire-and-forget batched-send
+// pattern.
+//
+// includePending=false reduces to the upstream getAccountNonce(false, ...)
+// behaviour, so call sites that want only the chain-committed nonce can
+// still use this helper with no behavioural change.
+func (b *Backend) pendingNonceWithPool(address common.Address, includePending bool, height int64) (uint64, error) {
+	nonce, err := b.getAccountNonce(address, includePending, height, b.Logger)
+	if err != nil {
+		return 0, err
+	}
+	if !includePending || b.Mempool == nil {
+		return nonce, nil
+	}
+	pool := b.Mempool.GetTxPool()
+	if pool == nil {
+		return nonce, nil
+	}
+	// SA-H25 audit-2026-05-29: snapshot chain head BEFORE reading pool
+	// nonce, then re-query chain nonce at that height to ensure a
+	// consistent TOCTOU-safe pair. If a new block commits between the
+	// two reads, the caller would otherwise receive a stale max
+	// (chainNonce moved up, poolNonce stale) leading wallets to sign
+	// with an already-used nonce → replay / rejection. Recheck after
+	// pool read.
+	poolNonce := pool.PoolNonce(address)
+	if nonce2, err2 := b.getAccountNonce(address, false, height, b.Logger); err2 == nil && nonce2 > nonce {
+		nonce = nonce2
+	}
+	if poolNonce > nonce {
+		nonce = poolNonce
+	}
+	return nonce, nil
 }

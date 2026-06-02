@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"cosmossdk.io/math"
@@ -214,6 +215,27 @@ func ValidateState(token Token) error {
 		if strings.TrimSpace(token.MinimalDenom) != token.MinimalDenom {
 			return fmt.Errorf("minimal denom %q contains whitespace", token.MinimalDenom)
 		}
+		// SA-2026-06-02 MED-1 (senior-skeptic audit): reject non-canonical
+		// counter encodings so `FOO_1` and `FOO_01` cannot coexist as two
+		// distinct genesis tokens that explorers + indexers would render
+		// identically. The previous regex accepted any digit string for
+		// the suffix, which made the SA-H12 prefix invariant insufficient:
+		// a genesis-injected `FOO_0001` whose Tax.RecipientAddress points
+		// at the attacker would visually clone the legitimate `FOO_1`
+		// inside KYC dashboards and Keplr token lists, enabling phishing
+		// inside the legitimate STO chain.
+		if parsed, parseErr := strconv.ParseUint(suffix, 10, 64); parseErr != nil {
+			return fmt.Errorf("minimal denom %q counter suffix %q failed to parse: %s", token.MinimalDenom, suffix, parseErr)
+		} else if strconv.FormatUint(parsed, 10) != suffix {
+			return fmt.Errorf("minimal denom %q counter suffix %q is not in canonical form (no leading zeros allowed; expected %q)", token.MinimalDenom, suffix, strconv.FormatUint(parsed, 10))
+		}
+	}
+	// SA-2026-06-02 LOW-2: enforce token.Id == MinimalDenom so genesis-imported
+	// tokens cannot encode a different ID than their MinimalDenom (which is the
+	// effective primary key in the keeper store). Reject malformed input rather
+	// than silently rewriting it inside SetToken.
+	if token.Id != "" && token.Id != token.MinimalDenom {
+		return fmt.Errorf("token.Id %q must equal token.MinimalDenom %q", token.Id, token.MinimalDenom)
 	}
 	// Require creator address — tokens without a creator become permanently orphaned
 	// (no one can mint/release). Reject at state validation to prevent genesis injection.

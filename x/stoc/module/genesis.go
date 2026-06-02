@@ -1,6 +1,7 @@
 package stoc
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -26,11 +27,21 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 		// Parse counter from minimalDenom (format: "SYMBOL_N")
 		if idx := strings.LastIndex(token.MinimalDenom, "_"); idx >= 0 {
 			if n, err := strconv.ParseUint(token.MinimalDenom[idx+1:], 10, 64); err == nil {
-				// Saturate at max uint64 to prevent overflow; CreateToken will reject with counter overflow error
-				next := n + 1
-				if n == ^uint64(0) {
-					next = n
+				// SA-2026-06-02 MED-2 (senior-skeptic audit): a genesis token
+				// whose MinimalDenom suffix is exactly ^uint64(0) (the
+				// maximum uint64) would cause prior versions to silently
+				// saturate the counter at ^uint64(0) and brick CreateToken
+				// permanently — every subsequent MsgCreateToken would hit
+				// the keeper's overflow check and revert. For a chain whose
+				// raison d'être is tokenisation this is a denial-of-service
+				// vector on the primary business feature. Reject at genesis
+				// instead so the misconfiguration surfaces before the chain
+				// boots, while still leaving headroom for ^uint64(0)-1
+				// tokens to be created via the normal counter path.
+				if n >= ^uint64(0)-1 {
+					panic(fmt.Sprintf("genesis token %q has MinimalDenom counter %d, which would saturate the chain-wide token counter and brick MsgCreateToken (max allowed at genesis is %d)", token.MinimalDenom, n, ^uint64(0)-2))
 				}
+				next := n + 1
 				if next > maxCounter {
 					maxCounter = next
 				}

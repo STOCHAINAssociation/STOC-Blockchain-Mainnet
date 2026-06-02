@@ -222,11 +222,22 @@ func (b *Backend) FeeHistory(
 
 	// rewards should only be calculated if reward percentiles were included
 	calculateRewards := rewardCount != 0
+	// SA-2026-06-02 MED-10/11/12 (senior-skeptic audit): the per-batch
+	// chanErr was previously unbuffered, the deferred recover wrote to the
+	// outer `err` closure variable from up to four goroutines concurrently
+	// (Go data race), and three nil-block paths sent `chanErr <- err` where
+	// the underlying err was already nil — producing a `(nil, nil)` silent
+	// success that downstream wallets read as a zero-baseFee fee history
+	// and reverted to legacy gasPrice. Fix: buffer chanErr to
+	// maxBlockFetchers so per-goroutine sends are non-blocking + no leak;
+	// write the panic error into chanErr (NOT the closure-captured outer
+	// `err`); and synthesise an explicit error in the nil-block paths so
+	// the channel is never fed a nil.
 	const maxBlockFetchers = 4
 	for blockID := blockStart; blockID <= blockEnd; blockID += maxBlockFetchers {
 		wg := sync.WaitGroup{}
 		wgDone := make(chan bool)
-		chanErr := make(chan error)
+		chanErr := make(chan error, maxBlockFetchers)
 		for i := 0; i < maxBlockFetchers; i++ {
 			if blockID+int64(i) >= blockEnd+1 {
 				break
@@ -239,40 +250,50 @@ func (b *Backend) FeeHistory(
 			go func(index int32) {
 				defer func() {
 					if r := recover(); r != nil {
-						err = errorsmod.Wrapf(errorsmod.ErrPanic, "%v", r)
-						b.Logger.Error("FeeHistory panicked", "error", err)
-						chanErr <- err
+						panicErr := errorsmod.Wrapf(errorsmod.ErrPanic, "%v", r)
+						b.Logger.Error("FeeHistory panicked", "error", panicErr)
+						chanErr <- panicErr
 					}
 					wg.Done()
 				}()
 				// fetch block
 				// CometBFT block
 				blockNum := rpctypes.BlockNumber(blockStart + int64(index))
-				cometBlock, err := b.CometBlockByNumber(blockNum)
+				cometBlock, fetchErr := b.CometBlockByNumber(blockNum)
 				if cometBlock == nil {
-					chanErr <- err
+					if fetchErr == nil {
+						fetchErr = fmt.Errorf("CometBlockByNumber returned nil block at height %d", int64(blockNum))
+					}
+					chanErr <- fetchErr
 					return
 				}
 
 				// eth block
-				ethBlock, err := b.GetBlockByNumber(blockNum, true)
+				ethBlock, fetchErr := b.GetBlockByNumber(blockNum, true)
 				if ethBlock == nil {
-					chanErr <- err
+					if fetchErr == nil {
+						fetchErr = fmt.Errorf("GetBlockByNumber returned nil block at height %d", int64(blockNum))
+					}
+					chanErr <- fetchErr
 					return
 				}
 
 				// CometBFT block result
-				cometBlockResult, err := b.CometBlockResultByNumber(&cometBlock.Block.Height)
+				cometBlockResult, fetchErr := b.CometBlockResultByNumber(&cometBlock.Block.Height)
 				if cometBlockResult == nil {
-					b.Logger.Debug("block result not found", "height", cometBlock.Block.Height, "error", err.Error())
-					chanErr <- err
+					if fetchErr == nil {
+						fetchErr = fmt.Errorf("CometBlockResultByNumber returned nil result at height %d", cometBlock.Block.Height)
+					}
+					b.Logger.Debug("block result not found", "height", cometBlock.Block.Height, "error", fetchErr.Error())
+					chanErr <- fetchErr
 					return
 				}
 
 				oneFeeHistory := rpctypes.OneFeeHistory{}
-				err = b.ProcessBlocker(cometBlock, &ethBlock, rewardPercentiles, cometBlockResult, &oneFeeHistory)
-				if err != nil {
-					chanErr <- err
+				if processErr := b.ProcessBlocker(cometBlock, &ethBlock, rewardPercentiles, cometBlockResult, &oneFeeHistory); processErr != nil {
+					// MED-11 (closure write race): route the error through the
+					// channel, not the closure-captured outer `err`.
+					chanErr <- processErr
 					return
 				}
 

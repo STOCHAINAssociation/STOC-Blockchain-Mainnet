@@ -38,15 +38,15 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewValidateBasicDecorator(),
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
-		stocante.NewIBCCustomTokenRestriction(options.StocKeeper),      // block custom token IBC transfers
-		stocante.NewCustomTokenChainOpsRestriction(options.StocKeeper), // block custom token in gov/pool/vesting/group/erc20 (tax evasion + chain entanglement)
-		// SA-L6 audit-2026-05-29: run IBC redundant-relay check BEFORE fee
-		// deduct + signature verification so duplicate relays are rejected at
-		// CheckTx without burning validator CPU on full signature math or
-		// charging the relayer. The decorator only inspects message shape (no
-		// signer info required) and only fires on CheckTx/ReCheckTx, so moving
-		// it earlier is safe.
-		ibcante.NewRedundantRelayDecorator(options.IBCKeeper),
+		// SA-2026-06-02 MED-7 (senior-skeptic audit): charge gas + fee BEFORE
+		// the message-walking decorators (NewIBCCustomTokenRestriction,
+		// NewCustomTokenChainOpsRestriction, NewRedundantRelayDecorator) so
+		// that authz / group / gov msg trees pay for the cost of being
+		// unmarshalled + recursively inspected. Previously the message
+		// walkers ran first and a flood of nested-Any txs amplified
+		// CheckTx CPU at zero on-chain cost. Moving fee/gas earlier means
+		// any tx that survives ValidateBasic + signature checks pays for
+		// the deep traversal that follows.
 		NewCosmosMinGasPriceDecorator(&feemarketParams),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
 		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeChecker),
@@ -56,6 +56,19 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewSigGasConsumeDecorator(options.AccountKeeper, options.SigGasConsumer),
 		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler),
 		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
+		// Message-walking restriction layer (now post-fee per MED-7). These
+		// decorators recurse into authz/group/gov msg trees, so charging
+		// gas + fee before them prevents free CPU-DoS amplification.
+		stocante.NewIBCCustomTokenRestriction(options.StocKeeper),      // block custom token IBC transfers
+		stocante.NewCustomTokenChainOpsRestriction(options.StocKeeper), // block custom token in gov/pool/vesting/group/erc20 (tax evasion + chain entanglement)
+		// SA-L6 audit-2026-05-29 (re-confirmed 2026-06-02): IBC redundant-relay
+		// check stays in the post-fee block. The original SA-L6 rationale
+		// (save CPU on duplicate relays at CheckTx) is preserved relative to
+		// SignatureVerification but the senior-skeptic MED-7 finding
+		// established that running BEFORE fee deduct enabled free CPU
+		// amplification. Relayers now pay for the inspection slot, which is
+		// matched by Osmosis / Evmos placement.
+		ibcante.NewRedundantRelayDecorator(options.IBCKeeper),
 		evmante.NewGasWantedDecorator(options.EvmKeeper, options.FeeMarketKeeper, &feemarketParams),
 	)
 }

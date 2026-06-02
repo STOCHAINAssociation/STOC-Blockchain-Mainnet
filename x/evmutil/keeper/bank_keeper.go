@@ -316,7 +316,9 @@ func (k EvmBankKeeper) convertCoinsForInflow(amt sdk.Coins) (sdk.Coins, error) {
 	return convertedAmt, nil
 }
 
-// convertCoinsForOutflow converts EVM coins to Cosmos coins with round-DOWN (truncation).
+// convertCoinsForOutflow converts EVM coins to Cosmos coins with round-DOWN
+// (truncation) and silently drops dust legs that round to zero ustoc.
+//
 // Use for all outflow paths: SendCoins, MintCoins, BurnCoins,
 // SendCoinsFromModuleToAccount (incl. RefundGas), SendCoinsFromModuleToModule.
 // Round-DOWN prevents:
@@ -326,7 +328,20 @@ func (k EvmBankKeeper) convertCoinsForInflow(amt sdk.Coins) (sdk.Coins, error) {
 //
 // Caller's astoc balance shows the truncated amount; dust below 1 ustoc is
 // burned by the conversion (not leaked to anyone) and cannot be recovered.
-// Zero converted amount is rejected.
+//
+// SA-2026-06-02 MED-3 (senior-skeptic audit): the prior implementation
+// REVERTED the calling EVM frame with "amount too small ... (outflow
+// truncates dust)" whenever any leg of an outflow rounded to zero ustoc
+// (i.e. amount < 1e12 wei). This unilateral revert broke otherwise-valid
+// EVM contract calls and gas refunds that emitted sub-ustoc legs. The
+// godoc already documents the "dust burned by conversion" contract; the
+// revert was inconsistent with that contract. Business rule (locked
+// 2026-06-02): silently drop dust legs and continue processing the
+// remaining Coins. If EVERY leg rounds to zero we return an empty
+// sdk.Coins which downstream bank calls treat as a no-op. SA-C7 / SA-C8
+// protections still hold because non-dust amounts continue to truncate
+// (not round up), so neither FeeCollector drain nor Transfer(N)
+// corruption is reintroduced.
 func (k EvmBankKeeper) convertCoinsForOutflow(amt sdk.Coins) (sdk.Coins, error) {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
@@ -340,7 +355,9 @@ func (k EvmBankKeeper) convertCoinsForOutflow(amt sdk.Coins) (sdk.Coins, error) 
 			// Round DOWN: truncate sub-ustoc remainder.
 			cosmosAmount := coin.Amount.Quo(types.ConversionMultiplier)
 			if cosmosAmount.IsZero() {
-				return nil, fmt.Errorf("amount too small: %s %s rounds to 0 %s (outflow truncates dust)", coin.Amount.String(), k.getEvmDenom(), k.getCosmosDenom())
+				// SA-2026-06-02 MED-3: silent drop (matches godoc dust-burn
+				// contract; replaces prior over-restrictive revert).
+				continue
 			}
 			convertedAmt = convertedAmt.Add(sdk.NewCoin(k.getCosmosDenom(), cosmosAmount))
 		} else if coin.Denom == k.getCosmosDenom() {

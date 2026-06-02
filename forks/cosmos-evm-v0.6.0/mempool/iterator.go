@@ -136,27 +136,44 @@ func (i *EVMMempoolIterator) Tx() sdk.Tx {
 // price-and-nonce heap. Safe to call when the iterator has selected an EVM tx
 // and the caller has determined that tx (and all its account-mates) cannot mine
 // in this block. No-op when current head is a Cosmos tx or iterator is empty.
+//
+// SA-2026-06-02 MED-8 (senior-skeptic audit): the prior implementation
+// re-queried shouldUseEVM() at Pop time, which RE-EVALUATES the head
+// selection. After Tx() falls back to the Cosmos lane because convertEVMToSDKTx
+// failed (lastReturnedFromEVM=false), the EVM iterator head is still EVM and
+// shouldUseEVM() may yet return true — Pop would then drop an innocent EVM
+// bucket whose only sin was being aligned with a fee-matching Cosmos tx that
+// already failed ante. We now consult the cached lastReturnedFromEVM that
+// Tx() sets, which is the SAME signal the caller used to decide to call
+// PopCurrentAccount in the first place. Pre-condition: callers MUST invoke
+// Tx() before PopCurrentAccount (the existing PrepareProposal wrapper
+// already does).
 func (i *EVMMempoolIterator) PopCurrentAccount() {
 	if i == nil || i.evmIterator == nil || i.evmIterator.Empty() {
 		return
 	}
-	// Only pop if the current preferred tx is EVM (otherwise the head is the
-	// Cosmos tx and we'd incorrectly drop an unrelated EVM bucket).
-	if !i.shouldUseEVM() {
+	// Use the cached signal from the last Tx() call rather than re-querying
+	// shouldUseEVM() — see MED-8 rationale above.
+	if !i.lastReturnedFromEVM {
 		return
 	}
 	i.evmIterator.Pop()
 }
 
-// CurrentIsEVM reports whether the current head transaction the iterator
-// would return is an EVM transaction (true) or a Cosmos transaction (false).
-// Used by custom PrepareProposal handlers to decide between PopCurrentAccount
-// (EVM-side bucket pop) and standard Cosmos invalid-tx cleanup.
+// CurrentIsEVM reports whether the most-recently-returned head transaction
+// is from the EVM lane (true) or the Cosmos lane (false). Reads the cached
+// lastReturnedFromEVM that Tx() sets. Used by custom PrepareProposal
+// handlers to decide between PopCurrentAccount (EVM-side bucket pop) and
+// standard Cosmos invalid-tx cleanup.
+//
+// SA-2026-06-02 MED-8: same rationale as PopCurrentAccount — relying on the
+// cached field avoids the re-evaluation race when Tx()'s fallback path has
+// switched lanes after a failed EVM-to-Cosmos conversion.
 func (i *EVMMempoolIterator) CurrentIsEVM() bool {
 	if i == nil {
 		return false
 	}
-	return i.shouldUseEVM()
+	return i.lastReturnedFromEVM
 }
 
 // =============================================================================

@@ -275,19 +275,24 @@ func TestSendCoins_CustomToken_Blocked(t *testing.T) {
 	require.Contains(t, err.Error(), "MYTOKEN_0")
 }
 
-// SA-C7/C8 audit-2026-05-29: outflow paths round DOWN and reject sub-1-ustoc dust.
-// Round-up on outflow was a FeeCollector drain vector (RefundGas could inflate dust
-// into 1 ustoc), and a Transfer(N) corruption vector where the on-chain debit
-// diverged from the caller's stated amount. Inflow paths still round UP — see
-// TestConvertCoinsForInflow_DustAmount_RoundsUp below.
-func TestSendCoins_DustAmount_RejectedAsOutflow(t *testing.T) {
-	ebk, _ := setup(t)
+// SA-2026-06-02 MED-3 (senior-skeptic audit): outflow paths round DOWN and
+// SILENTLY DROP sub-1-ustoc dust. The earlier SA-C7/C8 v1 implementation
+// rejected dust with "outflow truncates dust" but that revert broke
+// otherwise-valid EVM contract calls and gas refunds whose wei amounts
+// landed in (0, 1e12). The godoc has always documented the dust-burn
+// contract; the revert was inconsistent with it. SA-C7/C8 protections
+// (no FeeCollector drain, no Transfer(N) corruption) still hold because
+// non-dust amounts truncate (not round up) — see other tests in this file.
+// Inflow paths still round UP.
+func TestSendCoins_DustAmount_SilentlyDropped(t *testing.T) {
+	ebk, mock := setup(t)
 	from, to := testAddr(), testAddr2()
 
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(1)))
 	err := ebk.SendCoins(context.Background(), from, to, amt)
-	require.Error(t, err, "SA-C7/C8: SendCoins is an outflow path and must reject sub-1-ustoc dust")
-	require.Contains(t, err.Error(), "outflow truncates dust")
+	require.NoError(t, err, "MED-3: SendCoins must silently drop sub-1-ustoc dust legs")
+	// No ustoc transferred — dust burned by the conversion.
+	require.True(t, mock.lastSentCoins.AmountOf("ustoc").IsZero(), "expected zero ustoc transfer for dust-only outflow")
 }
 
 func TestSendCoins_MixedEvmAndCosmos(t *testing.T) {
@@ -334,17 +339,17 @@ func TestMintCoins_CustomToken_Blocked(t *testing.T) {
 	require.Contains(t, err.Error(), "custom token")
 }
 
-// SA-C7/C8 audit-2026-05-29: MintCoins is an outflow from the EVM convert layer
-// (module side ends up owning the rounded amount). Round-up here let dust mint
-// real ustoc that the caller never paid for; the audit reclassified it as
-// outflow with round-DOWN + dust rejection.
-func TestMintCoins_DustAmount_RejectedAsOutflow(t *testing.T) {
-	ebk, _ := setup(t)
+// SA-2026-06-02 MED-3: MintCoins is an outflow path that silently drops
+// sub-1-ustoc dust legs. See TestSendCoins_DustAmount_SilentlyDropped for
+// the rationale (revert was over-restrictive and broke valid contract
+// frames). SA-C7/C8 protections still hold.
+func TestMintCoins_DustAmount_SilentlyDropped(t *testing.T) {
+	ebk, mock := setup(t)
 
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(1)))
 	err := ebk.MintCoins(context.Background(), "evm", amt)
-	require.Error(t, err, "SA-C7/C8: MintCoins is an outflow path and must reject sub-1-ustoc dust")
-	require.Contains(t, err.Error(), "outflow truncates dust")
+	require.NoError(t, err, "MED-3: MintCoins must silently drop sub-1-ustoc dust legs")
+	require.True(t, mock.lastMintCoins.AmountOf("ustoc").IsZero(), "expected zero ustoc minted for dust-only outflow")
 }
 
 // ===================== BurnCoins Tests =====================
@@ -359,16 +364,16 @@ func TestBurnCoins_EvmDenom_ConvertsAndBurns(t *testing.T) {
 	require.Equal(t, math.NewInt(5), mock.lastBurnCoins.AmountOf("ustoc"))
 }
 
-// SA-C7/C8 audit-2026-05-29: BurnCoins is an outflow path. Round-up burn let
-// the caller destroy 1 ustoc of supply while only supplying sub-ustoc dust; the
-// audit reclassified it as outflow with round-DOWN + dust rejection.
-func TestBurnCoins_DustAmount_RejectedAsOutflow(t *testing.T) {
-	ebk, _ := setup(t)
+// SA-2026-06-02 MED-3: BurnCoins is an outflow path that silently drops
+// sub-1-ustoc dust legs. See TestSendCoins_DustAmount_SilentlyDropped for
+// the rationale.
+func TestBurnCoins_DustAmount_SilentlyDropped(t *testing.T) {
+	ebk, mock := setup(t)
 
 	amt := sdk.NewCoins(sdk.NewCoin("astoc", math.NewInt(999)))
 	err := ebk.BurnCoins(context.Background(), "evm", amt)
-	require.Error(t, err, "SA-C7/C8: BurnCoins is an outflow path and must reject sub-1-ustoc dust")
-	require.Contains(t, err.Error(), "outflow truncates dust")
+	require.NoError(t, err, "MED-3: BurnCoins must silently drop sub-1-ustoc dust legs")
+	require.True(t, mock.lastBurnCoins.AmountOf("ustoc").IsZero(), "expected zero ustoc burned for dust-only outflow")
 }
 
 func TestBurnCoins_CustomToken_Blocked(t *testing.T) {

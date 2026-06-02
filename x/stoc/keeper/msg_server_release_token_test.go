@@ -14,7 +14,6 @@ func TestReleaseTokens_Success(t *testing.T) {
 	k, ms, ctx, _ := setupMsgServerWithMock(t)
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
 	creator := creatorAddr.String()
-	recipientAddr := sdk.AccAddress([]byte("recipient_addr_456"))
 	denom := "MYTOKEN_0"
 
 	token := types.Token{
@@ -32,12 +31,16 @@ func TestReleaseTokens_Success(t *testing.T) {
 	}
 	require.NoError(t, k.SetToken(ctx, token))
 
-	// Release 100 tokens using minimalDenom
+	// SA-2026-06-02 HIGH-2: release recipient MUST equal creator. Two-step
+	// flow (release → creator, then MsgSend → distribution wallet) is what
+	// keeps the tax PostHandler on the path. Asserting creator as recipient
+	// here covers the happy-path; rejection of non-creator is asserted in
+	// TestReleaseTokens_NonCreator (already in this file).
 	_, err := ms.ReleaseTokens(ctx, &types.MsgReleaseTokens{
 		Creator:   creator,
 		Symbol:    denom,
 		Amount:    math.NewInt(100),
-		Recipient: recipientAddr.String(),
+		Recipient: creator,
 	})
 	require.NoError(t, err)
 
@@ -51,7 +54,6 @@ func TestReleaseTokens_BySymbol(t *testing.T) {
 	k, ms, ctx, _ := setupMsgServerWithMock(t)
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
 	creator := creatorAddr.String()
-	recipientAddr := sdk.AccAddress([]byte("recipient_addr_456"))
 	denom := "MYTOKEN_0"
 
 	token := types.Token{
@@ -69,12 +71,13 @@ func TestReleaseTokens_BySymbol(t *testing.T) {
 	}
 	require.NoError(t, k.SetToken(ctx, token))
 
-	// Release using symbol instead of minimalDenom
+	// Release using symbol instead of minimalDenom. SA-2026-06-02 HIGH-2:
+	// recipient must equal creator.
 	_, err := ms.ReleaseTokens(ctx, &types.MsgReleaseTokens{
 		Creator:   creator,
 		Symbol:    "MYTOKEN",
 		Amount:    math.NewInt(100),
-		Recipient: recipientAddr.String(),
+		Recipient: creator,
 	})
 	require.NoError(t, err)
 
