@@ -81,8 +81,18 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 			// for the R2 skip-conditions check (sender == tax_recipient) per the
 			// 2026-06-03 business rule. Per-output recipient still drives the
 			// R3 check (recipient == tax_recipient) inside applyTaxForRecipient.
-			if len(m.Inputs) == 0 {
-				return fmt.Errorf("MsgMultiSend with no inputs")
+			// SA-2026-06-04 LOW defense-in-depth: explicit single-input guard.
+			// Cosmos SDK v0.50+ x/bank.MsgMultiSend.ValidateBasic rejects
+			// multi-input MultiSend at the wire level (single-input post-v0.47
+			// restriction), but if a future SDK rev relaxed that, our
+			// "sender = Inputs[0].Address" attribution would mis-blame the
+			// first input for outputs paid by later inputs, letting an
+			// attacker with input role pay alongside a tax_recipient-input to
+			// bypass R2. Pin the assumption explicitly so an SDK upgrade that
+			// breaks it surfaces as a hard error here rather than as a silent
+			// evasion path.
+			if len(m.Inputs) != 1 {
+				return fmt.Errorf("MsgMultiSend with %d inputs not supported (single-input only — multi-input MultiSend is disallowed since Cosmos SDK v0.47)", len(m.Inputs))
 			}
 			sender := m.Inputs[0].Address
 			for _, output := range m.Outputs {
@@ -166,6 +176,16 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, senderAddress,
 		token, found := tpd.k.GetToken(ctx, coin.Denom)
 		if !found || token.Tax.Percent.IsNil() || token.Tax.Percent.IsZero() || token.Tax.RecipientAddress == "" {
 			continue
+		}
+
+		// SA-2026-06-04 LOW defense-in-depth: validate token.Tax.RecipientAddress
+		// as bech32 BEFORE the R2/R3 string compares below. CreateToken already
+		// rejects malformed values today, but if a future state-migration ever
+		// landed a malformed string in this field the R2/R3 string compare could
+		// produce a false-positive skip when sender/recipient happens to
+		// lex-equal the malformed value. Fail closed instead.
+		if _, addrErr := sdk.AccAddressFromBech32(token.Tax.RecipientAddress); addrErr != nil {
+			return fmt.Errorf("token %s has malformed Tax.RecipientAddress %q: %v", coin.Denom, token.Tax.RecipientAddress, addrErr)
 		}
 
 		// R2 / R3 skip conditions (locked 2026-06-03). See function godoc for

@@ -23,6 +23,7 @@ const (
 	Msg_CreateToken_FullMethodName   = "/stoc.stoc.Msg/CreateToken"
 	Msg_ReleaseTokens_FullMethodName = "/stoc.stoc.Msg/ReleaseTokens"
 	Msg_MintTokens_FullMethodName    = "/stoc.stoc.Msg/MintTokens"
+	Msg_BurnToken_FullMethodName     = "/stoc.stoc.Msg/BurnToken"
 )
 
 // MsgClient is the client API for Msg service.
@@ -38,6 +39,8 @@ type MsgClient interface {
 	ReleaseTokens(ctx context.Context, in *MsgReleaseTokens, opts ...grpc.CallOption) (*MsgReleaseTokensResponse, error)
 	// MintTokens mints tokens to a recipient
 	MintTokens(ctx context.Context, in *MsgMintTokens, opts ...grpc.CallOption) (*MsgMintTokensResponse, error)
+	// BurnToken burns tokens
+	BurnToken(ctx context.Context, in *MsgBurnToken, opts ...grpc.CallOption) (*MsgBurnTokenResponse, error)
 }
 
 type msgClient struct {
@@ -84,6 +87,15 @@ func (c *msgClient) MintTokens(ctx context.Context, in *MsgMintTokens, opts ...g
 	return out, nil
 }
 
+func (c *msgClient) BurnToken(ctx context.Context, in *MsgBurnToken, opts ...grpc.CallOption) (*MsgBurnTokenResponse, error) {
+	out := new(MsgBurnTokenResponse)
+	err := c.cc.Invoke(ctx, Msg_BurnToken_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
@@ -97,6 +109,8 @@ type MsgServer interface {
 	ReleaseTokens(context.Context, *MsgReleaseTokens) (*MsgReleaseTokensResponse, error)
 	// MintTokens mints tokens to a recipient
 	MintTokens(context.Context, *MsgMintTokens) (*MsgMintTokensResponse, error)
+	// BurnToken burns tokens
+	BurnToken(context.Context, *MsgBurnToken) (*MsgBurnTokenResponse, error)
 	mustEmbedUnimplementedMsgServer()
 }
 
@@ -115,6 +129,9 @@ func (UnimplementedMsgServer) ReleaseTokens(context.Context, *MsgReleaseTokens) 
 }
 func (UnimplementedMsgServer) MintTokens(context.Context, *MsgMintTokens) (*MsgMintTokensResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MintTokens not implemented")
+}
+func (UnimplementedMsgServer) BurnToken(context.Context, *MsgBurnToken) (*MsgBurnTokenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BurnToken not implemented")
 }
 func (UnimplementedMsgServer) mustEmbedUnimplementedMsgServer() {}
 
@@ -201,6 +218,24 @@ func _Msg_MintTokens_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_BurnToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgBurnToken)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).BurnToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_BurnToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).BurnToken(ctx, req.(*MsgBurnToken))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Msg_ServiceDesc is the grpc.ServiceDesc for Msg service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -223,6 +258,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MintTokens",
 			Handler:    _Msg_MintTokens_Handler,
+		},
+		{
+			MethodName: "BurnToken",
+			Handler:    _Msg_BurnToken_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

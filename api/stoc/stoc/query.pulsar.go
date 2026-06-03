@@ -4,6 +4,7 @@ package stoc
 import (
 	_ "cosmossdk.io/api/amino"
 	v1beta1 "cosmossdk.io/api/cosmos/base/query/v1beta1"
+	_ "cosmossdk.io/api/cosmos/base/v1beta1"
 	fmt "fmt"
 	runtime "github.com/cosmos/cosmos-proto/runtime"
 	_ "github.com/cosmos/gogoproto/gogoproto"
@@ -3584,6 +3585,1641 @@ func (x *fastReflection_QueryTokensBySymbolResponse) ProtoMethods() *protoiface.
 	}
 }
 
+var (
+	md_BalanceWithMetadata          protoreflect.MessageDescriptor
+	fd_BalanceWithMetadata_denom    protoreflect.FieldDescriptor
+	fd_BalanceWithMetadata_amount   protoreflect.FieldDescriptor
+	fd_BalanceWithMetadata_metadata protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_stoc_stoc_query_proto_init()
+	md_BalanceWithMetadata = File_stoc_stoc_query_proto.Messages().ByName("BalanceWithMetadata")
+	fd_BalanceWithMetadata_denom = md_BalanceWithMetadata.Fields().ByName("denom")
+	fd_BalanceWithMetadata_amount = md_BalanceWithMetadata.Fields().ByName("amount")
+	fd_BalanceWithMetadata_metadata = md_BalanceWithMetadata.Fields().ByName("metadata")
+}
+
+var _ protoreflect.Message = (*fastReflection_BalanceWithMetadata)(nil)
+
+type fastReflection_BalanceWithMetadata BalanceWithMetadata
+
+func (x *BalanceWithMetadata) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_BalanceWithMetadata)(x)
+}
+
+func (x *BalanceWithMetadata) slowProtoReflect() protoreflect.Message {
+	mi := &file_stoc_stoc_query_proto_msgTypes[8]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_BalanceWithMetadata_messageType fastReflection_BalanceWithMetadata_messageType
+var _ protoreflect.MessageType = fastReflection_BalanceWithMetadata_messageType{}
+
+type fastReflection_BalanceWithMetadata_messageType struct{}
+
+func (x fastReflection_BalanceWithMetadata_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_BalanceWithMetadata)(nil)
+}
+func (x fastReflection_BalanceWithMetadata_messageType) New() protoreflect.Message {
+	return new(fastReflection_BalanceWithMetadata)
+}
+func (x fastReflection_BalanceWithMetadata_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_BalanceWithMetadata
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_BalanceWithMetadata) Descriptor() protoreflect.MessageDescriptor {
+	return md_BalanceWithMetadata
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_BalanceWithMetadata) Type() protoreflect.MessageType {
+	return _fastReflection_BalanceWithMetadata_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_BalanceWithMetadata) New() protoreflect.Message {
+	return new(fastReflection_BalanceWithMetadata)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_BalanceWithMetadata) Interface() protoreflect.ProtoMessage {
+	return (*BalanceWithMetadata)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_BalanceWithMetadata) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Denom != "" {
+		value := protoreflect.ValueOfString(x.Denom)
+		if !f(fd_BalanceWithMetadata_denom, value) {
+			return
+		}
+	}
+	if x.Amount != "" {
+		value := protoreflect.ValueOfString(x.Amount)
+		if !f(fd_BalanceWithMetadata_amount, value) {
+			return
+		}
+	}
+	if x.Metadata != nil {
+		value := protoreflect.ValueOfMessage(x.Metadata.ProtoReflect())
+		if !f(fd_BalanceWithMetadata_metadata, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_BalanceWithMetadata) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "stoc.stoc.BalanceWithMetadata.denom":
+		return x.Denom != ""
+	case "stoc.stoc.BalanceWithMetadata.amount":
+		return x.Amount != ""
+	case "stoc.stoc.BalanceWithMetadata.metadata":
+		return x.Metadata != nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.BalanceWithMetadata"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.BalanceWithMetadata does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_BalanceWithMetadata) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "stoc.stoc.BalanceWithMetadata.denom":
+		x.Denom = ""
+	case "stoc.stoc.BalanceWithMetadata.amount":
+		x.Amount = ""
+	case "stoc.stoc.BalanceWithMetadata.metadata":
+		x.Metadata = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.BalanceWithMetadata"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.BalanceWithMetadata does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_BalanceWithMetadata) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "stoc.stoc.BalanceWithMetadata.denom":
+		value := x.Denom
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.BalanceWithMetadata.amount":
+		value := x.Amount
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.BalanceWithMetadata.metadata":
+		value := x.Metadata
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.BalanceWithMetadata"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.BalanceWithMetadata does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_BalanceWithMetadata) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "stoc.stoc.BalanceWithMetadata.denom":
+		x.Denom = value.Interface().(string)
+	case "stoc.stoc.BalanceWithMetadata.amount":
+		x.Amount = value.Interface().(string)
+	case "stoc.stoc.BalanceWithMetadata.metadata":
+		x.Metadata = value.Message().Interface().(*Token)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.BalanceWithMetadata"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.BalanceWithMetadata does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_BalanceWithMetadata) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "stoc.stoc.BalanceWithMetadata.metadata":
+		if x.Metadata == nil {
+			x.Metadata = new(Token)
+		}
+		return protoreflect.ValueOfMessage(x.Metadata.ProtoReflect())
+	case "stoc.stoc.BalanceWithMetadata.denom":
+		panic(fmt.Errorf("field denom of message stoc.stoc.BalanceWithMetadata is not mutable"))
+	case "stoc.stoc.BalanceWithMetadata.amount":
+		panic(fmt.Errorf("field amount of message stoc.stoc.BalanceWithMetadata is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.BalanceWithMetadata"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.BalanceWithMetadata does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_BalanceWithMetadata) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "stoc.stoc.BalanceWithMetadata.denom":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.BalanceWithMetadata.amount":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.BalanceWithMetadata.metadata":
+		m := new(Token)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.BalanceWithMetadata"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.BalanceWithMetadata does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_BalanceWithMetadata) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in stoc.stoc.BalanceWithMetadata", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_BalanceWithMetadata) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_BalanceWithMetadata) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_BalanceWithMetadata) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_BalanceWithMetadata) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*BalanceWithMetadata)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.Denom)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.Amount)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Metadata != nil {
+			l = options.Size(x.Metadata)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*BalanceWithMetadata)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Metadata != nil {
+			encoded, err := options.Marshal(x.Metadata)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x1a
+		}
+		if len(x.Amount) > 0 {
+			i -= len(x.Amount)
+			copy(dAtA[i:], x.Amount)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Amount)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.Denom) > 0 {
+			i -= len(x.Denom)
+			copy(dAtA[i:], x.Denom)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Denom)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*BalanceWithMetadata)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: BalanceWithMetadata: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: BalanceWithMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Denom", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Denom = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Amount", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Amount = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.Metadata == nil {
+					x.Metadata = &Token{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Metadata); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_QueryBalancesWithMetadataRequest            protoreflect.MessageDescriptor
+	fd_QueryBalancesWithMetadataRequest_address    protoreflect.FieldDescriptor
+	fd_QueryBalancesWithMetadataRequest_pagination protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_stoc_stoc_query_proto_init()
+	md_QueryBalancesWithMetadataRequest = File_stoc_stoc_query_proto.Messages().ByName("QueryBalancesWithMetadataRequest")
+	fd_QueryBalancesWithMetadataRequest_address = md_QueryBalancesWithMetadataRequest.Fields().ByName("address")
+	fd_QueryBalancesWithMetadataRequest_pagination = md_QueryBalancesWithMetadataRequest.Fields().ByName("pagination")
+}
+
+var _ protoreflect.Message = (*fastReflection_QueryBalancesWithMetadataRequest)(nil)
+
+type fastReflection_QueryBalancesWithMetadataRequest QueryBalancesWithMetadataRequest
+
+func (x *QueryBalancesWithMetadataRequest) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_QueryBalancesWithMetadataRequest)(x)
+}
+
+func (x *QueryBalancesWithMetadataRequest) slowProtoReflect() protoreflect.Message {
+	mi := &file_stoc_stoc_query_proto_msgTypes[9]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_QueryBalancesWithMetadataRequest_messageType fastReflection_QueryBalancesWithMetadataRequest_messageType
+var _ protoreflect.MessageType = fastReflection_QueryBalancesWithMetadataRequest_messageType{}
+
+type fastReflection_QueryBalancesWithMetadataRequest_messageType struct{}
+
+func (x fastReflection_QueryBalancesWithMetadataRequest_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_QueryBalancesWithMetadataRequest)(nil)
+}
+func (x fastReflection_QueryBalancesWithMetadataRequest_messageType) New() protoreflect.Message {
+	return new(fastReflection_QueryBalancesWithMetadataRequest)
+}
+func (x fastReflection_QueryBalancesWithMetadataRequest_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryBalancesWithMetadataRequest
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryBalancesWithMetadataRequest
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) Type() protoreflect.MessageType {
+	return _fastReflection_QueryBalancesWithMetadataRequest_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) New() protoreflect.Message {
+	return new(fastReflection_QueryBalancesWithMetadataRequest)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) Interface() protoreflect.ProtoMessage {
+	return (*QueryBalancesWithMetadataRequest)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Address != "" {
+		value := protoreflect.ValueOfString(x.Address)
+		if !f(fd_QueryBalancesWithMetadataRequest_address, value) {
+			return
+		}
+	}
+	if x.Pagination != nil {
+		value := protoreflect.ValueOfMessage(x.Pagination.ProtoReflect())
+		if !f(fd_QueryBalancesWithMetadataRequest_pagination, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.address":
+		return x.Address != ""
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.pagination":
+		return x.Pagination != nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataRequest"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.address":
+		x.Address = ""
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.pagination":
+		x.Pagination = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataRequest"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.address":
+		value := x.Address
+		return protoreflect.ValueOfString(value)
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.pagination":
+		value := x.Pagination
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataRequest"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataRequest does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.address":
+		x.Address = value.Interface().(string)
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.pagination":
+		x.Pagination = value.Message().Interface().(*v1beta1.PageRequest)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataRequest"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.pagination":
+		if x.Pagination == nil {
+			x.Pagination = new(v1beta1.PageRequest)
+		}
+		return protoreflect.ValueOfMessage(x.Pagination.ProtoReflect())
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.address":
+		panic(fmt.Errorf("field address of message stoc.stoc.QueryBalancesWithMetadataRequest is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataRequest"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.address":
+		return protoreflect.ValueOfString("")
+	case "stoc.stoc.QueryBalancesWithMetadataRequest.pagination":
+		m := new(v1beta1.PageRequest)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataRequest"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in stoc.stoc.QueryBalancesWithMetadataRequest", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_QueryBalancesWithMetadataRequest) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*QueryBalancesWithMetadataRequest)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.Address)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Pagination != nil {
+			l = options.Size(x.Pagination)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*QueryBalancesWithMetadataRequest)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Pagination != nil {
+			encoded, err := options.Marshal(x.Pagination)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.Address) > 0 {
+			i -= len(x.Address)
+			copy(dAtA[i:], x.Address)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Address)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*QueryBalancesWithMetadataRequest)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryBalancesWithMetadataRequest: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryBalancesWithMetadataRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Address", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Address = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Pagination", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.Pagination == nil {
+					x.Pagination = &v1beta1.PageRequest{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Pagination); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var _ protoreflect.List = (*_QueryBalancesWithMetadataResponse_1_list)(nil)
+
+type _QueryBalancesWithMetadataResponse_1_list struct {
+	list *[]*BalanceWithMetadata
+}
+
+func (x *_QueryBalancesWithMetadataResponse_1_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_QueryBalancesWithMetadataResponse_1_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_QueryBalancesWithMetadataResponse_1_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*BalanceWithMetadata)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_QueryBalancesWithMetadataResponse_1_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*BalanceWithMetadata)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_QueryBalancesWithMetadataResponse_1_list) AppendMutable() protoreflect.Value {
+	v := new(BalanceWithMetadata)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_QueryBalancesWithMetadataResponse_1_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_QueryBalancesWithMetadataResponse_1_list) NewElement() protoreflect.Value {
+	v := new(BalanceWithMetadata)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_QueryBalancesWithMetadataResponse_1_list) IsValid() bool {
+	return x.list != nil
+}
+
+var (
+	md_QueryBalancesWithMetadataResponse            protoreflect.MessageDescriptor
+	fd_QueryBalancesWithMetadataResponse_balances   protoreflect.FieldDescriptor
+	fd_QueryBalancesWithMetadataResponse_pagination protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_stoc_stoc_query_proto_init()
+	md_QueryBalancesWithMetadataResponse = File_stoc_stoc_query_proto.Messages().ByName("QueryBalancesWithMetadataResponse")
+	fd_QueryBalancesWithMetadataResponse_balances = md_QueryBalancesWithMetadataResponse.Fields().ByName("balances")
+	fd_QueryBalancesWithMetadataResponse_pagination = md_QueryBalancesWithMetadataResponse.Fields().ByName("pagination")
+}
+
+var _ protoreflect.Message = (*fastReflection_QueryBalancesWithMetadataResponse)(nil)
+
+type fastReflection_QueryBalancesWithMetadataResponse QueryBalancesWithMetadataResponse
+
+func (x *QueryBalancesWithMetadataResponse) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_QueryBalancesWithMetadataResponse)(x)
+}
+
+func (x *QueryBalancesWithMetadataResponse) slowProtoReflect() protoreflect.Message {
+	mi := &file_stoc_stoc_query_proto_msgTypes[10]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_QueryBalancesWithMetadataResponse_messageType fastReflection_QueryBalancesWithMetadataResponse_messageType
+var _ protoreflect.MessageType = fastReflection_QueryBalancesWithMetadataResponse_messageType{}
+
+type fastReflection_QueryBalancesWithMetadataResponse_messageType struct{}
+
+func (x fastReflection_QueryBalancesWithMetadataResponse_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_QueryBalancesWithMetadataResponse)(nil)
+}
+func (x fastReflection_QueryBalancesWithMetadataResponse_messageType) New() protoreflect.Message {
+	return new(fastReflection_QueryBalancesWithMetadataResponse)
+}
+func (x fastReflection_QueryBalancesWithMetadataResponse_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryBalancesWithMetadataResponse
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryBalancesWithMetadataResponse
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) Type() protoreflect.MessageType {
+	return _fastReflection_QueryBalancesWithMetadataResponse_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) New() protoreflect.Message {
+	return new(fastReflection_QueryBalancesWithMetadataResponse)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) Interface() protoreflect.ProtoMessage {
+	return (*QueryBalancesWithMetadataResponse)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if len(x.Balances) != 0 {
+		value := protoreflect.ValueOfList(&_QueryBalancesWithMetadataResponse_1_list{list: &x.Balances})
+		if !f(fd_QueryBalancesWithMetadataResponse_balances, value) {
+			return
+		}
+	}
+	if x.Pagination != nil {
+		value := protoreflect.ValueOfMessage(x.Pagination.ProtoReflect())
+		if !f(fd_QueryBalancesWithMetadataResponse_pagination, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.balances":
+		return len(x.Balances) != 0
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.pagination":
+		return x.Pagination != nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataResponse"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.balances":
+		x.Balances = nil
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.pagination":
+		x.Pagination = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataResponse"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.balances":
+		if len(x.Balances) == 0 {
+			return protoreflect.ValueOfList(&_QueryBalancesWithMetadataResponse_1_list{})
+		}
+		listValue := &_QueryBalancesWithMetadataResponse_1_list{list: &x.Balances}
+		return protoreflect.ValueOfList(listValue)
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.pagination":
+		value := x.Pagination
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataResponse"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataResponse does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.balances":
+		lv := value.List()
+		clv := lv.(*_QueryBalancesWithMetadataResponse_1_list)
+		x.Balances = *clv.list
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.pagination":
+		x.Pagination = value.Message().Interface().(*v1beta1.PageResponse)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataResponse"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.balances":
+		if x.Balances == nil {
+			x.Balances = []*BalanceWithMetadata{}
+		}
+		value := &_QueryBalancesWithMetadataResponse_1_list{list: &x.Balances}
+		return protoreflect.ValueOfList(value)
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.pagination":
+		if x.Pagination == nil {
+			x.Pagination = new(v1beta1.PageResponse)
+		}
+		return protoreflect.ValueOfMessage(x.Pagination.ProtoReflect())
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataResponse"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.balances":
+		list := []*BalanceWithMetadata{}
+		return protoreflect.ValueOfList(&_QueryBalancesWithMetadataResponse_1_list{list: &list})
+	case "stoc.stoc.QueryBalancesWithMetadataResponse.pagination":
+		m := new(v1beta1.PageResponse)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: stoc.stoc.QueryBalancesWithMetadataResponse"))
+		}
+		panic(fmt.Errorf("message stoc.stoc.QueryBalancesWithMetadataResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in stoc.stoc.QueryBalancesWithMetadataResponse", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_QueryBalancesWithMetadataResponse) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*QueryBalancesWithMetadataResponse)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if len(x.Balances) > 0 {
+			for _, e := range x.Balances {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
+		}
+		if x.Pagination != nil {
+			l = options.Size(x.Pagination)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*QueryBalancesWithMetadataResponse)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Pagination != nil {
+			encoded, err := options.Marshal(x.Pagination)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.Balances) > 0 {
+			for iNdEx := len(x.Balances) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.Balances[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0xa
+			}
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*QueryBalancesWithMetadataResponse)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryBalancesWithMetadataResponse: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryBalancesWithMetadataResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Balances", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Balances = append(x.Balances, &BalanceWithMetadata{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Balances[len(x.Balances)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Pagination", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.Pagination == nil {
+					x.Pagination = &v1beta1.PageResponse{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Pagination); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
 // Code generated by protoc-gen-go. DO NOT EDIT.
 // versions:
 // 	protoc-gen-go v1.27.0
@@ -3884,6 +5520,146 @@ func (x *QueryTokensBySymbolResponse) GetTokens() []*Token {
 	return nil
 }
 
+// BalanceWithMetadata represents a balance with its token metadata
+type BalanceWithMetadata struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Denom    string `protobuf:"bytes,1,opt,name=denom,proto3" json:"denom,omitempty"`
+	Amount   string `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	Metadata *Token `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+}
+
+func (x *BalanceWithMetadata) Reset() {
+	*x = BalanceWithMetadata{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_stoc_stoc_query_proto_msgTypes[8]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *BalanceWithMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BalanceWithMetadata) ProtoMessage() {}
+
+// Deprecated: Use BalanceWithMetadata.ProtoReflect.Descriptor instead.
+func (*BalanceWithMetadata) Descriptor() ([]byte, []int) {
+	return file_stoc_stoc_query_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *BalanceWithMetadata) GetDenom() string {
+	if x != nil {
+		return x.Denom
+	}
+	return ""
+}
+
+func (x *BalanceWithMetadata) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
+func (x *BalanceWithMetadata) GetMetadata() *Token {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+// QueryBalancesWithMetadataRequest is the request type for the Query/BalancesWithMetadata RPC method
+type QueryBalancesWithMetadataRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Address    string               `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	Pagination *v1beta1.PageRequest `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
+}
+
+func (x *QueryBalancesWithMetadataRequest) Reset() {
+	*x = QueryBalancesWithMetadataRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_stoc_stoc_query_proto_msgTypes[9]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *QueryBalancesWithMetadataRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryBalancesWithMetadataRequest) ProtoMessage() {}
+
+// Deprecated: Use QueryBalancesWithMetadataRequest.ProtoReflect.Descriptor instead.
+func (*QueryBalancesWithMetadataRequest) Descriptor() ([]byte, []int) {
+	return file_stoc_stoc_query_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *QueryBalancesWithMetadataRequest) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *QueryBalancesWithMetadataRequest) GetPagination() *v1beta1.PageRequest {
+	if x != nil {
+		return x.Pagination
+	}
+	return nil
+}
+
+// QueryBalancesWithMetadataResponse is the response type for the Query/BalancesWithMetadata RPC method
+type QueryBalancesWithMetadataResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Balances   []*BalanceWithMetadata `protobuf:"bytes,1,rep,name=balances,proto3" json:"balances,omitempty"`
+	Pagination *v1beta1.PageResponse  `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
+}
+
+func (x *QueryBalancesWithMetadataResponse) Reset() {
+	*x = QueryBalancesWithMetadataResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_stoc_stoc_query_proto_msgTypes[10]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *QueryBalancesWithMetadataResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryBalancesWithMetadataResponse) ProtoMessage() {}
+
+// Deprecated: Use QueryBalancesWithMetadataResponse.ProtoReflect.Descriptor instead.
+func (*QueryBalancesWithMetadataResponse) Descriptor() ([]byte, []int) {
+	return file_stoc_stoc_query_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *QueryBalancesWithMetadataResponse) GetBalances() []*BalanceWithMetadata {
+	if x != nil {
+		return x.Balances
+	}
+	return nil
+}
+
+func (x *QueryBalancesWithMetadataResponse) GetPagination() *v1beta1.PageResponse {
+	if x != nil {
+		return x.Pagination
+	}
+	return nil
+}
+
 var File_stoc_stoc_query_proto protoreflect.FileDescriptor
 
 var file_stoc_stoc_query_proto_rawDesc = []byte{
@@ -3896,6 +5672,8 @@ var file_stoc_stoc_query_proto_rawDesc = []byte{
 	0x6f, 0x6e, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x2a, 0x63, 0x6f, 0x73, 0x6d, 0x6f,
 	0x73, 0x2f, 0x62, 0x61, 0x73, 0x65, 0x2f, 0x71, 0x75, 0x65, 0x72, 0x79, 0x2f, 0x76, 0x31, 0x62,
 	0x65, 0x74, 0x61, 0x31, 0x2f, 0x70, 0x61, 0x67, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x1e, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2f, 0x62, 0x61,
+	0x73, 0x65, 0x2f, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2f, 0x63, 0x6f, 0x69, 0x6e, 0x2e,
 	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x16, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63,
 	0x2f, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x15, 0x73,
 	0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x2e, 0x70,
@@ -3936,44 +5714,80 @@ var file_stoc_stoc_query_proto_rawDesc = []byte{
 	0x6c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2e, 0x0a, 0x06, 0x74, 0x6f, 0x6b,
 	0x65, 0x6e, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x10, 0x2e, 0x73, 0x74, 0x6f, 0x63,
 	0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x42, 0x04, 0xc8, 0xde, 0x1f,
-	0x00, 0x52, 0x06, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x32, 0xd0, 0x03, 0x0a, 0x05, 0x51, 0x75,
-	0x65, 0x72, 0x79, 0x12, 0x62, 0x0a, 0x06, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x1d, 0x2e,
-	0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50,
-	0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e, 0x73,
-	0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x61,
-	0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x19, 0x82, 0xd3,
+	0x00, 0x52, 0x06, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x22, 0x71, 0x0a, 0x13, 0x42, 0x61, 0x6c,
+	0x61, 0x6e, 0x63, 0x65, 0x57, 0x69, 0x74, 0x68, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61,
+	0x12, 0x14, 0x0a, 0x05, 0x64, 0x65, 0x6e, 0x6f, 0x6d, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x05, 0x64, 0x65, 0x6e, 0x6f, 0x6d, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x2c,
+	0x0a, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x10, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x54, 0x6f, 0x6b,
+	0x65, 0x6e, 0x52, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x84, 0x01, 0x0a,
+	0x20, 0x51, 0x75, 0x65, 0x72, 0x79, 0x42, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x73, 0x57, 0x69,
+	0x74, 0x68, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x46, 0x0a, 0x0a, 0x70,
+	0x61, 0x67, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32,
+	0x26, 0x2e, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2e, 0x62, 0x61, 0x73, 0x65, 0x2e, 0x71, 0x75,
+	0x65, 0x72, 0x79, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x50, 0x61, 0x67, 0x65,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x52, 0x0a, 0x70, 0x61, 0x67, 0x69, 0x6e, 0x61, 0x74,
+	0x69, 0x6f, 0x6e, 0x22, 0xae, 0x01, 0x0a, 0x21, 0x51, 0x75, 0x65, 0x72, 0x79, 0x42, 0x61, 0x6c,
+	0x61, 0x6e, 0x63, 0x65, 0x73, 0x57, 0x69, 0x74, 0x68, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74,
+	0x61, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x40, 0x0a, 0x08, 0x62, 0x61, 0x6c,
+	0x61, 0x6e, 0x63, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x73, 0x74,
+	0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x42, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x57,
+	0x69, 0x74, 0x68, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x42, 0x04, 0xc8, 0xde, 0x1f,
+	0x00, 0x52, 0x08, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x73, 0x12, 0x47, 0x0a, 0x0a, 0x70,
+	0x61, 0x67, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32,
+	0x27, 0x2e, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2e, 0x62, 0x61, 0x73, 0x65, 0x2e, 0x71, 0x75,
+	0x65, 0x72, 0x79, 0x2e, 0x76, 0x31, 0x62, 0x65, 0x74, 0x61, 0x31, 0x2e, 0x50, 0x61, 0x67, 0x65,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x0a, 0x70, 0x61, 0x67, 0x69, 0x6e, 0x61,
+	0x74, 0x69, 0x6f, 0x6e, 0x32, 0xeb, 0x04, 0x0a, 0x05, 0x51, 0x75, 0x65, 0x72, 0x79, 0x12, 0x62,
+	0x0a, 0x06, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x1d, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e,
+	0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73,
+	0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x19, 0x82, 0xd3, 0xe4, 0x93, 0x02, 0x13, 0x12,
+	0x11, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x70, 0x61, 0x72, 0x61,
+	0x6d, 0x73, 0x12, 0x6f, 0x0a, 0x05, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x12, 0x1c, 0x2e, 0x73, 0x74,
+	0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x6f, 0x6b,
+	0x65, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d, 0x2e, 0x73, 0x74, 0x6f, 0x63,
+	0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x6f, 0x6b, 0x65, 0x6e,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x29, 0x82, 0xd3, 0xe4, 0x93, 0x02, 0x23,
+	0x12, 0x21, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x74, 0x6f, 0x6b,
+	0x65, 0x6e, 0x73, 0x2f, 0x7b, 0x6d, 0x69, 0x6e, 0x69, 0x6d, 0x61, 0x6c, 0x5f, 0x64, 0x65, 0x6e,
+	0x6f, 0x6d, 0x7d, 0x12, 0x62, 0x0a, 0x06, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x12, 0x1d, 0x2e,
+	0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54,
+	0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e, 0x73,
+	0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x6f,
+	0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x19, 0x82, 0xd3,
 	0xe4, 0x93, 0x02, 0x13, 0x12, 0x11, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63,
-	0x2f, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x6f, 0x0a, 0x05, 0x54, 0x6f, 0x6b, 0x65, 0x6e,
-	0x12, 0x1c, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65,
-	0x72, 0x79, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d,
-	0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79,
-	0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x29, 0x82,
-	0xd3, 0xe4, 0x93, 0x02, 0x23, 0x12, 0x21, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f,
-	0x63, 0x2f, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x2f, 0x7b, 0x6d, 0x69, 0x6e, 0x69, 0x6d, 0x61,
-	0x6c, 0x5f, 0x64, 0x65, 0x6e, 0x6f, 0x6d, 0x7d, 0x12, 0x62, 0x0a, 0x06, 0x54, 0x6f, 0x6b, 0x65,
-	0x6e, 0x73, 0x12, 0x1d, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51,
-	0x75, 0x65, 0x72, 0x79, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
-	0x74, 0x1a, 0x1e, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75,
-	0x65, 0x72, 0x79, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
-	0x65, 0x22, 0x19, 0x82, 0xd3, 0xe4, 0x93, 0x02, 0x13, 0x12, 0x11, 0x2f, 0x73, 0x74, 0x6f, 0x63,
-	0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x12, 0x8d, 0x01, 0x0a,
-	0x0e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x42, 0x79, 0x53, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x12,
-	0x25, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72,
-	0x79, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x42, 0x79, 0x53, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x52,
-	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x26, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74,
-	0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x42, 0x79,
-	0x53, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x2c,
-	0x82, 0xd3, 0xe4, 0x93, 0x02, 0x26, 0x12, 0x24, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74,
-	0x6f, 0x63, 0x2f, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x5f, 0x62, 0x79, 0x5f, 0x73, 0x79, 0x6d,
-	0x62, 0x6f, 0x6c, 0x2f, 0x7b, 0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x7d, 0x42, 0x74, 0x0a, 0x0d,
-	0x63, 0x6f, 0x6d, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x42, 0x0a, 0x51,
-	0x75, 0x65, 0x72, 0x79, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x12, 0x73, 0x74, 0x6f,
-	0x63, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0xa2,
-	0x02, 0x03, 0x53, 0x53, 0x58, 0xaa, 0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x2e, 0x53, 0x74, 0x6f,
-	0x63, 0xca, 0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63, 0xe2, 0x02, 0x15,
-	0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74,
-	0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x0a, 0x53, 0x74, 0x6f, 0x63, 0x3a, 0x3a, 0x53, 0x74,
-	0x6f, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x2f, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x12, 0x8d, 0x01, 0x0a, 0x0e, 0x54, 0x6f, 0x6b, 0x65,
+	0x6e, 0x73, 0x42, 0x79, 0x53, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x12, 0x25, 0x2e, 0x73, 0x74, 0x6f,
+	0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x6f, 0x6b, 0x65,
+	0x6e, 0x73, 0x42, 0x79, 0x53, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x1a, 0x26, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75,
+	0x65, 0x72, 0x79, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x73, 0x42, 0x79, 0x53, 0x79, 0x6d, 0x62, 0x6f,
+	0x6c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x2c, 0x82, 0xd3, 0xe4, 0x93, 0x02,
+	0x26, 0x12, 0x24, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x74, 0x6f,
+	0x6b, 0x65, 0x6e, 0x73, 0x5f, 0x62, 0x79, 0x5f, 0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x2f, 0x7b,
+	0x73, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0x7d, 0x12, 0x98, 0x01, 0x0a, 0x14, 0x42, 0x61, 0x6c, 0x61,
+	0x6e, 0x63, 0x65, 0x73, 0x57, 0x69, 0x74, 0x68, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61,
+	0x12, 0x2b, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65,
+	0x72, 0x79, 0x42, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x73, 0x57, 0x69, 0x74, 0x68, 0x4d, 0x65,
+	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2c, 0x2e,
+	0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x42,
+	0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x73, 0x57, 0x69, 0x74, 0x68, 0x4d, 0x65, 0x74, 0x61, 0x64,
+	0x61, 0x74, 0x61, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x25, 0x82, 0xd3, 0xe4,
+	0x93, 0x02, 0x1f, 0x12, 0x1d, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x73, 0x74, 0x6f, 0x63, 0x2f,
+	0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x73, 0x2f, 0x7b, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x7d, 0x42, 0x74, 0x0a, 0x0d, 0x63, 0x6f, 0x6d, 0x2e, 0x73, 0x74, 0x6f, 0x63, 0x2e, 0x73,
+	0x74, 0x6f, 0x63, 0x42, 0x0a, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50,
+	0x01, 0x5a, 0x12, 0x73, 0x74, 0x6f, 0x63, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x73, 0x74, 0x6f, 0x63,
+	0x2f, 0x73, 0x74, 0x6f, 0x63, 0xa2, 0x02, 0x03, 0x53, 0x53, 0x58, 0xaa, 0x02, 0x09, 0x53, 0x74,
+	0x6f, 0x63, 0x2e, 0x53, 0x74, 0x6f, 0x63, 0xca, 0x02, 0x09, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53,
+	0x74, 0x6f, 0x63, 0xe2, 0x02, 0x15, 0x53, 0x74, 0x6f, 0x63, 0x5c, 0x53, 0x74, 0x6f, 0x63, 0x5c,
+	0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x0a, 0x53, 0x74,
+	0x6f, 0x63, 0x3a, 0x3a, 0x53, 0x74, 0x6f, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -3988,41 +5802,50 @@ func file_stoc_stoc_query_proto_rawDescGZIP() []byte {
 	return file_stoc_stoc_query_proto_rawDescData
 }
 
-var file_stoc_stoc_query_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_stoc_stoc_query_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_stoc_stoc_query_proto_goTypes = []interface{}{
-	(*QueryParamsRequest)(nil),          // 0: stoc.stoc.QueryParamsRequest
-	(*QueryParamsResponse)(nil),         // 1: stoc.stoc.QueryParamsResponse
-	(*QueryTokenRequest)(nil),           // 2: stoc.stoc.QueryTokenRequest
-	(*QueryTokenResponse)(nil),          // 3: stoc.stoc.QueryTokenResponse
-	(*QueryTokensRequest)(nil),          // 4: stoc.stoc.QueryTokensRequest
-	(*QueryTokensResponse)(nil),         // 5: stoc.stoc.QueryTokensResponse
-	(*QueryTokensBySymbolRequest)(nil),  // 6: stoc.stoc.QueryTokensBySymbolRequest
-	(*QueryTokensBySymbolResponse)(nil), // 7: stoc.stoc.QueryTokensBySymbolResponse
-	(*Params)(nil),                      // 8: stoc.stoc.Params
-	(*Token)(nil),                       // 9: stoc.stoc.Token
-	(*v1beta1.PageRequest)(nil),         // 10: cosmos.base.query.v1beta1.PageRequest
-	(*v1beta1.PageResponse)(nil),        // 11: cosmos.base.query.v1beta1.PageResponse
+	(*QueryParamsRequest)(nil),                // 0: stoc.stoc.QueryParamsRequest
+	(*QueryParamsResponse)(nil),               // 1: stoc.stoc.QueryParamsResponse
+	(*QueryTokenRequest)(nil),                 // 2: stoc.stoc.QueryTokenRequest
+	(*QueryTokenResponse)(nil),                // 3: stoc.stoc.QueryTokenResponse
+	(*QueryTokensRequest)(nil),                // 4: stoc.stoc.QueryTokensRequest
+	(*QueryTokensResponse)(nil),               // 5: stoc.stoc.QueryTokensResponse
+	(*QueryTokensBySymbolRequest)(nil),        // 6: stoc.stoc.QueryTokensBySymbolRequest
+	(*QueryTokensBySymbolResponse)(nil),       // 7: stoc.stoc.QueryTokensBySymbolResponse
+	(*BalanceWithMetadata)(nil),               // 8: stoc.stoc.BalanceWithMetadata
+	(*QueryBalancesWithMetadataRequest)(nil),  // 9: stoc.stoc.QueryBalancesWithMetadataRequest
+	(*QueryBalancesWithMetadataResponse)(nil), // 10: stoc.stoc.QueryBalancesWithMetadataResponse
+	(*Params)(nil),                            // 11: stoc.stoc.Params
+	(*Token)(nil),                             // 12: stoc.stoc.Token
+	(*v1beta1.PageRequest)(nil),               // 13: cosmos.base.query.v1beta1.PageRequest
+	(*v1beta1.PageResponse)(nil),              // 14: cosmos.base.query.v1beta1.PageResponse
 }
 var file_stoc_stoc_query_proto_depIdxs = []int32{
-	8,  // 0: stoc.stoc.QueryParamsResponse.params:type_name -> stoc.stoc.Params
-	9,  // 1: stoc.stoc.QueryTokenResponse.token:type_name -> stoc.stoc.Token
-	10, // 2: stoc.stoc.QueryTokensRequest.pagination:type_name -> cosmos.base.query.v1beta1.PageRequest
-	9,  // 3: stoc.stoc.QueryTokensResponse.tokens:type_name -> stoc.stoc.Token
-	11, // 4: stoc.stoc.QueryTokensResponse.pagination:type_name -> cosmos.base.query.v1beta1.PageResponse
-	9,  // 5: stoc.stoc.QueryTokensBySymbolResponse.tokens:type_name -> stoc.stoc.Token
-	0,  // 6: stoc.stoc.Query.Params:input_type -> stoc.stoc.QueryParamsRequest
-	2,  // 7: stoc.stoc.Query.Token:input_type -> stoc.stoc.QueryTokenRequest
-	4,  // 8: stoc.stoc.Query.Tokens:input_type -> stoc.stoc.QueryTokensRequest
-	6,  // 9: stoc.stoc.Query.TokensBySymbol:input_type -> stoc.stoc.QueryTokensBySymbolRequest
-	1,  // 10: stoc.stoc.Query.Params:output_type -> stoc.stoc.QueryParamsResponse
-	3,  // 11: stoc.stoc.Query.Token:output_type -> stoc.stoc.QueryTokenResponse
-	5,  // 12: stoc.stoc.Query.Tokens:output_type -> stoc.stoc.QueryTokensResponse
-	7,  // 13: stoc.stoc.Query.TokensBySymbol:output_type -> stoc.stoc.QueryTokensBySymbolResponse
-	10, // [10:14] is the sub-list for method output_type
-	6,  // [6:10] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	11, // 0: stoc.stoc.QueryParamsResponse.params:type_name -> stoc.stoc.Params
+	12, // 1: stoc.stoc.QueryTokenResponse.token:type_name -> stoc.stoc.Token
+	13, // 2: stoc.stoc.QueryTokensRequest.pagination:type_name -> cosmos.base.query.v1beta1.PageRequest
+	12, // 3: stoc.stoc.QueryTokensResponse.tokens:type_name -> stoc.stoc.Token
+	14, // 4: stoc.stoc.QueryTokensResponse.pagination:type_name -> cosmos.base.query.v1beta1.PageResponse
+	12, // 5: stoc.stoc.QueryTokensBySymbolResponse.tokens:type_name -> stoc.stoc.Token
+	12, // 6: stoc.stoc.BalanceWithMetadata.metadata:type_name -> stoc.stoc.Token
+	13, // 7: stoc.stoc.QueryBalancesWithMetadataRequest.pagination:type_name -> cosmos.base.query.v1beta1.PageRequest
+	8,  // 8: stoc.stoc.QueryBalancesWithMetadataResponse.balances:type_name -> stoc.stoc.BalanceWithMetadata
+	14, // 9: stoc.stoc.QueryBalancesWithMetadataResponse.pagination:type_name -> cosmos.base.query.v1beta1.PageResponse
+	0,  // 10: stoc.stoc.Query.Params:input_type -> stoc.stoc.QueryParamsRequest
+	2,  // 11: stoc.stoc.Query.Token:input_type -> stoc.stoc.QueryTokenRequest
+	4,  // 12: stoc.stoc.Query.Tokens:input_type -> stoc.stoc.QueryTokensRequest
+	6,  // 13: stoc.stoc.Query.TokensBySymbol:input_type -> stoc.stoc.QueryTokensBySymbolRequest
+	9,  // 14: stoc.stoc.Query.BalancesWithMetadata:input_type -> stoc.stoc.QueryBalancesWithMetadataRequest
+	1,  // 15: stoc.stoc.Query.Params:output_type -> stoc.stoc.QueryParamsResponse
+	3,  // 16: stoc.stoc.Query.Token:output_type -> stoc.stoc.QueryTokenResponse
+	5,  // 17: stoc.stoc.Query.Tokens:output_type -> stoc.stoc.QueryTokensResponse
+	7,  // 18: stoc.stoc.Query.TokensBySymbol:output_type -> stoc.stoc.QueryTokensBySymbolResponse
+	10, // 19: stoc.stoc.Query.BalancesWithMetadata:output_type -> stoc.stoc.QueryBalancesWithMetadataResponse
+	15, // [15:20] is the sub-list for method output_type
+	10, // [10:15] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_stoc_stoc_query_proto_init() }
@@ -4129,6 +5952,42 @@ func file_stoc_stoc_query_proto_init() {
 				return nil
 			}
 		}
+		file_stoc_stoc_query_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*BalanceWithMetadata); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_stoc_stoc_query_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*QueryBalancesWithMetadataRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_stoc_stoc_query_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*QueryBalancesWithMetadataResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -4136,7 +5995,7 @@ func file_stoc_stoc_query_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_stoc_stoc_query_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
