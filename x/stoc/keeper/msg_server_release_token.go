@@ -3,124 +3,125 @@ package keeper
 import (
 	"context"
 
+	"cosmossdk.io/math"
 	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
+// ReleaseTokens drips part of the on-chain reserve (RemainingSupply) to one
+// or more recipients in a single atomic transaction.
+//
+// Business rules (locked 2026-06-03):
+//
+//   - Only the token creator can submit this message (ErrUnauthorized
+//     otherwise).
+//   - Release is a primary-issuance event analogous to the CreateToken
+//     initial distribution and is intentionally TAX-FREE regardless of
+//     recipient address. Subsequent secondary-market transfers via the bank
+//     module's MsgSend go through the bank tax wrapper and ARE taxed per
+//     token.Tax configuration.
+//   - The distributions list is fully validated before any bank mutation:
+//     the cumulative amount must not exceed RemainingSupply, no individual
+//     amount may be non-positive, no address may appear twice (caller MUST
+//     pre-aggregate), and the per-recipient minimum-mint check from
+//     CreateToken's LOW-3 fix is enforced here too (no zero-rounded
+//     entries, which the LegacyDec percent path could produce historically;
+//     for ReleaseRecipient the amount is already absolute so the rule
+//     reduces to "amount > 0").
+//   - Bank mutations happen in a single loop after the cumulative-supply
+//     check. If any individual SendCoinsFromModuleToAccount fails partway,
+//     Cosmos SDK tx atomicity (cacheTxContext) reverts the whole tx — same
+//     guarantee CreateToken's distributions rely on.
+//   - Token.RemainingSupply is decremented by the total cumulative amount
+//     once at the end. SetToken's ValidateState invariant
+//     (RemainingSupply >= 0 etc.) is checked there.
 func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTokens) (*types.MsgReleaseTokensResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Get token info — supports both minimalDenom ("SYMBOL_0") and symbol ("SYMBOL")
 	token, err := k.FindToken(ctx, msg.Symbol)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if caller is creator
 	if msg.Creator != token.Creator {
 		return nil, sdkerrors.Wrap(types.ErrUnauthorized, "only token creator can release tokens")
 	}
 
-	// Defensive check: amount must be positive
-	if !msg.Amount.IsPositive() {
-		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "release amount must be positive")
+	// Sum cumulative amount and bail before any bank mutation.
+	totalAmount := math.ZeroInt()
+	for i, dist := range msg.Distributions {
+		if !dist.Amount.IsPositive() {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+				"distributions[%d] (%s): release amount must be positive (got %s)",
+				i, dist.Address, dist.Amount.String())
+		}
+		totalAmount = totalAmount.Add(dist.Amount)
 	}
 
-	// Check if requested amount exceeds remaining supply
-	if msg.Amount.GT(token.RemainingSupply) {
+	if totalAmount.GT(token.RemainingSupply) {
 		return nil, sdkerrors.Wrapf(types.ErrInsufficientTokens,
-			"requested amount %s exceeds remaining supply %s",
-			msg.Amount, token.RemainingSupply)
+			"cumulative release amount %s exceeds remaining supply %s (split into multiple MsgReleaseTokens or reduce per-recipient amounts)",
+			totalAmount.String(), token.RemainingSupply.String())
 	}
 
-	// Pre-validate: ensure post-release state will pass SetToken validation BEFORE bank mutations.
+	// Pre-validate the post-release token state would still be invariant-clean.
 	preValidateToken := token
-	preValidateToken.RemainingSupply = token.RemainingSupply.Sub(msg.Amount)
+	preValidateToken.RemainingSupply = token.RemainingSupply.Sub(totalAmount)
 	if err := types.ValidateState(preValidateToken); err != nil {
 		return nil, sdkerrors.Wrap(err, "release would produce invalid token state")
 	}
 
-	// Transfer tokens from module account to recipient
-	recipient, err := sdk.AccAddressFromBech32(msg.Recipient)
-	if err != nil {
-		return nil, sdkerrors.Wrap(err, "invalid recipient address")
-	}
+	// Single-loop bank mutation. tx-atomicity protects partial failure: if any
+	// SendCoinsFromModuleToAccount errors, the whole tx reverts including any
+	// prior successful sends in this loop.
+	for i, dist := range msg.Distributions {
+		recipientAddr, err := sdk.AccAddressFromBech32(dist.Address)
+		if err != nil {
+			return nil, sdkerrors.Wrapf(err, "distributions[%d]: invalid address %s", i, dist.Address)
+		}
+		coin := sdk.NewCoin(token.MinimalDenom, dist.Amount)
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipientAddr, sdk.NewCoins(coin)); err != nil {
+			return nil, sdkerrors.Wrapf(err, "distributions[%d]: SendCoinsFromModuleToAccount failed for recipient %s", i, dist.Address)
+		}
 
-	// SA-2026-06-02 HIGH-2 (senior-skeptic audit):
-	//
-	// MsgReleaseTokens moves reserve out of the x/stoc module account via
-	// SendCoinsFromModuleToAccount, which is NOT intercepted by the tax
-	// PostHandler (the PostHandler only matches bank.MsgSend and
-	// bank.MsgMultiSend at the wire level). Allowing the creator to release
-	// the reserve directly to an arbitrary recipient would let them bypass
-	// the tax entirely on the primary distribution path — for a taxable
-	// security token whose entire compliance premise depends on tax being
-	// applied at every value-bearing hop, that is a hard NO.
-	//
-	// Business rule (locked 2026-06-02): MsgReleaseTokens is restricted to
-	// the creator address only. Reserve flows into the creator's balance
-	// first, then any onward transfer to a real recipient goes through the
-	// taxed MsgSend path. Creators who want to fund a distribution wallet
-	// must do so via a TWO-STEP flow:
-	//
-	//   1) MsgReleaseTokens (creator-only, reserve → creator balance)
-	//   2) MsgSend (creator → distribution wallet, tax applies)
-	//
-	// This matches the SA-H9-v2 MsgBurnToken business rule (see
-	// msg_server_burn_token.go) — both ops are reserve-side actions and both
-	// require the creator to first take custody before any third-party
-	// movement. Audit trail: 2 explicit events (Release + Send) instead of
-	// 1 implicit cascade. Regulators get the same clarity as in burn.
-	//
-	// If the future regulator-driven design needs taxable release directly
-	// to a non-creator address, replicate the tax math from
-	// x/stoc/ante/tax_post.go applyTaxForRecipient inline below rather than
-	// relaxing this guard.
-	creatorAddr, err := sdk.AccAddressFromBech32(token.Creator)
-	if err != nil {
-		return nil, sdkerrors.Wrap(err, "token creator address is malformed")
-	}
-	if !recipient.Equals(creatorAddr) {
-		return nil, sdkerrors.Wrapf(types.ErrUnauthorized,
-			"MsgReleaseTokens recipient %s must equal token creator %s — release the reserve to the creator first, then transfer via MsgSend (taxed)",
-			msg.Recipient, token.Creator,
+		// Per-recipient event for indexer + audit trail. Same attribute names
+		// as the prior single-recipient form so existing consumers keep
+		// working when they index per-recipient flows.
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				types.EventTypeReleaseTokens,
+				sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
+				sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
+				sdk.NewAttribute(types.AttributeKeyAmount, dist.Amount.String()),
+				sdk.NewAttribute(types.AttributeKeyRecipient, dist.Address),
+				sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
+			),
 		)
 	}
 
-	coin := sdk.NewCoin(token.MinimalDenom, msg.Amount)
-	if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
-		return nil, err
-	}
-
-	// Persist state AFTER bank op succeeds.
+	// Persist state AFTER all bank ops succeed.
 	// AUDIT NOTE — NOT A CEI VIOLATION: See MintToken in token.go for full rationale.
-	// Cosmos SDK tx atomicity (cacheTxContext) reverts all bank ops if SetToken fails.
-	token.RemainingSupply = token.RemainingSupply.Sub(msg.Amount)
+	// Cosmos SDK tx atomicity reverts all bank ops if SetToken fails below.
+	token.RemainingSupply = token.RemainingSupply.Sub(totalAmount)
 	if err := k.SetToken(ctx, token); err != nil {
 		return nil, err
 	}
 
-	ctx.Logger().Info("Tokens released",
+	ctx.Logger().Info("Tokens released (multi-recipient)",
 		"symbol", token.Symbol,
 		"minimal_denom", token.MinimalDenom,
-		"amount", msg.Amount.String(),
-		"recipient", msg.Recipient,
+		"total_amount", totalAmount.String(),
+		"recipient_count", len(msg.Distributions),
 		"remaining_supply", token.RemainingSupply.String(),
 	)
 
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			types.EventTypeReleaseTokens,
-			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
-			sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
-			sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.String()),
-			sdk.NewAttribute(types.AttributeKeyRecipient, msg.Recipient),
-			sdk.NewAttribute(types.AttributeKeyRemainingSupply, token.RemainingSupply.String()),
-			sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
-		),
-	)
-
-	return &types.MsgReleaseTokensResponse{}, nil
+	return &types.MsgReleaseTokensResponse{
+		Symbol:         token.Symbol,
+		TotalAmount:    totalAmount.String(),
+		RecipientCount: uint32(len(msg.Distributions)),
+		Success:        true,
+		Message:        "tokens released",
+	}, nil
 }

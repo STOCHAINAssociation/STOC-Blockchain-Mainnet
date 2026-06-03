@@ -427,6 +427,7 @@ func TestMsgMintTokens_ValidateBasic(t *testing.T) {
 func TestMsgReleaseTokens_ValidateBasic(t *testing.T) {
 	creator := sdk.AccAddress([]byte("creator_address_123")).String()
 	recipient := sdk.AccAddress([]byte("recipient_addr_1234")).String()
+	recipient2 := sdk.AccAddress([]byte("recipient_addr_5678")).String()
 
 	tests := []struct {
 		name    string
@@ -434,42 +435,79 @@ func TestMsgReleaseTokens_ValidateBasic(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid message",
+			name: "valid single recipient",
 			msg: types.MsgReleaseTokens{
-				Creator:   creator,
-				Symbol:    "MYT_0",
-				Amount:    math.NewInt(100),
-				Recipient: recipient,
+				Creator: creator,
+				Symbol:  "MYT_0",
+				Distributions: []types.ReleaseRecipient{
+					{Address: recipient, Amount: math.NewInt(100)},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid multi-recipient",
+			msg: types.MsgReleaseTokens{
+				Creator: creator,
+				Symbol:  "MYT_0",
+				Distributions: []types.ReleaseRecipient{
+					{Address: recipient, Amount: math.NewInt(100)},
+					{Address: recipient2, Amount: math.NewInt(50)},
+				},
 			},
 			wantErr: false,
 		},
 		{
 			name: "empty symbol",
 			msg: types.MsgReleaseTokens{
-				Creator:   creator,
-				Symbol:    "",
-				Amount:    math.NewInt(100),
-				Recipient: recipient,
+				Creator: creator,
+				Symbol:  "",
+				Distributions: []types.ReleaseRecipient{
+					{Address: recipient, Amount: math.NewInt(100)},
+				},
 			},
 			wantErr: true,
 		},
 		{
-			name: "zero amount",
+			name: "empty distributions",
 			msg: types.MsgReleaseTokens{
-				Creator:   creator,
-				Symbol:    "MYT_0",
-				Amount:    math.ZeroInt(),
-				Recipient: recipient,
+				Creator:       creator,
+				Symbol:        "MYT_0",
+				Distributions: []types.ReleaseRecipient{},
 			},
 			wantErr: true,
 		},
 		{
-			name: "invalid recipient",
+			name: "zero amount entry",
 			msg: types.MsgReleaseTokens{
-				Creator:   creator,
-				Symbol:    "MYT_0",
-				Amount:    math.NewInt(100),
-				Recipient: "invalid_recipient",
+				Creator: creator,
+				Symbol:  "MYT_0",
+				Distributions: []types.ReleaseRecipient{
+					{Address: recipient, Amount: math.ZeroInt()},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid recipient address",
+			msg: types.MsgReleaseTokens{
+				Creator: creator,
+				Symbol:  "MYT_0",
+				Distributions: []types.ReleaseRecipient{
+					{Address: "invalid_recipient", Amount: math.NewInt(100)},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "duplicate recipient address",
+			msg: types.MsgReleaseTokens{
+				Creator: creator,
+				Symbol:  "MYT_0",
+				Distributions: []types.ReleaseRecipient{
+					{Address: recipient, Amount: math.NewInt(100)},
+					{Address: recipient, Amount: math.NewInt(50)},
+				},
 			},
 			wantErr: true,
 		},
