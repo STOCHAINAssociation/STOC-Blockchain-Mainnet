@@ -66,7 +66,7 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 	for _, msg := range msgs {
 		switch m := msg.(type) {
 		case *types.MsgSend:
-			if err := tpd.applyTaxForRecipient(ctx, m.ToAddress, m.Amount); err != nil {
+			if err := tpd.applyTaxForRecipient(ctx, m.FromAddress, m.ToAddress, m.Amount); err != nil {
 				return err
 			}
 		case *types.MsgMultiSend:
@@ -77,8 +77,16 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 			if len(m.Outputs) > stoctypes.MaxMultiSendOutputs {
 				return fmt.Errorf("MsgMultiSend has too many outputs (%d > %d)", len(m.Outputs), stoctypes.MaxMultiSendOutputs)
 			}
+			// MsgMultiSend has a single semantic sender (Inputs[0]); we use it
+			// for the R2 skip-conditions check (sender == tax_recipient) per the
+			// 2026-06-03 business rule. Per-output recipient still drives the
+			// R3 check (recipient == tax_recipient) inside applyTaxForRecipient.
+			if len(m.Inputs) == 0 {
+				return fmt.Errorf("MsgMultiSend with no inputs")
+			}
+			sender := m.Inputs[0].Address
 			for _, output := range m.Outputs {
-				if err := tpd.applyTaxForRecipient(ctx, output.Address, output.Coins); err != nil {
+				if err := tpd.applyTaxForRecipient(ctx, sender, output.Address, output.Coins); err != nil {
 					return err
 				}
 			}
@@ -99,11 +107,50 @@ func (tpd TaxPostDecorator) applyTaxesForMsgs(ctx sdk.Context, msgs []sdk.Msg, d
 	return nil
 }
 
-// applyTaxForRecipient deducts tax from recipient for each taxable coin and sends it to the tax recipient.
-// NOTE: Tax applies to MsgSend/MsgMultiSend including those wrapped in authz MsgExec.
-// IBC transfers bypass this tax by design — custom tokens are blocked from IBC entirely
-// (see IBCCustomTokenRestriction), so tax evasion via IBC is not possible.
-func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddress string, coins sdk.Coins) error {
+// applyTaxForRecipient deducts tax from recipient for each taxable coin and
+// sends it to the token's TokenTax.RecipientAddress.
+//
+// Business rules (locked 2026-06-03 — preserve through future audits):
+//
+//   - R1: tax recipient is whatever creator set on the token at CreateToken
+//     time. It can be the creator wallet, a team multisig, a third-party
+//     escrow, or any other address. The audit MUST NOT push to force a
+//     particular shape — that decision belongs to the token issuer.
+//   - R2: SKIP tax when sender == tax_recipient. Taxing the tax collector
+//     when they themselves are sending is a no-op (the tax flows back to
+//     the sender) and the round-trip wastes gas + emits a misleading event.
+//   - R3: SKIP tax when recipient == tax_recipient. Recipient would receive
+//     amount × (1 - tax_pct) PLUS tax_pct as the tax payment — total still
+//     equals amount — so splitting it is also a no-op. Indexers + wallets
+//     read cleaner when the single transfer event stands without a paired
+//     tax_applied event.
+//   - R4: tax is computed FROM the sent amount (not from sender's remaining
+//     balance). Single atomic split. SA-C5 v3b documented limitation for
+//     keeper-wiring under cosmos-evm fork still applies: when the bank
+//     SendCoins for the tax leg surfaces an insufficient-funds error
+//     against the recipient's pre-runMsgs balance view, we silently skip
+//     the tax leg rather than revert the whole transfer. The user accepts
+//     this leak for fresh-wallet first transfers; the architecturally
+//     correct fix (a SA-C5 v4 bank.MsgServer wrapper that runs in the
+//     same goroutine as MsgSend so the writes propagate) is tracked
+//     post-mainnet.
+//   - Native denoms (ustoc, astoc, etc.) bypass tax entirely — only custom
+//     x/stoc-managed tokens carry tax. Withdraw-commission, withdraw-rewards,
+//     vesting transfers, gov deposits etc. that move native denoms are
+//     UNAFFECTED by this PostHandler.
+//   - IBC transfers, gov / vesting / group / erc20 chain-ops are blocked
+//     at ANTE-time for custom tokens (see IBCCustomTokenRestriction and
+//     CustomTokenChainOpsRestriction). The tax PostHandler does not need
+//     to second-guess those paths.
+//
+// Authoring note: the senior-skeptic audit-2026-05-29 SA-C5 finding pushed
+// to remove the recipient==tax_recipient skip on the theory that an
+// attacker could promote themselves to tax_recipient to receive
+// transfers tax-free. That theory is INVALID for an STO chain because
+// only the token creator can set tax_recipient at CreateToken time and
+// only via gov-prop or token re-issue can it change later. Re-introducing
+// R3 here is the user-blessed correct behaviour.
+func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, senderAddress, recipientAddress string, coins sdk.Coins) error {
 	recipientAddr, err := sdk.AccAddressFromBech32(recipientAddress)
 	if err != nil {
 		return fmt.Errorf("invalid recipient address: %v", err)
@@ -118,6 +165,17 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 
 		token, found := tpd.k.GetToken(ctx, coin.Denom)
 		if !found || token.Tax.Percent.IsNil() || token.Tax.Percent.IsZero() || token.Tax.RecipientAddress == "" {
+			continue
+		}
+
+		// R2 / R3 skip conditions (locked 2026-06-03). See function godoc for
+		// rationale. Both conditions are bech32-string compares because the
+		// tax_recipient is stored as a bech32 string on the token and the
+		// sender / recipient bech32 strings reach here unmodified.
+		if senderAddress == token.Tax.RecipientAddress {
+			continue
+		}
+		if recipientAddress == token.Tax.RecipientAddress {
 			continue
 		}
 
@@ -175,13 +233,13 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, recipientAddre
 			return fmt.Errorf("invalid tax recipient address: %v", err)
 		}
 
-		// SA-C5 audit-2026-05-29: do NOT skip on recipient==taxRecipient.
-		// Previous "skip self-tax" was a tax-evasion vector: attacker becomes
-		// tax recipient → all inbound transfers to them are tax-free → laundering
-		// hop. Apply tax even when recipient == taxRecipient — sender's net
-		// behavior unchanged (tax goes to same address), and external attackers
-		// can't use this short-circuit. Side effect: 0-coin self-tax-send is a
-		// no-op which bank.SendCoins handles gracefully (Amount.IsZero check).
+		// SA-C5 audit-2026-05-29 PROPOSED skipping the recipient==taxRecipient
+		// skip on the theory that an attacker could promote themselves to
+		// tax_recipient. The 2026-06-03 business rule review (locked in this
+		// file's applyTaxForRecipient godoc) confirmed that theory is INVALID
+		// for STO chains because tax_recipient is creator-controlled at token
+		// creation time. The recipient==tax_recipient skip is now ENFORCED by
+		// R3 above and the no-op SendCoins below is unreachable.
 
 		// SA-C5 v3b (audit-2026-06-02 senior-skeptic HIGH-1, devnet replay #1):
 		//
