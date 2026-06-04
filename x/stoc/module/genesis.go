@@ -14,13 +14,32 @@ import (
 // InitGenesis initializes the module's state from a provided genesis state.
 func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) {
 	// this line is used by starport scaffolding # genesis/module/init
+	// SA-2026-06-04 INFO-2 (comprehensive audit): run Params.Validate() at the
+	// state-import boundary so a future field on Params (gov cap, address
+	// list, ...) is bound-checked before SetParams persists it. The current
+	// Params struct is field-less, so this is a no-op today; when fields
+	// land the keeper-level MsgUpdateParams handler must also call
+	// Validate() — see x/stoc/types/params.go godoc for the dual-update note.
+	if err := genState.Params.Validate(); err != nil {
+		panic(fmt.Sprintf("invalid genesis params: %v", err))
+	}
 	if err := k.SetParams(ctx, genState.Params); err != nil {
 		panic(err)
 	}
 
-	// Initialize tokens and restore token counter from existing token IDs
+	// Initialize tokens and restore token counter from existing token IDs.
+	// SA-2026-06-04 LOW-4 (comprehensive audit): track MinimalDenom uniqueness
+	// across the genesis loop. SetToken is a plain map-write keyed by
+	// MinimalDenom — two genesis entries with the same key would silently
+	// overwrite each other, dropping the first token's TotalSupply and
+	// Tax.RecipientAddress without any error surfaced to operators.
+	seenMinimalDenoms := make(map[string]struct{}, len(genState.Tokens))
 	var maxCounter uint64
 	for _, token := range genState.Tokens {
+		if _, exists := seenMinimalDenoms[token.MinimalDenom]; exists {
+			panic(fmt.Sprintf("genesis contains duplicate MinimalDenom %q — token keys must be unique", token.MinimalDenom))
+		}
+		seenMinimalDenoms[token.MinimalDenom] = struct{}{}
 		if err := k.SetToken(ctx, token); err != nil {
 			panic(err)
 		}
@@ -48,9 +67,15 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 			}
 		}
 	}
-	// Restore counter so next CreateToken won't collide
-	// If tokens exist but none had parseable _N suffix, panic to prevent counter collision.
-	// This is safer than guessing — a wrong counter can cause duplicate minimalDenoms.
+	// SA-2026-06-04 LOW-5 (comprehensive audit): the panic below is reachable
+	// IFF a future change to SetToken / ValidateState ever loosens the
+	// MinimalDenom format invariant. Today ValidateState's SA-H12 prefix
+	// check + canonical-form check reject any token whose MinimalDenom
+	// suffix is not a parseable uint64, so this branch never fires in
+	// production. Kept intentionally as defense-in-depth: if a future
+	// migration ever adds an alternative MinimalDenom shape (e.g. NFT
+	// suffix), we want genesis to refuse to boot rather than silently
+	// reset the token counter to zero and collide on the next CreateToken.
 	if maxCounter == 0 && len(genState.Tokens) > 0 {
 		panic("genesis contains tokens but none have parseable '_N' suffix in MinimalDenom — cannot safely reconstruct token counter")
 	}

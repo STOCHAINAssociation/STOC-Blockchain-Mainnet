@@ -201,6 +201,15 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, senderAddress,
 
 		// Runtime cap: enforce MaxTaxPercent even if state was modified outside ValidateBasic
 		taxPercent := token.Tax.Percent
+		// SA-2026-06-04 LOW-3 (comprehensive audit): nil or negative Percent
+		// must not reach the multiplier below — math.LegacyDec.Mul on a nil
+		// dec panics, and a negative percent would invert the tax direction
+		// (paying the sender from the recipient's pocket). Treat as
+		// "tax disabled" and skip this coin without surfacing an error,
+		// since the on-chain state is recoverable via gov param update.
+		if taxPercent.IsNil() || taxPercent.IsNegative() {
+			continue
+		}
 		if taxPercent.GT(stoctypes.MaxTaxPercent) {
 			taxPercent = stoctypes.MaxTaxPercent
 		}

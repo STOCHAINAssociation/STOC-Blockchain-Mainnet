@@ -250,21 +250,26 @@ func ValidateState(token Token) error {
 		if token.Tax.Percent.IsNegative() || token.Tax.Percent.GT(MaxTaxPercent) {
 			return fmt.Errorf("tax percentage must be between 0 and %s (50%%)", MaxTaxPercent.String())
 		}
-		if token.Tax.Percent.GT(math.LegacyZeroDec()) {
-			if token.Tax.RecipientAddress == "" {
-				return fmt.Errorf("tax enabled but recipient address missing")
-			}
+		// SA-2026-06-04 LOW-2 (comprehensive audit): validate RecipientAddress
+		// format whenever it is set, regardless of whether Percent>0. A token
+		// with Percent=0 + malformed RecipientAddress would previously slip
+		// through ValidateState only to crash tax_post.go on the same field
+		// the moment a future governance proposal raises Percent above zero.
+		// Fail closed at the boundary instead of carrying a latent landmine.
+		if token.Tax.RecipientAddress != "" {
 			taxAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
 			if err != nil {
 				return fmt.Errorf("invalid tax recipient address in state: %s", err)
 			}
-			// Reject module accounts that would trap tax revenue and brick every
-			// subsequent taxable transfer. The same check runs at message
-			// validation for MsgCreateToken; repeating it here protects genesis
-			// import and any future direct state-write path from corrupt input.
 			if mod := BlockedTaxRecipientModule(taxAddr); mod != "" {
 				return fmt.Errorf("tax recipient cannot be module account %s (%s)", mod, token.Tax.RecipientAddress)
 			}
+		}
+		// Percent>0 still requires a non-empty RecipientAddress — tax must have
+		// somewhere to go. Percent==0 + empty address is the legitimate
+		// "tax disabled" state and remains permitted.
+		if token.Tax.Percent.GT(math.LegacyZeroDec()) && token.Tax.RecipientAddress == "" {
+			return fmt.Errorf("tax enabled but recipient address missing")
 		}
 	}
 	// SA-M14/M16: enforce Distributions list cap + per-entry validity at the
@@ -274,12 +279,30 @@ func ValidateState(token Token) error {
 	if len(token.Distributions) > MaxDistributions {
 		return fmt.Errorf("too many distributions in state (%d > max %d)", len(token.Distributions), MaxDistributions)
 	}
-	for i, dist := range token.Distributions {
-		if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
-			return fmt.Errorf("invalid address in distribution[%d]: %s", i, err)
+	// SA-2026-06-04 MED-1 (comprehensive audit): mirror Validate() invariant
+	// totalPercent == 100 here so genesis import + any direct SetToken caller
+	// cannot persist a Distributions list that the original MsgCreateToken
+	// validation would reject. The audit found this gap in ValidateState
+	// allowed a malformed genesis to install (e.g.) two recipients summing
+	// to 70%, which downstream code assumes is impossible (creator silently
+	// keeps the 30% remainder, breaking the issuer-attested split).
+	if len(token.Distributions) > 0 {
+		totalPercent := uint32(0)
+		for i, dist := range token.Distributions {
+			if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
+				return fmt.Errorf("invalid address in distribution[%d]: %s", i, err)
+			}
+			if dist.Percent == 0 || dist.Percent > 100 {
+				return fmt.Errorf("distribution[%d] percent must be between 1 and 100, got %d", i, dist.Percent)
+			}
+			// Overflow guard mirrors Validate() — abort before sum exceeds 100.
+			if totalPercent > 100-dist.Percent {
+				return fmt.Errorf("distribution percentages overflow in state (sum exceeds 100)")
+			}
+			totalPercent += dist.Percent
 		}
-		if dist.Percent == 0 || dist.Percent > 100 {
-			return fmt.Errorf("distribution[%d] percent must be between 1 and 100, got %d", i, dist.Percent)
+		if totalPercent != 100 {
+			return fmt.Errorf("distribution percentages in state must sum to 100, got %d", totalPercent)
 		}
 	}
 	return nil

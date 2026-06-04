@@ -91,7 +91,12 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		// downstream error. Reject early with an actionable message instead.
 		preValidateToken := token
 		preValidateToken.TotalSupply = token.TotalSupply.Sub(amountToBurn)
-		if preValidateToken.RemainingSupply.GT(preValidateToken.TotalSupply) {
+		// SA-2026-06-04 LOW-1 (comprehensive audit): a genesis-imported token
+		// can legitimately omit RemainingSupply (nil math.Int). Guard the
+		// comparison so an unset reserve does not panic at the GT call —
+		// "no reserve set" is functionally equivalent to "reserve == 0",
+		// which can never exceed a non-negative post-burn TotalSupply.
+		if !preValidateToken.RemainingSupply.IsNil() && preValidateToken.RemainingSupply.GT(preValidateToken.TotalSupply) {
 			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
 				"burn would create RemainingSupply (%s) > post-burn TotalSupply (%s) drift; reduce reserve via MsgReleaseTokens then MsgBurnToken (SA-H9-v2 2-step flow)",
 				preValidateToken.RemainingSupply.String(), preValidateToken.TotalSupply.String())
