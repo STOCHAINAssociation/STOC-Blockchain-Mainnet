@@ -50,6 +50,12 @@ func (p *Precompile) ClaimRewards(
 	if maxRetrieve > maxVals {
 		return nil, fmt.Errorf("maxRetrieve (%d) parameter exceeds the maximum number of validators (%d)", maxRetrieve, maxVals)
 	}
+	// SA-AUDIT-2026-06-05-fix12 MED (audit A13): reject maxRetrieve=0. Without
+	// this guard ClaimRewards becomes a no-op that still emits ClaimRewardsEvent —
+	// an attacker can spam the precompile to pollute logs while burning gas.
+	if maxRetrieve == 0 {
+		return nil, fmt.Errorf("maxRetrieve must be positive")
+	}
 
 	msgSender := contract.Caller()
 	if msgSender != delegatorAddr {

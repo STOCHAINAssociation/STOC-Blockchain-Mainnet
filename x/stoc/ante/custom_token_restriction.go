@@ -29,6 +29,16 @@ import (
 // is rejected at the ante handler, preventing tax evasion and chain-level
 // entanglement of securities tokens.
 //
+// SA-AUDIT-2026-06-05-fix12 LOW (audit A13): this decorator is the FIRST layer
+// of the two-layer restriction model. The SECOND layer is the bank
+// SendRestrictionFn registered in app/app.go (see SetSendRestriction call) +
+// the IBC SendRestriction in x/stoc/ante/ibc_restriction.go. The ante here
+// blocks the user-signed msg flow; the bank/IBC SendRestriction catches any
+// indirect path (precompile callbacks, IBC packets, gov-prop disbursement,
+// module-internal accounting) that bypasses ante. Both layers are required —
+// removing either re-opens custom-token leakage. See [[stochain/design-decisions]]
+// for the full threat model and PR #80 audit rationale.
+//
 // Design rationale: Custom stoc tokens represent company securities (digital
 // stock certificates). They are wallet-level ownership records for individual
 // holders. They must NOT:

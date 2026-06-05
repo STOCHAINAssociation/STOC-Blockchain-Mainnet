@@ -8,12 +8,14 @@ import (
 	"html"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -30,10 +32,28 @@ import (
 	"cosmossdk.io/log"
 
 	"github.com/cosmos/cosmos-sdk/client"
+
+	"golang.org/x/time/rate"
 )
 
 const (
 	maxMessageSize = 1 << 20 // 1 MiB is the max message size for the websocket server
+
+	// SA-AUDIT-2026-06-05-fix12 HIGH (audit pass A13): per-WS-connection cap on
+	// active eth_subscribe goroutines. Without this an attacker can open one
+	// connection and spam eth_subscribe forever, exhausting goroutines + memory.
+	maxSubscriptionsPerConn = 100
+
+	// SA-AUDIT-2026-06-05-fix12 HIGH: shared HTTP client timeouts. The original
+	// `http.Client{}` created per call had no timeout — a slow JSON-RPC backend
+	// would block the WS goroutine indefinitely and exhaust file descriptors.
+	wsBackendHTTPTimeout = 5 * time.Second
+
+	// SA-AUDIT-2026-06-05-fix12 MED (audit A13): per-connection rate-limit
+	// envelope. go-ethereum SetBatchLimits caps a single batch but never
+	// total RPS — 100 connections × 1000-req batches saturate the node.
+	wsConnRequestsPerSec = 100
+	wsConnBurst          = 200
 )
 
 type WebsocketsServer interface {
@@ -76,6 +96,9 @@ type websocketsServer struct {
 	allowedOrigins []string // allowed origins for WebSocket connections
 	api            *pubSubAPI
 	logger         log.Logger
+	// SA-AUDIT-2026-06-05-fix12 HIGH: bounded HTTP client shared across
+	// tcpGetAndSendResponse calls. Per-call ad-hoc clients had infinite timeout.
+	backendHTTP *http.Client
 }
 
 func NewWebsocketsServer(clientCtx client.Context, logger log.Logger, stream *stream.RPCStream, cfg *config.Config) WebsocketsServer {
@@ -88,9 +111,28 @@ func NewWebsocketsServer(clientCtx client.Context, logger log.Logger, stream *st
 		allowedOrigins: cfg.JSONRPC.WSOrigins,
 		api:            newPubSubAPI(clientCtx, logger, stream),
 		logger:         logger,
+		backendHTTP: &http.Client{
+			Timeout: wsBackendHTTPTimeout,
+			Transport: &http.Transport{
+				MaxConnsPerHost:     16,
+				MaxIdleConnsPerHost: 8,
+				IdleConnTimeout:     30 * time.Second,
+				DialContext: (&net.Dialer{
+					Timeout:   2 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+			},
+		},
 	}
 }
 
+// Start launches the WebSocket server. Note: API-surface limitation —
+// SA-AUDIT-2026-06-05-fix12 LOW (audit A13): Start() is fire-and-forget; the
+// underlying http.Server is not exposed, so callers cannot trigger graceful
+// Shutdown(). Acceptable for current node lifecycle (whole-process exit drops
+// listening sockets immediately and CometBFT halts upstream of this) but
+// blocks orderly hot-restart support. Refactor is deferred to v6.0 cosmos/evm
+// v0.7.0 upgrade which already reworks server start-up surface upstream.
 func (s *websocketsServer) Start() {
 	ws := mux.NewRouter()
 	ws.Handle("/", s)
@@ -155,9 +197,14 @@ func (s *websocketsServer) checkOrigin(r *http.Request) bool {
 		return false
 	}
 
-	// Allow requests without an Origin header (e.g., from server-side clients)
+	// SA-AUDIT-2026-06-05-fix12 HIGH (audit A13): reject missing Origin header.
+	// Browsers send Origin on cross-origin requests per RFC 6454, but non-browser
+	// clients (curl, scripts) can omit it to dodge the allowlist below. Treating
+	// the empty case as allowed is a CORS-bypass vector; reject and force the
+	// client to declare its Origin explicitly.
 	if origin == "" {
-		return true
+		s.logger.Debug("websocket connection rejected: missing Origin header")
+		return false
 	}
 
 	// Parse the origin URL to get the host
@@ -242,6 +289,10 @@ func (w *wsConn) ReadMessage() (messageType int, p []byte, err error) {
 func (s *websocketsServer) readLoop(wsConn *wsConn) {
 	// subscriptions of current connection
 	subscriptions := make(map[rpc.ID]context.CancelFunc)
+	// SA-AUDIT-2026-06-05-fix12 MED: per-connection token-bucket rate limiter.
+	// Cap normal traffic at wsConnRequestsPerSec with wsConnBurst leeway so the
+	// happy-path UX stays smooth; abusive clients block on Wait or get rejected.
+	limiter := rate.NewLimiter(rate.Limit(wsConnRequestsPerSec), wsConnBurst)
 	defer func() {
 		// cancel all subscriptions when connection closed
 		// #nosec G705
@@ -257,6 +308,13 @@ readLoop:
 			_ = wsConn.Close() // #nosec G703
 			s.logger.Error("read message error, breaking read loop", "error", err.Error())
 			return
+		}
+
+		// SA-AUDIT-2026-06-05-fix12 MED: rate-limit BEFORE dispatch. Reject
+		// (not block) so a flooder can't pin a goroutine on Wait indefinitely.
+		if !limiter.Allow() {
+			s.sendErrResponse(wsConn, "rate limit exceeded for this connection")
+			continue
 		}
 
 		if isBatch(mb) {
@@ -302,6 +360,13 @@ readLoop:
 
 		switch method {
 		case "eth_subscribe":
+			// SA-AUDIT-2026-06-05-fix12 HIGH (audit A13): cap active subscriptions
+			// per connection. Unbounded map allowed remote attacker to OOM/goroutine
+			// exhaust the node by opening one WS + spamming eth_subscribe.
+			if len(subscriptions) >= maxSubscriptionsPerConn {
+				s.sendErrResponse(wsConn, fmt.Sprintf("too many active subscriptions on this connection (max %d)", maxSubscriptionsPerConn))
+				continue
+			}
 			params, ok := s.getParamsAndCheckValid(msg, wsConn)
 			if !ok {
 				continue
@@ -388,8 +453,10 @@ func (s *websocketsServer) tcpGetAndSendResponse(wsConn *wsConn, mb []byte) erro
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// SA-AUDIT-2026-06-05-fix12 HIGH: use the shared bounded client (5s timeout,
+	// pooled connections). Per-call `http.Client{}` had no timeout and leaked
+	// goroutines on a slow backend.
+	resp, err := s.backendHTTP.Do(req)
 	if err != nil {
 		return errors.Wrap(err, "Could not perform request")
 	}
