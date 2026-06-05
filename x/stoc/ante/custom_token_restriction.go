@@ -6,6 +6,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	vestingtypes "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	distributiontypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	govv1types "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	govv1beta1types "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
@@ -84,7 +85,11 @@ func NewCustomTokenChainOpsRestriction(k keeper.Keeper) CustomTokenChainOpsRestr
 }
 
 func (d CustomTokenChainOpsRestriction) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
-	if err := d.checkMsgs(ctx, tx.GetMsgs(), 0); err != nil {
+	// SA-AUDIT-2026-06-06 CRIT-1: outer entry — insideProposalWrapper=false.
+	// Flipped to true only when recursing INTO a group proposal whose inner
+	// messages will execute later via MsgServiceRouter, bypassing both the
+	// ante chain AND the tax PostDecorator. See checkMsgs godoc.
+	if err := d.checkMsgs(ctx, tx.GetMsgs(), 0, false); err != nil {
 		return ctx, err
 	}
 	return next(ctx, tx, simulate)
@@ -93,9 +98,58 @@ func (d CustomTokenChainOpsRestriction) AnteHandle(ctx sdk.Context, tx sdk.Tx, s
 // checkMsgs recursively checks messages including authz-wrapped MsgExec and
 // group proposal inner messages. Depth cap mirrors TaxPostDecorator and
 // IBCCustomTokenRestriction (DoS prevention).
-func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Msg, depth int) error {
+//
+// SA-AUDIT-2026-06-06 CRIT-1 (deep re-audit C1, audit batch B):
+// The insideProposalWrapper flag tracks whether we are recursing INSIDE a
+// proposal that will execute its inner messages later via MsgServiceRouter,
+// bypassing the ante chain AND the tax PostDecorator. When inside such a
+// wrapper, bank.MsgSend / bank.MsgMultiSend on a custom token MUST be
+// rejected at submission time because:
+//
+//  1. TaxPostDecorator only unwraps authz.MsgExec (tax_post.go applyTaxesForMsgs
+//     switch). group.MsgSubmitProposal / group.MsgExec are NOT unwrapped, so any
+//     inner bank.MsgSend on a custom token bypasses tax entirely.
+//  2. The bank SendRestriction (blockCustomTokenNonWalletAccounts in app/app.go)
+//     treats group policy addresses as regular wallets — group policies are
+//     authtypes.BaseAccount-typed (cosmos-sdk x/group/keeper/msg_server.go uses
+//     authtypes.NewBaseAccountWithPubKey), NOT sdk.ModuleAccountI, so
+//     rejectIfNonWallet returns nil for them and the group → user transfer leg
+//     is not caught at the SendRestriction layer.
+//  3. Therefore the only place to close the bypass is here, at ante submit
+//     time, by rejecting any custom-token bank.MsgSend wrapped in a group
+//     proposal BEFORE the proposal is accepted into chain state. Once the
+//     proposal is accepted, group.MsgExec (or EXEC_TRY auto-execution) runs
+//     inner messages via MsgServiceRouter and the bypass succeeds.
+//
+// authz.MsgExec is NOT a tax-bypass wrapper (TaxPostDecorator unwraps it via
+// the *authz.MsgExec case in applyTaxesForMsgs), so the flag is preserved
+// across authz recursion — only flipped to true when entering a group
+// proposal. authz inside group still bypasses tax because the tax check
+// sees the outer group msg type (which it does not unwrap), not authz.
+func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Msg, depth int, insideProposalWrapper bool) error {
 	for _, msg := range msgs {
 		switch m := msg.(type) {
+
+		// -------- Bank (only enforced when inside a proposal-wrapper that bypasses tax) --------
+		// SA-AUDIT-2026-06-06 CRIT-1: bank.MsgSend at OUTER depth, or wrapped via
+		// authz.MsgExec (which TaxPostDecorator unwraps), flows through the tax
+		// PostDecorator and is permitted. bank.MsgSend wrapped in a group
+		// proposal (which the tax PostDecorator does NOT unwrap) would bypass
+		// tax — reject at submission time so the proposal is never accepted.
+		case *banktypes.MsgSend:
+			if insideProposalWrapper {
+				if err := d.rejectCustomTokens(ctx, m.Amount, "bank.MsgSend wrapped in proposal (tax bypass channel)", m.FromAddress, m.ToAddress); err != nil {
+					return err
+				}
+			}
+		case *banktypes.MsgMultiSend:
+			if insideProposalWrapper {
+				for _, output := range m.Outputs {
+					if err := d.rejectCustomTokens(ctx, output.Coins, "bank.MsgMultiSend wrapped in proposal (tax bypass channel)", "", output.Address); err != nil {
+						return err
+					}
+				}
+			}
 
 		// -------- Distribution --------
 		case *distributiontypes.MsgFundCommunityPool:
@@ -143,7 +197,12 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 			if err != nil {
 				return fmt.Errorf("failed to unwrap group MsgSubmitProposal inner messages: %w", err)
 			}
-			if err := d.checkMsgs(ctx, innerMsgs, depth+1); err != nil {
+			// SA-AUDIT-2026-06-06 CRIT-1: recurse with insideProposalWrapper=true
+			// so inner bank.MsgSend / bank.MsgMultiSend on custom tokens is
+			// rejected. The tax PostDecorator does NOT unwrap group, so without
+			// this submit-time block an attacker can drain custom tokens through
+			// a group policy account tax-free.
+			if err := d.checkMsgs(ctx, innerMsgs, depth+1, true); err != nil {
 				return err
 			}
 
@@ -180,7 +239,12 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 			if err != nil {
 				return fmt.Errorf("failed to unwrap authz MsgExec for custom token restriction: %w", err)
 			}
-			if err := d.checkMsgs(ctx, innerMsgs, depth+1); err != nil {
+			// SA-AUDIT-2026-06-06 CRIT-1: authz.MsgExec is NOT a tax-bypass
+			// wrapper (TaxPostDecorator unwraps it), so preserve the parent's
+			// insideProposalWrapper flag. authz inside a group proposal still
+			// bypasses tax (the tax check sees the outer group msg type),
+			// so the inherited true value continues to gate inner bank msgs.
+			if err := d.checkMsgs(ctx, innerMsgs, depth+1, insideProposalWrapper); err != nil {
 				return err
 			}
 		}
