@@ -191,6 +191,15 @@ func (app *App) RegisterUpgradeHandlers() {
 			// Read existing params and apply targeted overrides so any future governance
 			// changes to unrelated fields are preserved across handler re-runs (audit fix H3).
 			feemarketParams := app.FeeMarketKeeper.GetParams(cacheCtx)
+			// SA-AUDIT-2026-06-05 M2: mirror v5.0.0 defensive checks (lines
+			// 279-284) — abort if upstream migration left a divide-by-zero
+			// invariant rather than masking it with our overwrites.
+			if feemarketParams.BaseFeeChangeDenominator == 0 {
+				return vm, fmt.Errorf("v2-evm upgrade aborted: post-migration feemarket BaseFeeChangeDenominator=0 (divide-by-zero); restore from snapshot")
+			}
+			if feemarketParams.ElasticityMultiplier == 0 {
+				return vm, fmt.Errorf("v2-evm upgrade aborted: post-migration feemarket ElasticityMultiplier=0 (freezes base-fee); restore from snapshot")
+			}
 			feemarketParams.NoBaseFee = true
 			feemarketParams.BaseFee = math.LegacyZeroDec()
 			feemarketParams.MinGasPrice = math.LegacyZeroDec()
@@ -234,6 +243,14 @@ func (app *App) RegisterUpgradeHandlers() {
 			// Read existing params and apply targeted overrides so any future governance
 			// changes to unrelated fields are preserved across handler re-runs (audit fix H3).
 			feemarketParams := app.FeeMarketKeeper.GetParams(cacheCtx)
+			// SA-AUDIT-2026-06-05 M3: mirror v5.0.0 defensive checks — abort
+			// if upstream migration left a divide-by-zero invariant.
+			if feemarketParams.BaseFeeChangeDenominator == 0 {
+				return vm, fmt.Errorf("v3-fix-evm-denom upgrade aborted: post-migration feemarket BaseFeeChangeDenominator=0 (divide-by-zero); restore from snapshot")
+			}
+			if feemarketParams.ElasticityMultiplier == 0 {
+				return vm, fmt.Errorf("v3-fix-evm-denom upgrade aborted: post-migration feemarket ElasticityMultiplier=0 (freezes base-fee); restore from snapshot")
+			}
 			feemarketParams.NoBaseFee = true
 			feemarketParams.BaseFee = math.LegacyZeroDec()
 			feemarketParams.MinGasPrice = math.LegacyNewDec(1_000_000_000)

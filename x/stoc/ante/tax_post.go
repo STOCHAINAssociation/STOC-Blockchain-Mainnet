@@ -184,18 +184,23 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, senderAddress,
 		// landed a malformed string in this field the R2/R3 string compare could
 		// produce a false-positive skip when sender/recipient happens to
 		// lex-equal the malformed value. Fail closed instead.
-		if _, addrErr := sdk.AccAddressFromBech32(token.Tax.RecipientAddress); addrErr != nil {
+		// SA-AUDIT-2026-06-05 M1: re-encode via AccAddress.String() to obtain
+		// the canonical lowercase form. Bech32 permits ALL-UPPERCASE addresses
+		// to round-trip the checksum, so a stored uppercase tax_recipient would
+		// fail the case-sensitive R2/R3 string compares below and let tax bypass.
+		taxRecipientAddr, addrErr := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
+		if addrErr != nil {
 			return fmt.Errorf("token %s has malformed Tax.RecipientAddress %q: %v", coin.Denom, token.Tax.RecipientAddress, addrErr)
 		}
+		taxRecipientCanonical := taxRecipientAddr.String()
 
 		// R2 / R3 skip conditions (locked 2026-06-03). See function godoc for
-		// rationale. Both conditions are bech32-string compares because the
-		// tax_recipient is stored as a bech32 string on the token and the
-		// sender / recipient bech32 strings reach here unmodified.
-		if senderAddress == token.Tax.RecipientAddress {
+		// rationale. Compare against the canonical lowercase form so an
+		// uppercase tax_recipient stored on the token cannot dodge the skip.
+		if senderAddress == taxRecipientCanonical {
 			continue
 		}
-		if recipientAddress == token.Tax.RecipientAddress {
+		if recipientAddress == taxRecipientCanonical {
 			continue
 		}
 

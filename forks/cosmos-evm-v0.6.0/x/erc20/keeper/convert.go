@@ -30,6 +30,13 @@ import (
 //   - checks if token balance decreased by amount
 //   - checks for unexpected `Approval` event in logs
 func (k Keeper) ConvertERC20IntoCoinsForNativeToken(ctx sdk.Context, stateDB *statedb.StateDB, contract common.Address, amount math.Int, receiver sdk.AccAddress, sender common.Address, commit bool, callFromPrecompile bool) (*types.MsgConvertERC20Response, error) {
+	// SA-AUDIT-2026-06-05 M4: reject non-positive amount symmetric with
+	// ConvertCoinNativeERC20. Without this gate a zero/negative amount could
+	// reach EVM contract transferFrom/burn paths with undefined behaviour.
+	if !amount.IsPositive() {
+		return nil, errors.Wrapf(types.ErrNegativeToken, "converted erc20 amount must be positive, got %s", amount.String())
+	}
+
 	// Validate and get token pair
 	pair, err := k.MintingEnabled(ctx, receiver, contract.Hex())
 	if err != nil {
