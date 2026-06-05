@@ -175,18 +175,21 @@ func (b *Backend) SendRawTransaction(data hexutil.Bytes) (common.Hash, error) {
 			if err != nil {
 				return common.Hash{}, fmt.Errorf("failed to get sender address: %w", err)
 			}
-			nonce, err := b.getAccountNonce(from, false, b.ClientCtx.Height, b.Logger)
+			// SA-AUDIT-2026-06-05 H2: route through pendingNonceWithPool to honor
+			// HIGH-3 pool-aware nonce contract. Committed nonce allowed duplicates
+			// of in-pool txs to return "accepted" while legacypool kept the original.
+			nonce, err := b.pendingNonceWithPool(from, true, b.ClientCtx.Height)
 			if err != nil {
-				return common.Hash{}, fmt.Errorf("failed to get sender's current nonce: %w", err)
+				return common.Hash{}, fmt.Errorf("failed to get sender's pool-aware nonce: %w", err)
 			}
 
-			// SendRawTransaction returns error when tx.Nonce is lower than committed nonce
+			// tx nonce below pool nonce = duplicate of in-pool tx or replay attempt
 			if tx.Nonce() < nonce {
 				return common.Hash{}, err
 			}
 
-			// SendRawTransaction does not return error when committed nonce <= tx.Nonce < pending nonce
-			b.Logger.Info("transaction accepted at near-future nonce", "hash", txHash.Hex(), "tx_nonce", tx.Nonce(), "committed_nonce", nonce)
+			// tx nonce at-or-above pool nonce = legitimate near-future tx
+			b.Logger.Info("transaction accepted at near-future nonce", "hash", txHash.Hex(), "tx_nonce", tx.Nonce(), "pool_nonce", nonce)
 			return txHash, nil
 		}
 

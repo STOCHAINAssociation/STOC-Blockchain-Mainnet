@@ -14,6 +14,7 @@ import (
 	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
 
 	errorsmod "cosmossdk.io/errors"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 var (
@@ -128,6 +129,21 @@ func (p Params) Validate() error {
 
 	if err := p.AccessControl.Validate(); err != nil {
 		return err
+	}
+
+	// SA-AUDIT-2026-06-05 H3/H4/H5: validate denom fields so a successful
+	// MsgUpdateParams cannot persist malformed values that later panic
+	// LoadEvmCoinInfo / InitGenesis. Without these gates a gov-prop could
+	// brick the chain by setting EvmDenom to an invalid bech32 sub-denom or
+	// by leaving ExtendedDenomOptions nil on a non-18-decimal chain.
+	if err := sdk.ValidateDenom(p.EvmDenom); err != nil {
+		return fmt.Errorf("invalid EvmDenom %q: %w", p.EvmDenom, err)
+	}
+	if p.ExtendedDenomOptions == nil {
+		return fmt.Errorf("ExtendedDenomOptions must be non-nil; set ExtendedDenom equal to EvmDenom for 18-decimal chains")
+	}
+	if err := sdk.ValidateDenom(p.ExtendedDenomOptions.ExtendedDenom); err != nil {
+		return fmt.Errorf("invalid ExtendedDenom %q: %w", p.ExtendedDenomOptions.ExtendedDenom, err)
 	}
 
 	return validateChannels(p.EVMChannels)

@@ -2,11 +2,11 @@ package mempool
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sync"
 
-	xxhash "github.com/cespare/xxhash/v2"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -82,10 +82,13 @@ type (
 		eventBus *cmttypes.EventBus
 
 		// orphanDecodeCache memoizes IsOrphanEVMTx decode results (SA-M7).
-		// Lookup keyed by xxhash(txBytes) (8-byte fingerprint); value caches
-		// the decoded shape so we skip repeated proto unmarshals during the
-		// RecheckTx burst that fires every block for the full CometBFT mempool.
-		orphanDecodeCache *lru.Cache[uint64, orphanDecodeEntry]
+		// SA-AUDIT-2026-06-05 H1: keyed by sha256(txBytes) ([32]byte) instead
+		// of xxhash64 to eliminate the ~2^-32 collision risk that could let a
+		// crafted-pair attacker invert the orphan verdict for an in-pool tx.
+		// sha256 cost (~50ns/200B tx) is negligible vs the proto decode it
+		// memoizes (~10μs). Value caches the decoded shape so we skip repeated
+		// proto unmarshals during the RecheckTx burst that fires every block.
+		orphanDecodeCache *lru.Cache[[32]byte, orphanDecodeEntry]
 	}
 )
 
@@ -202,7 +205,7 @@ func NewExperimentalEVMMempool(
 	cosmosPoolConfig.MaxTx = cosmosPoolMaxTx
 	cosmosPool = sdkmempool.NewPriorityMempool(*cosmosPoolConfig)
 
-	decodeCache, err := lru.New[uint64, orphanDecodeEntry](orphanDecodeCacheSize)
+	decodeCache, err := lru.New[[32]byte, orphanDecodeEntry](orphanDecodeCacheSize)
 	if err != nil {
 		// lru.New only errors on size <= 0; orphanDecodeCacheSize is a positive const.
 		panic(fmt.Sprintf("failed to create orphan decode LRU cache: %v", err))
@@ -494,7 +497,7 @@ func (m *ExperimentalEVMMempool) IsOrphanEVMTx(txBytes []byte) bool {
 	// decode consumed ~6% of block budget. The legacypool.Has() lookup is
 	// still performed on every call (O(1) map) so cached entries remain
 	// correct as the pool churns.
-	cacheKey := xxhash.Sum64(txBytes)
+	cacheKey := sha256.Sum256(txBytes)
 	if entry, ok := m.orphanDecodeCache.Get(cacheKey); ok {
 		if !entry.isEVM {
 			return false
