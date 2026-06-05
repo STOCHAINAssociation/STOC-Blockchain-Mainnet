@@ -246,3 +246,64 @@ func TestReleaseTokens_TokenNotFound(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, types.ErrTokenNotFound)
 }
+
+// SA-AUDIT-2026-06-06 MED-1 empirical refutation: the audit hypothesis was
+// that a genesis-imported token with nil RemainingSupply (permitted by
+// types/token.go:189-194 ValidateState) would panic the release handler at
+// the totalAmount.GT(token.RemainingSupply) comparison. Empirical test
+// confirms cosmos-sdk math.Int marshals nil as "0" and Unmarshal of "0"
+// returns Int(0), so SetToken → store → GetToken normalizes nil to a
+// non-nil Int(0). Release path always reads via FindToken → GetToken and
+// therefore sees a well-formed Int. The "nil panic" attack chain does not
+// reproduce. This test pins the normalization behavior so a future
+// regression in math.Int marshal semantics surfaces here.
+func TestReleaseTokens_NilRemainingSupplyNormalizedToZero(t *testing.T) {
+	k, ms, ctx, _ := setupMsgServerWithMock(t)
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	denom := "NILRES_0"
+
+	// RemainingSupply intentionally omitted → math.Int zero value, IsNil()=true
+	// in memory. ValidateState (types/token.go:189-194) tolerates this for
+	// genesis-import.
+	token := types.Token{
+		Id:            denom,
+		Name:          "Nil Reserve",
+		Symbol:        "NILRES",
+		Decimals:      6,
+		Logo:          "https://example.com/logo.png",
+		InitialSupply: math.NewInt(1000),
+		TotalSupply:   math.NewInt(1000),
+		MinimalDenom:  denom,
+		Creator:       creator,
+		Unlimited:     false,
+	}
+	require.True(t, token.RemainingSupply.IsNil(),
+		"in-memory token literal: omitted RemainingSupply is nil math.Int")
+	require.NoError(t, k.SetToken(ctx, token),
+		"SetToken must accept nil RemainingSupply per token.go:189-194")
+
+	// Verify storage normalization: GetToken returns non-nil Int(0).
+	stored, found := k.GetToken(ctx, denom)
+	require.True(t, found)
+	require.False(t, stored.RemainingSupply.IsNil(),
+		"audit MED-1 refutation: cosmos-sdk math.Int marshals nil as \"0\" so GetToken always returns non-nil RemainingSupply")
+	require.True(t, stored.RemainingSupply.IsZero(),
+		"normalized RemainingSupply must equal 0 after round-trip")
+
+	// Release on the normalized zero reserve must return the existing
+	// "exceeds remaining supply 0" error cleanly (no panic via big.Int.Cmp
+	// on nil pointer).
+	resp, err := ms.ReleaseTokens(ctx, &types.MsgReleaseTokens{
+		Creator: creator,
+		Symbol:  denom,
+		Distributions: []types.ReleaseRecipient{
+			{Address: creator, Amount: math.NewInt(100)},
+		},
+	})
+	require.Error(t, err)
+	require.Nil(t, resp)
+	require.ErrorIs(t, err, types.ErrInsufficientTokens)
+	require.Contains(t, err.Error(), "exceeds remaining supply 0",
+		"release must surface the canonical 'exceeds remaining supply 0' error after storage normalization; if this message changes the audit refutation note in msg_server_release_token.go MED-1 may need to be re-verified")
+}

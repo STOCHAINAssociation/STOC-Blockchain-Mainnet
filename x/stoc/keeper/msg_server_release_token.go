@@ -60,6 +60,22 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 		totalAmount = totalAmount.Add(dist.Amount)
 	}
 
+	// SA-AUDIT-2026-06-06 MED-1 (deep re-audit M1, audit batch B):
+	// audit hypothesis was "nil RemainingSupply persisted via
+	// genesis-import (Token.ValidateState tolerates nil per token.go:189-194)
+	// would panic the GT comparison below via big.Int.Cmp on a nil pointer".
+	// Empirical refutation (2026-06-06): cosmos-sdk math.Int marshals a nil
+	// Int as "0" and Unmarshal of "0" produces a non-nil Int(0). Therefore
+	// SetToken → store → GetToken normalizes nil RemainingSupply to Int(0)
+	// at write time, and the release handler reads token via FindToken →
+	// GetToken which always returns a non-nil RemainingSupply. The
+	// totalAmount.GT(token.RemainingSupply) path below is reached with a
+	// well-formed Int and produces a clean "exceeds remaining supply 0"
+	// error, no panic. No defensive IsNil() guard added here; the burn
+	// handler's symmetric SA-2026-06-04 LOW-1 guard at
+	// msg_server_burn_token.go:94-103 is itself dead code post-storage-
+	// normalization and is kept only for in-place consistency with
+	// prior audit acceptance.
 	if totalAmount.GT(token.RemainingSupply) {
 		return nil, sdkerrors.Wrapf(types.ErrInsufficientTokens,
 			"cumulative release amount %s exceeds remaining supply %s (split into multiple MsgReleaseTokens or reduce per-recipient amounts)",
