@@ -79,7 +79,7 @@ func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, deno
 // Prevents contract-internal Transfer(N) corruption where round-UP would
 // overcharge sender and skew downstream contract accounting.
 func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, amt sdk.Coins) error {
-	convertedAmt, err := k.convertCoinsForOutflow(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, a
 // SA-C7 audit-2026-05-29: outflow (creates supply) → round DOWN.
 // Round-UP would over-mint vs caller intent, breaking supply accounting.
 func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertCoinsForOutflow(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk
 // SA-C7 audit-2026-05-29: outflow (destroys supply) → round DOWN.
 // Round-UP would over-burn vs caller intent.
 func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertCoinsForOutflow(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk
 // Round-UP here gifted 1 ustoc per non-aligned-leftover-gas tx from FeeCollector to user.
 // At zero-gas spam rates (post-SA-C1) this was a quantifiable validator-reward drain.
 func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
-	convertedAmt, err := k.convertCoinsForOutflow(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
@@ -276,7 +276,7 @@ func (k EvmBankKeeper) SpendableCoin(ctx context.Context, addr sdk.AccAddress, d
 // SendCoinsFromModuleToModule transfers coins between modules.
 // SA-C7 audit-2026-05-29: outflow → round DOWN.
 func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderModule string, recipientModule string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertCoinsForOutflow(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
@@ -316,6 +316,25 @@ func (k EvmBankKeeper) convertCoinsForInflow(amt sdk.Coins) (sdk.Coins, error) {
 	return convertedAmt, nil
 }
 
+// trySDKContext returns the sdk.Context wrapped inside ctx, if any. The
+// emission of the SA-AUDIT-2026-06-06 MED-2 `evm_dust_dropped` event is
+// best-effort: production paths always wrap an sdk.Context via baseapp's
+// sdk.WrapSDKContext before invoking keeper methods, so emission fires.
+// Tests that pass context.Background() directly (no SDK wrap, no
+// EventManager) silently skip emission instead of panicking the way
+// sdk.UnwrapSDKContext would.
+func trySDKContext(ctx context.Context) (sdk.Context, bool) {
+	if c, ok := ctx.(sdk.Context); ok {
+		return c, true
+	}
+	v := ctx.Value(sdk.SdkContextKey)
+	if v == nil {
+		return sdk.Context{}, false
+	}
+	c, ok := v.(sdk.Context)
+	return c, ok
+}
+
 // convertCoinsForOutflow converts EVM coins to Cosmos coins with round-DOWN
 // (truncation) and silently drops dust legs that round to zero ustoc.
 //
@@ -342,7 +361,26 @@ func (k EvmBankKeeper) convertCoinsForInflow(amt sdk.Coins) (sdk.Coins, error) {
 // protections still hold because non-dust amounts continue to truncate
 // (not round up), so neither FeeCollector drain nor Transfer(N)
 // corruption is reintroduced.
-func (k EvmBankKeeper) convertCoinsForOutflow(amt sdk.Coins) (sdk.Coins, error) {
+//
+// SA-AUDIT-2026-06-06 MED-2 (deep re-audit M2, audit batch B): the silent
+// drop is a real semantic trap for any future EVM contract that maintains
+// an independent ledger synced with native astoc balance — the bank call
+// returns success but no state changed, so a contract that decrements
+// its own ledger after a "successful" transfer drifts out of sync with
+// the on-chain balance. The standard ERC-20 precompile reads balance
+// from bankKeeper and is therefore not affected, but contracts with
+// independent accounting can be. We keep the silent-drop business rule
+// (MED-3 lock is correct — failing the EVM frame on sub-ustoc legs broke
+// gas refunds) and add an observability event so off-chain indexers and
+// contract authors can detect dropped dust:
+//
+//	evm_dust_dropped{evm_denom, evm_amount, cosmos_denom, reason}
+//
+// emitted at the call's sdk.Context EventManager. The event is best-
+// effort: when ctx is unwrapped to a no-op sdk.Context (e.g. tests that
+// don't wire an EventManager), the EmitEvent call no-ops, so this path
+// stays safe for all callers.
+func (k EvmBankKeeper) convertCoinsForOutflow(ctx context.Context, amt sdk.Coins) (sdk.Coins, error) {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
 		if coin.Amount.IsNegative() {
@@ -357,6 +395,22 @@ func (k EvmBankKeeper) convertCoinsForOutflow(amt sdk.Coins) (sdk.Coins, error) 
 			if cosmosAmount.IsZero() {
 				// SA-2026-06-02 MED-3: silent drop (matches godoc dust-burn
 				// contract; replaces prior over-restrictive revert).
+				// SA-AUDIT-2026-06-06 MED-2: emit observability event so
+				// contracts with independent ledgers and off-chain indexers
+				// can reconcile dropped dust. Best-effort emission: tests
+				// that pass context.Background() (no SDK wrap, no
+				// EventManager) silently skip the event without panic.
+				if sdkCtx, ok := trySDKContext(ctx); ok {
+					sdkCtx.EventManager().EmitEvent(
+						sdk.NewEvent(
+							"evm_dust_dropped",
+							sdk.NewAttribute("evm_denom", coin.Denom),
+							sdk.NewAttribute("evm_amount", coin.Amount.String()),
+							sdk.NewAttribute("cosmos_denom", k.getCosmosDenom()),
+							sdk.NewAttribute("reason", "amount below 1 ustoc resolution after round-down (SA-2026-06-02 MED-3 silent drop)"),
+						),
+					)
+				}
 				continue
 			}
 			convertedAmt = convertedAmt.Add(sdk.NewCoin(k.getCosmosDenom(), cosmosAmount))
