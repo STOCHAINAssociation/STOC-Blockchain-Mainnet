@@ -57,11 +57,19 @@ func NewParams(
 	evmChannels []string,
 	accessControl AccessControl,
 ) Params {
+	// SA-AUDIT-2026-06-05-fix9 HIGH (re-audit regression): seed EvmDenom +
+	// ExtendedDenomOptions with the same sane defaults as DefaultParams so
+	// existing call sites (tests, programmatic init paths) continue to pass
+	// the new Validate() gates. Without these, every NewParams caller would
+	// need an explicit follow-up SetEvmDenom / SetExtendedDenomOptions just
+	// to satisfy validation — surface-breaking for downstream chains.
 	return Params{
+		EvmDenom:                DefaultEVMExtendedDenom,
 		ExtraEIPs:               extraEIPs,
 		ActiveStaticPrecompiles: activeStaticPrecompiles,
 		EVMChannels:             evmChannels,
 		AccessControl:           accessControl,
+		ExtendedDenomOptions:    &ExtendedDenomOptions{ExtendedDenom: DefaultEVMExtendedDenom},
 	}
 }
 

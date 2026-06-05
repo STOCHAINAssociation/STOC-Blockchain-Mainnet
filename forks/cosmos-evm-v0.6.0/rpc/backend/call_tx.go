@@ -171,25 +171,36 @@ func (b *Backend) SendRawTransaction(data hexutil.Bytes) (common.Hash, error) {
 			return txHash, nil
 		}
 		if fromABCIRsp && b.Mempool != nil && strings.Contains(err.Error(), mempool.ErrNonceLow.Error()) {
-			from, err := ethSigner.Sender(tx)
-			if err != nil {
-				return common.Hash{}, fmt.Errorf("failed to get sender address: %w", err)
+			// SA-AUDIT-2026-06-05-fix9 CRIT: preserve the original ErrNonceLow
+			// before any variable shadowing below. The two `from, err :=` and
+			// `nonce, err :=` shorthand declarations create new `err` bindings
+			// in this scope (Go quirk: the := on at-least-one-new-name creates
+			// a fresh local), and a successful pendingNonceWithPool leaves err==nil.
+			// Returning that nil at the duplicate-tx branch silently signals
+			// success to the caller — the very bug HIGH-3 was meant to close.
+			origNonceLowErr := err
+			from, senderErr := ethSigner.Sender(tx)
+			if senderErr != nil {
+				return common.Hash{}, fmt.Errorf("failed to get sender address: %w", senderErr)
 			}
 			// SA-AUDIT-2026-06-05 H2: route through pendingNonceWithPool to honor
 			// HIGH-3 pool-aware nonce contract. Committed nonce allowed duplicates
 			// of in-pool txs to return "accepted" while legacypool kept the original.
-			nonce, err := b.pendingNonceWithPool(from, true, b.ClientCtx.Height)
-			if err != nil {
-				return common.Hash{}, fmt.Errorf("failed to get sender's pool-aware nonce: %w", err)
+			poolNonce, poolErr := b.pendingNonceWithPool(from, true, b.ClientCtx.Height)
+			if poolErr != nil {
+				return common.Hash{}, fmt.Errorf("failed to get sender's pool-aware nonce: %w", poolErr)
 			}
 
-			// tx nonce below pool nonce = duplicate of in-pool tx or replay attempt
-			if tx.Nonce() < nonce {
-				return common.Hash{}, err
+			// pendingNonceWithPool returns the next-needed nonce (one past the
+			// highest pending tx). tx.Nonce() < poolNonce → duplicate / replay;
+			// tx.Nonce() == poolNonce → legitimate next tx; > poolNonce → future.
+			// (Re-audit fix9 FP-revert: '<=' rejects the legitimate next-tx case.)
+			if tx.Nonce() < poolNonce {
+				return common.Hash{}, origNonceLowErr
 			}
 
-			// tx nonce at-or-above pool nonce = legitimate near-future tx
-			b.Logger.Info("transaction accepted at near-future nonce", "hash", txHash.Hex(), "tx_nonce", tx.Nonce(), "pool_nonce", nonce)
+			// tx nonce at-or-above pool nonce = legitimate next / near-future tx
+			b.Logger.Info("transaction accepted at near-future nonce", "hash", txHash.Hex(), "tx_nonce", tx.Nonce(), "pool_nonce", poolNonce)
 			return txHash, nil
 		}
 

@@ -261,11 +261,9 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, senderAddress,
 			continue
 		}
 
-		taxRecipientAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
-		if err != nil {
-			ctx.Logger().Error("Invalid tax recipient address", "address", token.Tax.RecipientAddress, "error", err)
-			return fmt.Errorf("invalid tax recipient address: %v", err)
-		}
+		// taxRecipientAddr already parsed + validated above (line ~191, M1 canonicalize).
+		// Reused at SendCoins below — second AccAddressFromBech32 call removed
+		// after re-audit fix9 LOW finding flagged redundant re-parse.
 
 		// SA-C5 audit-2026-05-29 PROPOSED skipping the recipient==taxRecipient
 		// skip on the theory that an attacker could promote themselves to
