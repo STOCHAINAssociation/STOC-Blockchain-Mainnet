@@ -15,17 +15,36 @@ import (
 func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken) (*types.MsgCreateTokenResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	// SA-AUDIT-2026-06-06 MED-4 (deep re-audit M4, audit batch B):
+	// cosmos-sdk bech32 Normalize (btcutil/bech32 Decode) accepts
+	// ALL-UPPERCASE bech32 addresses — only mixed case is rejected. Storing
+	// msg.Creator raw means an uppercase-submitted CreateToken persists an
+	// uppercase token.Creator, and the subsequent MintToken comparison
+	// `token.Creator != owner.String()` (where owner.String() canonicalizes
+	// to lowercase via AccAddress -> bech32) fails permanently with
+	// ErrUnauthorized. The creator self-DoSes the token's mint and release
+	// paths — no fund theft and no chain-wide impact, but a permanent
+	// footgun for issuers whose wallet uppercases the address before
+	// signing. Parse + re-encode here once, at the only persistence site
+	// for token.Creator, so the stored field is always canonical lowercase
+	// bech32 regardless of caller input case.
+	creatorAddr, err := sdk.AccAddressFromBech32(msg.Creator)
+	if err != nil {
+		return nil, sdkerrors.Wrapf(types.ErrInvalidCreatorAddress, "invalid creator address (%s)", err)
+	}
+	canonicalCreator := creatorAddr.String()
+
 	k.Logger().Info("Starting token creation",
 		"symbol", msg.Symbol,
 		"name", msg.Name,
-		"creator", msg.Creator)
+		"creator", canonicalCreator)
 	// Create a token object
 
 	distributions := msg.Distributions
 	if len(distributions) == 0 {
 		distributions = []types.WalletDistribution{
 			{
-				Address: msg.Creator,
+				Address: canonicalCreator,
 				Percent: 100,
 			},
 		}
@@ -58,7 +77,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		Logo:          msg.Logo,
 		Distributions: distributions,
 		Tax:           taxToUse,
-		Creator:       msg.Creator,
+		Creator:       canonicalCreator, // SA-AUDIT-2026-06-06 MED-4: store canonical lowercase bech32
 		Unlimited:     msg.Unlimited,
 		MinimalDenom:  minimalDenom,
 	}

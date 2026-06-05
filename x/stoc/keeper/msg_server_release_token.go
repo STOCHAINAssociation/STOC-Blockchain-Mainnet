@@ -45,7 +45,21 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 		return nil, err
 	}
 
-	if msg.Creator != token.Creator {
+	// SA-AUDIT-2026-06-06 MED-4 (deep re-audit M4): canonicalize msg.Creator
+	// before comparing against token.Creator. cosmos-sdk bech32 Normalize
+	// accepts ALL-UPPERCASE bech32 input, so a creator who signed CreateToken
+	// from an uppercasing wallet (or any pre-fix token that persists
+	// uppercase) can only match a same-case msg.Creator. Canonicalize both
+	// sides here so the compare is canonical-vs-canonical regardless of
+	// caller input case. CreateToken (msg_server_create_token.go) already
+	// canonicalizes at write time per the same MED-4 fix; this is the read-
+	// side counterpart that also covers any pre-fix uppercase-persisted
+	// tokens.
+	creatorAddr, parseErr := sdk.AccAddressFromBech32(msg.Creator)
+	if parseErr != nil {
+		return nil, sdkerrors.Wrapf(types.ErrInvalidCreatorAddress, "invalid creator address (%s)", parseErr)
+	}
+	if creatorAddr.String() != token.Creator {
 		return nil, sdkerrors.Wrap(types.ErrUnauthorized, "only token creator can release tokens")
 	}
 

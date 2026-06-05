@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"strings"
 	"testing"
 
 	"cosmossdk.io/math"
@@ -352,4 +353,93 @@ func TestCreateToken_CounterIncrement(t *testing.T) {
 	token2, found := k.GetToken(ctx, "SECOND_1")
 	require.True(t, found)
 	require.Equal(t, "SECOND_1", token2.MinimalDenom)
+}
+
+// SA-AUDIT-2026-06-06 MED-4 regression coverage: cosmos-sdk bech32 Normalize
+// accepts ALL-UPPERCASE bech32 input. Pre-fix, CreateToken stored
+// msg.Creator raw, so an uppercase submission persisted an uppercase
+// token.Creator. The downstream MintToken / ReleaseTokens comparisons use
+// canonical lowercase (owner.String() or canonicalized msg.Creator), so the
+// token would self-DoS — Mint and Release would permanently fail with
+// ErrUnauthorized until a gov state-edit. The fix canonicalizes
+// msg.Creator at the persistence site so the stored field is always
+// lowercase bech32, regardless of caller input case.
+func TestCreateToken_UppercaseCreator_StoredAsCanonicalLowercase(t *testing.T) {
+	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	canonicalCreator := creatorAddr.String()
+	// Uppercase variant that cosmos-sdk's bech32 Normalize accepts (lower/mixed
+	// is rejected, all-upper is normalized through Decode).
+	uppercaseCreator := strings.ToUpper(canonicalCreator)
+	require.NotEqual(t, canonicalCreator, uppercaseCreator,
+		"test premise: canonical and uppercase forms must differ for the test to be meaningful")
+
+	mockBank.Balances[canonicalCreator] = sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, math.NewInt(200_000_000)))
+
+	msg := &types.MsgCreateToken{
+		Creator:       uppercaseCreator,
+		Name:          "Upper Token",
+		Symbol:        "UPPER",
+		InitialSupply: math.NewInt(1_000_000),
+		TotalSupply:   math.NewInt(1_000_000),
+		Decimals:      6,
+		Logo:          "https://example.com/logo.png",
+	}
+
+	_, err := ms.CreateToken(ctx, msg)
+	require.NoError(t, err, "MED-4: uppercase bech32 creator must be accepted (cosmos-sdk Normalize allows uppercase)")
+
+	stored, found := k.GetToken(ctx, "UPPER_0")
+	require.True(t, found)
+	require.Equal(t, canonicalCreator, stored.Creator,
+		"MED-4: token.Creator must persist canonical lowercase form, not the uppercase user input")
+
+	// Default-distribution case also canonicalizes — the auto-injected
+	// {Address: msg.Creator, Percent: 100} entry should refer to the
+	// canonical creator, not the uppercase form.
+	require.Len(t, stored.Distributions, 1)
+	require.Equal(t, canonicalCreator, stored.Distributions[0].Address,
+		"MED-4: default distribution address must use canonicalized creator")
+}
+
+// SA-AUDIT-2026-06-06 MED-4: the read-side counterpart in ReleaseTokens
+// canonicalizes msg.Creator before comparing against token.Creator. Verify
+// that a release call with an uppercase msg.Creator succeeds when the
+// stored token.Creator is canonical lowercase. Without canonicalization on
+// either side this would fail with ErrUnauthorized.
+func TestReleaseTokens_UppercaseMsgCreatorMatchesCanonicalStored(t *testing.T) {
+	k, ms, ctx, _ := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	canonicalCreator := creatorAddr.String()
+	uppercaseCreator := strings.ToUpper(canonicalCreator)
+	denom := "UPPER_0"
+
+	// Seed a token with the canonical creator stored (post-fix shape).
+	token := types.Token{
+		Id:              denom,
+		Name:            "Upper Release Token",
+		Symbol:          "UPPER",
+		Decimals:        6,
+		Logo:            "https://example.com/logo.png",
+		InitialSupply:   math.NewInt(1000),
+		TotalSupply:     math.NewInt(1000),
+		RemainingSupply: math.NewInt(500),
+		MinimalDenom:    denom,
+		Creator:         canonicalCreator,
+		Unlimited:       false,
+	}
+	require.NoError(t, k.SetToken(ctx, token))
+
+	// Release with the uppercase variant — must succeed because
+	// ReleaseTokens canonicalizes msg.Creator before the compare.
+	_, err := ms.ReleaseTokens(ctx, &types.MsgReleaseTokens{
+		Creator: uppercaseCreator,
+		Symbol:  denom,
+		Distributions: []types.ReleaseRecipient{
+			{Address: canonicalCreator, Amount: math.NewInt(100)},
+		},
+	})
+	require.NoError(t, err, "MED-4: uppercase msg.Creator must canonicalize before compare against stored canonical token.Creator")
 }
