@@ -2,10 +2,12 @@ package ante
 
 import (
 	"fmt"
+	"math/big"
 
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	errortypes "github.com/cosmos/cosmos-sdk/types/errors"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 
 	evmmempool "github.com/cosmos/evm/mempool"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
@@ -80,6 +82,43 @@ func (d MaxPendingTxPerWalletDecorator) AnteHandle(
 	ethMsg, ok := msgs[0].(*evmtypes.MsgEthereumTx)
 	if !ok {
 		return next(ctx, tx, simulate)
+	}
+
+	// SA-AUDIT-2026-06-06 HIGH-1 (deep re-audit H1, audit batch B): bind the
+	// per-wallet quota to the SIGNATURE-VERIFIED sender, not the unverified
+	// MsgEthereumTx.From wire field.
+	//
+	// MsgEthereumTx.GetSender() returns common.BytesToAddress(msg.From) — a
+	// protobuf field that ValidateBasic only checks for length != 0
+	// (cosmos-evm v0.6.0 x/vm/types/msg.go:90). The signature check that
+	// binds From to the recovered signer runs LATER in the ante chain
+	// (EVMMonoDecorator step 5, mono_decorator.go:166). Without this fix,
+	// an attacker could rotate a fake From per transaction so each tx's
+	// quota slot was counted against a fresh, unused address, defeating
+	// the per-wallet rate limit and forcing validators to spend CPU on
+	// ValidateTx / SetupContext / NewMonoDecoratorUtils /
+	// txpool.ValidateTransaction / fee math before the eventual
+	// VerifySender rejection. The whole point of the rate limiter (SA-Báu
+	// audit-2026-05-25 mempool DoS finding) is to STOP CPU spend before
+	// the mono preamble, so the quota must be bound to a verified address.
+	//
+	// Inline the MakeSigner + VerifySender pattern used by
+	// EthSigVerificationDecorator (cosmos-evm v0.6.0
+	// ante/evm/05_signature_verification.go). A signed-but-tampered tx
+	// (mismatched From) gets rejected here at decorator step 0, before any
+	// mempool quota work, and the quota count operates on the recovered
+	// sender bytes. The mono decorator still runs its own VerifySender at
+	// step 5 — the ~50 µs of duplicated ecrecover is the cost of making
+	// the rate limit actually enforceable.
+	ethCfg := evmtypes.GetEthChainConfig()
+	blockNum := big.NewInt(ctx.BlockHeight())
+	signer := ethtypes.MakeSigner(ethCfg, blockNum, uint64(ctx.BlockTime().Unix())) //#nosec G115 -- block time fits uint64
+	if err := ethMsg.VerifySender(signer); err != nil {
+		return ctx, errorsmod.Wrapf(
+			errortypes.ErrorInvalidSigner,
+			"EVM signature verification failed at quota decorator: %s",
+			err.Error(),
+		)
 	}
 
 	if d.getMempool == nil {
