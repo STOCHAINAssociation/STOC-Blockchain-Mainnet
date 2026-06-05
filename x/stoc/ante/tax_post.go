@@ -165,6 +165,19 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, senderAddress,
 	if err != nil {
 		return fmt.Errorf("invalid recipient address: %v", err)
 	}
+	// SA-AUDIT-2026-06-05-fix11 MED (audit pass A12): canonicalize BOTH sides
+	// of the R2/R3 compare. fix8 M1 only normalized tax_recipient; an attacker
+	// could still craft an ALL-UPPERCASE FromAddress equal to the tax_recipient
+	// to lex-mismatch the lowercase canonical form, dodge the R2 skip, and
+	// pump tax to themselves while the victim pays. Verified exploitable via
+	// unit test (victim 100→90, tax_recipient 100→110). Parse the sender once
+	// here; tax_recipient parsing remains inside the loop because it's per-token.
+	senderAddrParsed, senderErr := sdk.AccAddressFromBech32(senderAddress)
+	if senderErr != nil {
+		return fmt.Errorf("invalid sender address: %v", senderErr)
+	}
+	senderCanonical := senderAddrParsed.String()
+	recipientCanonical := recipientAddr.String()
 
 	for _, coin := range coins {
 		// Fast-path: skip store lookup for native denoms (ustoc, astoc, etc.)
@@ -195,12 +208,13 @@ func (tpd TaxPostDecorator) applyTaxForRecipient(ctx sdk.Context, senderAddress,
 		taxRecipientCanonical := taxRecipientAddr.String()
 
 		// R2 / R3 skip conditions (locked 2026-06-03). See function godoc for
-		// rationale. Compare against the canonical lowercase form so an
-		// uppercase tax_recipient stored on the token cannot dodge the skip.
-		if senderAddress == taxRecipientCanonical {
+		// rationale. SA-AUDIT-2026-06-05-fix11 MED: compare canonical-vs-canonical
+		// on BOTH sides — sender/recipient canonicalized above (line ~170 area),
+		// tax_recipient canonicalized here. Prevents uppercase-FromAddress dodge.
+		if senderCanonical == taxRecipientCanonical {
 			continue
 		}
-		if recipientAddress == taxRecipientCanonical {
+		if recipientCanonical == taxRecipientCanonical {
 			continue
 		}
 

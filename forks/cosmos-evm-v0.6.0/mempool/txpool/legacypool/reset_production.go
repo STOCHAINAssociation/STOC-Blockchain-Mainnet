@@ -22,7 +22,7 @@ func (pool *LegacyPool) reset(oldHead, newHead *types.Header) {
 		// removed it and replaced with a debug log.
 		//
 		// see https://github.com/cosmos/evm/pull/668 for more context.
-		log.Debug("leacypool saw skipped block (reorg) on cosmos chain, doing nothing...", "oldHead", oldHead.Hash(), "newHead", newHead.Hash(), "newParent", newHead.ParentHash)
+		log.Debug("legacypool saw skipped block (reorg) on cosmos chain, doing nothing...", "oldHead", oldHead.Hash(), "newHead", newHead.Hash(), "newParent", newHead.ParentHash)
 	}
 	pool.resetInternalState(newHead, reinject)
 }

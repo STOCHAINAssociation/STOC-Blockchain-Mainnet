@@ -52,15 +52,30 @@ func (k Keeper) ConvertERC20IntoCoinsForNativeToken(ctx sdk.Context, stateDB *st
 	}
 
 	// Remove token pair if contract is suicided
+	// SA-AUDIT-2026-06-05-fix11 MED: returning (nil, nil) was indistinguishable
+	// from a successful conversion at the gRPC layer and let ICS20 callers
+	// proceed blindly. Emit an explicit event AND return a sentinel error
+	// (wrapped on ErrUndefinedOwner) so callers can branch on it. The state
+	// deletion still persists because we run BEFORE the error returns at the
+	// keeper boundary — Cosmos SDK commits the cacheCtx writes on the
+	// successful msg server path. For convert.go this is fine: callers who
+	// previously treated (nil,nil) as success now correctly surface failure.
 	acc := k.evmKeeper.GetAccountWithoutBalance(ctx, pair.GetERC20Contract())
 	if acc == nil || !acc.HasCodeHash() {
 		k.DeleteTokenPair(ctx, pair)
-		k.Logger(ctx).Debug(
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				"erc20_pair_deleted_suicided",
+				sdk.NewAttribute("contract", pair.Erc20Address),
+				sdk.NewAttribute("denom", pair.Denom),
+			),
+		)
+		k.Logger(ctx).Info(
 			"deleting selfdestructed token pair from state",
 			"contract", pair.Erc20Address,
+			"denom", pair.Denom,
 		)
-		// NOTE: return nil error to persist the changes from the deletion
-		return nil, nil
+		return nil, errors.Wrapf(types.ErrUndefinedOwner, "ERC20 contract %s selfdestructed; pair deleted", pair.Erc20Address)
 	}
 	erc20 := contracts.ERC20MinterBurnerDecimalsContract.ABI
 	erc20Contract := pair.GetERC20Contract()

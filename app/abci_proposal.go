@@ -187,12 +187,22 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 				// IBC redundant relay, fee market fluctuation) should fall through
 				// to iter.Next() — popping wide on transient = censoring legitimate
 				// downstream tx of the same sender.
+				// SA-AUDIT-2026-06-05-fix11 MED (audit pass A12): the cosmos-evm
+				// v0.6.0 fork emits "tx nonce is higher/lower than account nonce"
+				// (NOT the go-ethereum "nonce too high/low" wording). Without these
+				// fork strings, isPermanentNonceErr returned false for the most
+				// common nonce-gap path → PopCurrentAccount never fired → Bug B
+				// cascade-skip silently DISABLED in production. Match BOTH legacy
+				// (go-ethereum core) AND fork phrasings.
 				errMsg := err.Error()
 				isPermanentNonceErr :=
 					strings.Contains(errMsg, "nonce too high") ||
 						strings.Contains(errMsg, "nonce too low") ||
+						strings.Contains(errMsg, "nonce is higher than account nonce") ||
+						strings.Contains(errMsg, "nonce is lower than account nonce") ||
 						strings.Contains(errMsg, "intrinsic gas") ||
-						strings.Contains(errMsg, "invalid nonce")
+						strings.Contains(errMsg, "invalid nonce") ||
+						strings.Contains(errMsg, "invalid sequence")
 
 				// Bug B wire: if current head is an EVM tx AND the err is a
 				// permanent nonce-class error, pop the entire sender bucket so we

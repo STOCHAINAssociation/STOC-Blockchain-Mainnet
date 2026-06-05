@@ -98,7 +98,14 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 			panic(err)
 		}
 
-		delAddr := sdk.MustAccAddressFromBech32(delegation.DelegatorAddress)
+		// SA-AUDIT-2026-06-05-fix11 MED: replace MustAccAddressFromBech32 with
+		// guarded form to mirror lines 96-98 ValAddressFromBech32 pattern. Must*
+		// emits a cryptic uppercase-hex panic; wrap so operators see which
+		// delegator address is corrupt during zero-height export.
+		delAddr, err := sdk.AccAddressFromBech32(delegation.DelegatorAddress)
+		if err != nil {
+			panic(fmt.Errorf("invalid delegator address %q in WithdrawDelegationRewards loop: %w", delegation.DelegatorAddress, err))
+		}
 
 		_, _ = app.DistrKeeper.WithdrawDelegationRewards(ctx, delAddr, valAddr)
 	}
@@ -148,7 +155,11 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 		if err != nil {
 			panic(err)
 		}
-		delAddr := sdk.MustAccAddressFromBech32(del.DelegatorAddress)
+		// SA-AUDIT-2026-06-05-fix11 MED: same guarded form as line ~101.
+		delAddr, err := sdk.AccAddressFromBech32(del.DelegatorAddress)
+		if err != nil {
+			panic(fmt.Errorf("invalid delegator address %q in BeforeDelegationCreated loop: %w", del.DelegatorAddress, err))
+		}
 
 		if err := app.DistrKeeper.Hooks().BeforeDelegationCreated(ctx, delAddr, valAddr); err != nil {
 			// never called as BeforeDelegationCreated always returns nil
