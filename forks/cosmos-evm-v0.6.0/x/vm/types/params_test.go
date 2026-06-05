@@ -28,9 +28,12 @@ func TestParamsValidate(t *testing.T) {
 			expPass: true,
 		},
 		{
-			name:    "empty",
-			params:  Params{},
-			expPass: true,
+			// SA-AUDIT-2026-06-05 H3/H4/H5: empty Params{} now correctly fails
+			// Validate() because EvmDenom + ExtendedDenomOptions defense-in-depth
+			// gates reject empty values that would later panic LoadEvmCoinInfo.
+			name:        "empty",
+			params:      Params{},
+			errContains: "invalid EvmDenom",
 		},
 		{
 			name: "invalid eip",
