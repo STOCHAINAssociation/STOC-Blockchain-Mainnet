@@ -29,10 +29,6 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 
 	return sdk.ChainAnteDecorators(
 		cosmosante.NewRejectMessagesDecorator(), // reject MsgEthereumTxs
-		cosmosante.NewAuthzLimiterDecorator( // disable the Msg types that cannot be included on an authz.MsgExec msgs field
-			sdk.MsgTypeURL(&evmtypes.MsgEthereumTx{}),
-			sdk.MsgTypeURL(&sdkvesting.MsgCreateVestingAccount{}),
-		),
 		ante.NewSetUpContextDecorator(),
 		ante.NewExtensionOptionsDecorator(options.ExtensionOptionChecker),
 		ante.NewValidateBasicDecorator(),
@@ -40,8 +36,9 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
 		// SA-2026-06-02 MED-7 (senior-skeptic audit): charge gas + fee BEFORE
 		// the message-walking decorators (NewIBCCustomTokenRestriction,
-		// NewCustomTokenChainOpsRestriction, NewRedundantRelayDecorator) so
-		// that authz / group / gov msg trees pay for the cost of being
+		// NewCustomTokenChainOpsRestriction, NewRedundantRelayDecorator,
+		// NewAuthzLimiterDecorator per SA-AUDIT-2026-06-06 MED-3 — see below)
+		// so that authz / group / gov msg trees pay for the cost of being
 		// unmarshalled + recursively inspected. Previously the message
 		// walkers ran first and a flood of nested-Any txs amplified
 		// CheckTx CPU at zero on-chain cost. Moving fee/gas earlier means
@@ -56,6 +53,29 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewSigGasConsumeDecorator(options.AccountKeeper, options.SigGasConsumer),
 		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler),
 		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
+		// SA-AUDIT-2026-06-06 MED-3 (deep re-audit M3, audit batch B):
+		// NewAuthzLimiterDecorator was previously placed at position 2,
+		// BEFORE fee deduction. checkDisabledMsgs (cosmos-evm v0.6.0
+		// ante/cosmos/authz.go:44) recurses into MsgExec inner messages
+		// with a depth cap (maxNestedMsgs=7) but NO width cap, and calls
+		// msg.GetMessages() which Any-unpacks every inner message. A
+		// MsgExec carrying 1000 inner Anys would force 1000 codec unpacks
+		// per CheckTx at zero on-chain cost — the identical anti-pattern
+		// SA-2026-06-02 MED-7 closed for IBCCustomTokenRestriction,
+		// CustomTokenChainOpsRestriction, and RedundantRelayDecorator.
+		// Move AuthzLimiter into the post-fee message-walking block so
+		// the granter pays for the recursion cost. Disabled msg types
+		// (MsgEthereumTx, MsgCreateVestingAccount, MsgCreatePermanentLockedAccount,
+		// MsgCreatePeriodicVestingAccount per SA-AUDIT-2026-06-06 LOW
+		// blocklist completion — see comment at the decorator constructor)
+		// are still rejected before message-walking restrictions and
+		// the gov/group/IBC checks below, preserving the original semantic.
+		cosmosante.NewAuthzLimiterDecorator( // disable the Msg types that cannot be included on an authz.MsgExec msgs field
+			sdk.MsgTypeURL(&evmtypes.MsgEthereumTx{}),
+			sdk.MsgTypeURL(&sdkvesting.MsgCreateVestingAccount{}),
+			sdk.MsgTypeURL(&sdkvesting.MsgCreatePermanentLockedAccount{}),
+			sdk.MsgTypeURL(&sdkvesting.MsgCreatePeriodicVestingAccount{}),
+		),
 		// Message-walking restriction layer (now post-fee per MED-7). These
 		// decorators recurse into authz/group/gov msg trees, so charging
 		// gas + fee before them prevents free CPU-DoS amplification.
