@@ -403,6 +403,78 @@ func TestCreateToken_UppercaseCreator_StoredAsCanonicalLowercase(t *testing.T) {
 		"MED-4: default distribution address must use canonicalized creator")
 }
 
+// SA-AUDIT-2026-06-08 fix15-5 regression coverage (R3 fix14-regression-2 +
+// tax-postdecorator-fresh-2 + token-keeper-fresh-2): when the caller submits
+// an Unlimited token with InitialSupply=0 AND a non-empty Distributions
+// slice, the two pieces of input contradict each other (zero supply but
+// upfront-distribution intent). Pre-fix15-5, the handler silently dropped
+// the Distributions list because the mint loop short-circuited on the
+// skipDistribution flag, leaving on-chain balances out of sync with the
+// persisted Token.Distributions metadata. fix15-5 rejects the
+// contradiction loudly so the issuer can fix the input.
+func TestCreateToken_UnlimitedZeroInitial_WithDistributions_Rejected(t *testing.T) {
+	_, ms, ctx, mockBank := setupMsgServerWithMock(t)
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	otherAddr := sdk.AccAddress([]byte("other_addr_______123"))
+
+	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, math.NewInt(200_000_000)))
+
+	msg := &types.MsgCreateToken{
+		Creator:       creator,
+		Name:          "Conflicting",
+		Symbol:        "CONFLICT",
+		InitialSupply: math.ZeroInt(),
+		TotalSupply:   math.ZeroInt(),
+		Decimals:      6,
+		Logo:          "https://example.com/logo.png",
+		Unlimited:     true,
+		Distributions: []types.WalletDistribution{
+			{Address: creator, Percent: 60},
+			{Address: otherAddr.String(), Percent: 40},
+		},
+	}
+
+	_, err := ms.CreateToken(ctx, msg)
+	require.Error(t, err, "fix15-5: contradictory (Unlimited+InitialSupply=0) + non-empty Distributions must be rejected")
+	require.Contains(t, err.Error(), "cannot also carry")
+	require.Contains(t, err.Error(), "Distributions")
+}
+
+// SA-AUDIT-2026-06-08 fix15-5: the empty-Distributions canonical "mint
+// later" shape must persist with Distributions=nil (not the auto-injected
+// default [{creator, 100%}] that pre-fix15-5 would leave on the token).
+// Indexers reading token.Distributions then correctly see "no upfront
+// distribution intent", matching the actual on-chain zero balance.
+func TestCreateToken_UnlimitedZeroInitial_PersistsEmptyDistributions(t *testing.T) {
+	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, math.NewInt(200_000_000)))
+
+	msg := &types.MsgCreateToken{
+		Creator:       creator,
+		Name:          "Mint Later",
+		Symbol:        "ML",
+		InitialSupply: math.ZeroInt(),
+		TotalSupply:   math.ZeroInt(),
+		Decimals:      6,
+		Logo:          "https://example.com/logo.png",
+		Unlimited:     true,
+	}
+
+	_, err := ms.CreateToken(ctx, msg)
+	require.NoError(t, err)
+
+	stored, found := k.GetToken(ctx, "ML_0")
+	require.True(t, found)
+	require.True(t, stored.Unlimited)
+	require.True(t, stored.InitialSupply.IsZero())
+	require.True(t, stored.TotalSupply.IsZero())
+	require.Empty(t, stored.Distributions,
+		"fix15-5: Unlimited+InitialSupply=0 token must NOT auto-inject default [{creator, 100%}] — persisted Distributions must mirror actual on-chain balances (empty)")
+}
+
 // SA-AUDIT-2026-06-07 LOW-3 regression coverage (R2-LOW3): unlimited tokens
 // with InitialSupply=0 + TotalSupply=0 must be creatable. Pre-fix14, the
 // distribution loop hit the SA-2026-06-02 LOW-3 zero-rounded reject with a

@@ -67,8 +67,21 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// token.Creator: every bech32 stored under this handler is the
 	// AccAddress.String() canonical lowercase form, regardless of caller
 	// input case.
+	// SA-AUDIT-2026-06-08 fix15-5: pre-compute skipDistribution intent here so
+	// the persisted token.Distributions matches actual on-chain behaviour.
+	// For unlimited tokens with InitialSupply=0 there is nothing to mint, so
+	// we must NOT inject the default [{canonicalCreator, 100}] entry — that
+	// entry would persist on-chain with no matching bank balance, drifting
+	// from explorer / indexer assumptions. Leave token.Distributions empty
+	// in that case. The contradictory pair (Unlimited+InitialSupply=0 AND
+	// non-empty msg.Distributions) is rejected by the explicit check
+	// further down before the mint loop runs.
+	skipDistributionForToken := msg.Unlimited && msg.InitialSupply.IsZero()
+
 	distributions := msg.Distributions
-	if len(distributions) == 0 {
+	if skipDistributionForToken {
+		distributions = nil
+	} else if len(distributions) == 0 {
 		distributions = []types.WalletDistribution{
 			{
 				Address: canonicalCreator,
@@ -220,6 +233,35 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// persistence below records a token with zero circulating + zero
 	// reserve, which MsgMintTokens can then grow on demand.
 	skipDistribution := token.Unlimited && initialSupply.IsZero()
+
+	// SA-AUDIT-2026-06-08 fix15-5 (round 3 fix14-regression-2 +
+	// tax-postdecorator-fresh-2 + token-keeper-fresh-2 R3 findings): when
+	// the caller submitted a NON-EMPTY Distributions slice but their
+	// (Unlimited, InitialSupply) pair also satisfies skipDistribution, the
+	// fix14 R2-LOW3 path silently dropped the user-provided distribution
+	// list because the loop body short-circuits on `if skipDistribution
+	// { break }`. The persisted Token.Distributions still carried the
+	// distribution entries (we copy from msg.Distributions earlier in
+	// this handler) but no actual bank.MintCoins or
+	// SendCoinsFromModuleToAccount fired, so on-chain balances diverged
+	// from the documented Distributions metadata. Indexers reading
+	// Token.Distributions saw "founder A: 60%, founder B: 40%" while
+	// bank.GetBalance(founder A) returned zero.
+	//
+	// Reject loudly so the issuer notices the contradiction. Either:
+	//   - the issuer wants InitialSupply=0 with no upfront distribution
+	//     (correct shape: omit Distributions entirely, the handler will
+	//     skip), or
+	//   - the issuer wants an upfront distribution (correct shape: set
+	//     InitialSupply > 0 to fund the distribution list).
+	// Both intents are valid; what's invalid is the contradictory pair.
+	if skipDistribution && len(msg.Distributions) > 0 {
+		return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+			"unlimited token with InitialSupply=0 cannot also carry %d Distributions entries — "+
+				"either drop Distributions (skip upfront distribution, mint later via MsgMintTokens) "+
+				"or set InitialSupply > 0 to fund the entries",
+			len(msg.Distributions))
+	}
 
 	// Distribute initial supply according to distribution list
 	// (distributions always has >= 1 entry: defaults to [{Creator, 100%}] when msg.Distributions is empty)
