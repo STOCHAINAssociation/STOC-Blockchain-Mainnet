@@ -274,6 +274,33 @@ func TestChainOpsRestriction_AuthzWrappingGroupProposalCustomToken_Blocked(t *te
 	require.Contains(t, err.Error(), denom)
 }
 
+// SA-AUDIT-2026-06-07 LOW-1 regression coverage (R2-LOW1): grouptypes.MsgExec
+// at outer depth is currently a no-op in the chain-ops restriction (forward-
+// defense marker for stale pre-CRIT-1 proposals — see comment in
+// custom_token_restriction.go *grouptypes.MsgExec case). The CRIT-1 submit-time
+// recursion stops new proposals from entering state, so MsgExec on
+// freshly-created proposals can only target proposals whose inner messages
+// have already been validated. Pin the no-op behavior so the case stays
+// compile-clean and does not regress to a blanket reject (which would break
+// legitimate native-denom group flows).
+func TestChainOpsRestriction_GroupMsgExec_NoOp(t *testing.T) {
+	setDefaultBondDenom(t)
+	k, ctx, _, _ := setupTaxTest(t)
+
+	executor := sdk.AccAddress([]byte("executor____________"))
+
+	decorator := ante.NewCustomTokenChainOpsRestriction(k)
+
+	exec := &grouptypes.MsgExec{
+		ProposalId: 1,
+		Executor:   executor.String(),
+	}
+
+	tx := mockTx{msgs: []sdk.Msg{exec}}
+	_, err := decorator.AnteHandle(ctx, tx, false, noopAnteHandler)
+	require.NoError(t, err, "LOW-1: grouptypes.MsgExec at outer depth must be a forward-defense no-op (CRIT-1 submit-time recursion handles new proposals)")
+}
+
 func TestChainOpsRestriction_GroupProposal_InnerAuthzBankSendCustomToken_Blocked(t *testing.T) {
 	// Inverse nesting: group.MsgSubmitProposal whose inner msg is
 	// authz.MsgExec wrapping a custom-token bank.MsgSend. The

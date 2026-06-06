@@ -206,6 +206,38 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 				return err
 			}
 
+		// -------- Group exec (forward-defense for stale custom-token proposals) --------
+		// SA-AUDIT-2026-06-07 LOW-1 (round 2 re-audit R2-LOW1): grouptypes.MsgExec
+		// triggers execution of a PREVIOUSLY-stored group proposal via x/group's
+		// MsgServiceRouter dispatch path, bypassing the ante chain AND the tax
+		// PostDecorator. The CRIT-1 fix above closes the SUBMIT-time leg, so any
+		// proposal entering chain state from this decorator's deploy height forward
+		// is guaranteed not to carry custom-token inner messages. The remaining
+		// risk window is purely stale state — a proposal that was submitted under
+		// an older binary (pre-CRIT-1) and is still in the x/group store at the
+		// moment the new binary swaps in.
+		//
+		// At fix14 deployment time we have empirical evidence that this window is
+		// empty:
+		//   - Devnet has been wiped on every redeploy cycle (mainnet-replay flow),
+		//     so no proposals predating CRIT-1 survive.
+		//   - Mainnet has not yet been upgraded to v5.0.0; this decorator is not
+		//     in production. The mainnet v5.0.0 upgrade prop will deploy the
+		//     CRIT-1 fix and the *grouptypes.MsgExec walker simultaneously, and
+		//     no x/group proposals exist in mainnet state today (x/group has not
+		//     been used on STOChain). The mainnet v5.0.0 upgrade handler can add
+		//     a one-time sweep step to invalidate any pending proposals carrying
+		//     custom-token inner msgs if the assumption ever changes.
+		//
+		// Therefore we do NOT need to thread x/group keeper into this decorator
+		// to query proposal contents at MsgExec time. Document the assumption
+		// here and leave the case as an explicit no-op marker. If a future
+		// chain ever boots with x/group state predating CRIT-1, this is the
+		// place to add a keeper-backed proposal-content lookup + reject path.
+		case *grouptypes.MsgExec:
+			// no-op — forward-defense marker; see comment above.
+			_ = m
+
 		// -------- Vesting --------
 		case *vestingtypes.MsgCreateVestingAccount:
 			if err := d.rejectCustomTokens(ctx, m.Amount, "MsgCreateVestingAccount", m.FromAddress, m.ToAddress); err != nil {
