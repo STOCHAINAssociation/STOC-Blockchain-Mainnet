@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"strings"
 	"testing"
 
 	"cosmossdk.io/math"
@@ -245,6 +246,66 @@ func TestReleaseTokens_TokenNotFound(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, types.ErrTokenNotFound)
+}
+
+// SA-AUDIT-2026-06-08 fix15-3 regression coverage (R3 token-keeper-fresh-1):
+// MsgReleaseTokens persists the recipient via SendCoinsFromModuleToAccount
+// using the canonical AccAddress, but the per-recipient event stream was
+// emitting the raw msg.dist.Address. fix15-3 closes that drift — the
+// EventTypeReleaseTokens.AttributeKeyRecipient now carries the canonical
+// lowercase bech32 form so indexers see the same address whether they read
+// persisted Token.Distributions or stream EventTypeReleaseTokens.
+func TestReleaseTokens_UppercaseRecipient_EventEmitsCanonical(t *testing.T) {
+	k, ms, ctx, _ := setupMsgServerWithMock(t)
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	recipientAddr := sdk.AccAddress([]byte("recipient_addr_456"))
+	canonicalRecipient := recipientAddr.String()
+	upperRecipient := strings.ToUpper(canonicalRecipient)
+	require.NotEqual(t, canonicalRecipient, upperRecipient,
+		"test premise: canonical and uppercase forms must differ")
+	denom := "MYTOKEN_0"
+
+	token := types.Token{
+		Id:              denom,
+		Name:            "My Token",
+		Symbol:          "MYTOKEN",
+		Decimals:        6,
+		Logo:            "https://example.com/logo.png",
+		InitialSupply:   math.NewInt(1000),
+		TotalSupply:     math.NewInt(1000),
+		RemainingSupply: math.NewInt(500),
+		MinimalDenom:    denom,
+		Creator:         creator,
+		Unlimited:       false,
+	}
+	require.NoError(t, k.SetToken(ctx, token))
+
+	_, err := ms.ReleaseTokens(ctx, &types.MsgReleaseTokens{
+		Creator: creator,
+		Symbol:  denom,
+		Distributions: []types.ReleaseRecipient{
+			{Address: upperRecipient, Amount: math.NewInt(100)},
+		},
+	})
+	require.NoError(t, err, "fix15-3: uppercase recipient must succeed at the bank-op layer (cosmos-sdk Normalize accepts uppercase)")
+
+	// Verify the per-recipient event surfaced the canonical lowercase form.
+	events := ctx.EventManager().Events()
+	var found bool
+	for _, ev := range events {
+		if ev.Type != types.EventTypeReleaseTokens {
+			continue
+		}
+		for _, a := range ev.Attributes {
+			if a.Key == types.AttributeKeyRecipient {
+				require.Equal(t, canonicalRecipient, a.Value,
+					"fix15-3: AttributeKeyRecipient must emit canonical lowercase form (caller passed uppercase)")
+				found = true
+			}
+		}
+	}
+	require.True(t, found, "expected at least one %s event with AttributeKeyRecipient", types.EventTypeReleaseTokens)
 }
 
 // SA-AUDIT-2026-06-06 MED-1 empirical refutation: the audit hypothesis was

@@ -106,26 +106,40 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 	// Single-loop bank mutation. tx-atomicity protects partial failure: if any
 	// SendCoinsFromModuleToAccount errors, the whole tx reverts including any
 	// prior successful sends in this loop.
+	//
+	// SA-AUDIT-2026-06-08 fix15-3 (round 3 token-keeper-fresh-1 R3 finding):
+	// canonicalize dist.Address before SendCoinsFromModuleToAccount AND
+	// before the per-recipient event emission. CreateToken (write side)
+	// already canonicalizes per fix14 R2-LOW2; the release event stream
+	// was leaking the caller's raw bech32 case into indexers. Resolve to
+	// AccAddress once and use .String() for both the bank op and the
+	// event so the EventTypeReleaseTokens.AttributeKeyRecipient attribute
+	// always carries the canonical lowercase form, matching the
+	// MED-4 invariant for token.Creator and the R2-LOW2 invariant for
+	// token.Distributions[].Address.
 	for i, dist := range msg.Distributions {
 		recipientAddr, err := sdk.AccAddressFromBech32(dist.Address)
 		if err != nil {
 			return nil, sdkerrors.Wrapf(err, "distributions[%d]: invalid address %s", i, dist.Address)
 		}
+		canonicalRecipient := recipientAddr.String()
 		coin := sdk.NewCoin(token.MinimalDenom, dist.Amount)
 		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipientAddr, sdk.NewCoins(coin)); err != nil {
-			return nil, sdkerrors.Wrapf(err, "distributions[%d]: SendCoinsFromModuleToAccount failed for recipient %s", i, dist.Address)
+			return nil, sdkerrors.Wrapf(err, "distributions[%d]: SendCoinsFromModuleToAccount failed for recipient %s", i, canonicalRecipient)
 		}
 
 		// Per-recipient event for indexer + audit trail. Same attribute names
 		// as the prior single-recipient form so existing consumers keep
-		// working when they index per-recipient flows.
+		// working when they index per-recipient flows. SA-AUDIT-2026-06-08
+		// fix15-3: AttributeKeyRecipient now emits canonicalRecipient
+		// (not raw dist.Address) to match the persisted-form invariant.
 		ctx.EventManager().EmitEvent(
 			sdk.NewEvent(
 				types.EventTypeReleaseTokens,
 				sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
 				sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
 				sdk.NewAttribute(types.AttributeKeyAmount, dist.Amount.String()),
-				sdk.NewAttribute(types.AttributeKeyRecipient, dist.Address),
+				sdk.NewAttribute(types.AttributeKeyRecipient, canonicalRecipient),
 				sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
 			),
 		)
