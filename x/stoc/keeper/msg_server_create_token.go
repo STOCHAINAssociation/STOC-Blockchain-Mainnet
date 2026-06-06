@@ -205,10 +205,33 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// See MintToken in token.go for detailed rationale on why Solidity CEI patterns
 	// do not apply to Cosmos SDK (no re-entrancy, no external calls).
 
+	// SA-AUDIT-2026-06-07 LOW-3 (round 2 re-audit R2-LOW3): unlimited tokens
+	// whose creator picks the canonical "InitialSupply=0, TotalSupply=0,
+	// Unlimited=true, mint later via MsgMintTokens" pattern previously
+	// failed the distribution loop below: the default
+	// [{creator, 100%}] entry computed amount=0 and hit the SA-2026-06-02
+	// LOW-3 zero-rounded reject with a misleading
+	// "increase InitialSupply or merge low-percent recipients" error.
+	// ValidateBasic (types/msg_create_token.go:73-78, 91-94) explicitly
+	// allows this input shape, so the handler should honor the contract.
+	// Skip the distribution loop entirely when there is nothing to
+	// distribute. token.RemainingSupply was already set to ZeroInt() above
+	// (TotalSupply.GT(InitialSupply) is false when both are zero), so
+	// persistence below records a token with zero circulating + zero
+	// reserve, which MsgMintTokens can then grow on demand.
+	skipDistribution := token.Unlimited && initialSupply.IsZero()
+
 	// Distribute initial supply according to distribution list
 	// (distributions always has >= 1 entry: defaults to [{Creator, 100%}] when msg.Distributions is empty)
 	totalMinted := math.ZeroInt()
+	if skipDistribution {
+		k.Logger().Info("Skipping initial distribution loop (unlimited token with InitialSupply=0)",
+			"symbol", token.Symbol, "minimal_denom", token.MinimalDenom)
+	}
 	for i, dist := range token.Distributions {
+		if skipDistribution {
+			break
+		}
 		recipient, err := sdk.AccAddressFromBech32(dist.Address)
 		if err != nil {
 			return nil, sdkerrors.Wrap(err, "invalid distribution address")

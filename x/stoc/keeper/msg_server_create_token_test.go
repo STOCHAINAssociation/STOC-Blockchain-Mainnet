@@ -403,6 +403,81 @@ func TestCreateToken_UppercaseCreator_StoredAsCanonicalLowercase(t *testing.T) {
 		"MED-4: default distribution address must use canonicalized creator")
 }
 
+// SA-AUDIT-2026-06-07 LOW-3 regression coverage (R2-LOW3): unlimited tokens
+// with InitialSupply=0 + TotalSupply=0 must be creatable. Pre-fix14, the
+// distribution loop hit the SA-2026-06-02 LOW-3 zero-rounded reject with a
+// misleading "increase InitialSupply or merge low-percent recipients" error
+// — meaningless for the canonical "mint later via MsgMintTokens" pattern.
+// fix14 skips the distribution loop entirely when Unlimited && InitialSupply
+// is zero so the token persists with zero circulating + zero reserve, and
+// MsgMintTokens can grow supply on demand.
+func TestCreateToken_UnlimitedZeroInitialSupply_Creatable(t *testing.T) {
+	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+
+	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, math.NewInt(200_000_000)))
+
+	msg := &types.MsgCreateToken{
+		Creator:       creator,
+		Name:          "Mint Later Token",
+		Symbol:        "MLT",
+		InitialSupply: math.ZeroInt(),
+		TotalSupply:   math.ZeroInt(),
+		Decimals:      6,
+		Logo:          "https://example.com/logo.png",
+		Unlimited:     true,
+	}
+
+	_, err := ms.CreateToken(ctx, msg)
+	require.NoError(t, err, "LOW-3: unlimited token with InitialSupply=0 must be creatable; fix14 skips the distribution loop")
+
+	stored, found := k.GetToken(ctx, "MLT_0")
+	require.True(t, found)
+	require.True(t, stored.Unlimited)
+	require.True(t, stored.InitialSupply.IsZero())
+	require.True(t, stored.TotalSupply.IsZero())
+	require.True(t, stored.RemainingSupply.IsZero(), "RemainingSupply must be zero since TotalSupply.GT(InitialSupply) is false")
+}
+
+// SA-AUDIT-2026-06-07 LOW-3: ensure the existing LOW-3 zero-rounded reject is
+// preserved for non-unlimited tokens whose distribution percent rounds to 0.
+// The fix14 skip path is gated on token.Unlimited && InitialSupply.IsZero(),
+// so a fixed-supply token with InitialSupply>0 and a distribution entry
+// that rounds to 0 must still fail loudly (no silent misallocation).
+func TestCreateToken_FixedSupplyZeroRounded_StillRejected(t *testing.T) {
+	_, ms, ctx, mockBank := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	otherAddr := sdk.AccAddress([]byte("other_addr_______123"))
+
+	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, math.NewInt(200_000_000)))
+
+	// InitialSupply=99, three recipients at 33/33/34 — first two compute
+	// floor(99*33/100)=32 each, last gets remainder=35. No zero-rounded
+	// entry, so this should pass. Use 100/3 split with InitialSupply=2 to
+	// guarantee zero-rounded entries.
+	msg := &types.MsgCreateToken{
+		Creator:       creator,
+		Name:          "Tiny Token",
+		Symbol:        "TIN",
+		InitialSupply: math.NewInt(2),
+		TotalSupply:   math.NewInt(2),
+		Decimals:      6,
+		Logo:          "https://example.com/logo.png",
+		Distributions: []types.WalletDistribution{
+			{Address: creator, Percent: 1},
+			{Address: otherAddr.String(), Percent: 99},
+		},
+	}
+
+	_, err := ms.CreateToken(ctx, msg)
+	require.Error(t, err, "LOW-3: non-unlimited token with first-entry zero-rounded distribution must still fail loudly")
+	require.Contains(t, err.Error(), "rounds to 0 tokens at initial supply")
+}
+
 // SA-AUDIT-2026-06-07 LOW-2 regression coverage (R2-LOW2): fix14 extends the
 // MED-4 canonicalization to token.Distributions[i].Address and
 // token.Tax.RecipientAddress. Verify that uppercase entries on either field
