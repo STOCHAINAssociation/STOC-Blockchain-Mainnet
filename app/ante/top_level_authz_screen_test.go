@@ -148,6 +148,36 @@ func TestAuthzPreSigScreen_NestedMsgExec_DisabledInner_Rejected(t *testing.T) {
 		"error must surface the depth at which the rejection fired (defence-in-depth diagnostic)")
 }
 
+// SA-AUDIT-2026-06-08 fix15-2 (R3 completeness-critic finding): the
+// disabled msg type slice that both the pre-sig AuthzPreSigScreenDecorator
+// and the post-fee cosmosante.NewAuthzLimiterDecorator consume MUST be the
+// same. fix14 hoisted the slice to a local variable in newCosmosAnteHandler;
+// fix15 hoists it to package-level AuthzDisabledMsgTypes() so the invariant
+// has a single editing point. This test pins the slice contents so a
+// future PR that adds a type to one layer but forgets the other surfaces
+// in CI rather than as a silent ecrecover-DoS regression.
+func TestAuthzDisabledMsgTypes_StableInvariant(t *testing.T) {
+	got := stocante.AuthzDisabledMsgTypes()
+	expected := []string{
+		"/cosmos.evm.vm.v1.MsgEthereumTx",
+		"/cosmos.vesting.v1beta1.MsgCreateVestingAccount",
+		"/cosmos.vesting.v1beta1.MsgCreatePermanentLockedAccount",
+		"/cosmos.vesting.v1beta1.MsgCreatePeriodicVestingAccount",
+	}
+	require.Equal(t, expected, got,
+		"fix15-2: AuthzDisabledMsgTypes invariant — any change must be intentional; both pre-sig screen and post-fee AuthzLimiter must reject the same set")
+}
+
+// SA-AUDIT-2026-06-08 fix15-2: AuthzDisabledMsgTypes returns a fresh slice
+// so a caller cannot mutate the shared state.
+func TestAuthzDisabledMsgTypes_ReturnsFreshSlice(t *testing.T) {
+	first := stocante.AuthzDisabledMsgTypes()
+	first[0] = "MUTATED"
+	second := stocante.AuthzDisabledMsgTypes()
+	require.NotEqual(t, "MUTATED", second[0],
+		"AuthzDisabledMsgTypes must return a fresh slice — caller mutation must not leak")
+}
+
 func TestAuthzPreSigScreen_DeeplyNestedMsgExec_BeyondCap_DefersToPostFee(t *testing.T) {
 	// Defence-in-depth boundary: an attack nested deeper than
 	// AuthzPreSigScreenMaxDepth (=3) is intentionally NOT rejected at the

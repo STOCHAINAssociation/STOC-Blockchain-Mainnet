@@ -3,12 +3,10 @@ package ante
 import (
 	cosmosante "github.com/cosmos/evm/ante/cosmos"
 	evmante "github.com/cosmos/evm/ante/evm"
-	evmtypes "github.com/cosmos/evm/x/vm/types"
 	ibcante "github.com/cosmos/ibc-go/v10/modules/core/ante"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
-	sdkvesting "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
 
 	stocante "stoc/x/stoc/ante"
 )
@@ -27,21 +25,20 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		txFeeChecker = evmante.NewDynamicFeeChecker(&feemarketParams)
 	}
 
-	// SA-AUDIT-2026-06-07 M1 + LOW-4 (round 2 re-audit R2-M1, R2-LOW4): the
-	// disabled msg type list is shared between the depth-0 pre-sig screen
-	// (TopLevelAuthzMsgExecScreenDecorator) and the post-fee recursive
-	// AuthzLimiterDecorator. The pre-sig screen catches the common
-	// shallow attack (single authz.MsgExec wrapping a disabled type) without
+	// SA-AUDIT-2026-06-07 M1 + LOW-4 (round 2 R2-M1, R2-LOW4), refined by
+	// SA-AUDIT-2026-06-08 fix15-2: the disabled msg type list is shared
+	// between the pre-sig AuthzPreSigScreenDecorator and the post-fee
+	// recursive cosmosante.NewAuthzLimiterDecorator. The pre-sig screen
+	// catches the common shallow attacks (authz.MsgExec up to depth
+	// AuthzPreSigScreenMaxDepth, and authz.MsgGrant at depth 0) without
 	// spending ecrecover; the recursive AuthzLimiter post-fee catches deep
 	// nesting (up to maxNestedMsgs=7 in cosmos-evm). Both layers MUST agree
-	// on the disabled list — keep them constructed from the same slice
-	// literal below.
-	authzDisabledMsgTypes := []string{
-		sdk.MsgTypeURL(&evmtypes.MsgEthereumTx{}),
-		sdk.MsgTypeURL(&sdkvesting.MsgCreateVestingAccount{}),
-		sdk.MsgTypeURL(&sdkvesting.MsgCreatePermanentLockedAccount{}),
-		sdk.MsgTypeURL(&sdkvesting.MsgCreatePeriodicVestingAccount{}),
-	}
+	// on the disabled list — both call AuthzDisabledMsgTypes() so a single
+	// source of truth feeds both decorators. The package-level
+	// TestAuthzDisabledMsgTypes_StableInvariant test in
+	// top_level_authz_screen_test.go pins the slice contents so a future
+	// edit to ONE layer's blocklist that forgets the other surfaces in CI.
+	authzDisabledMsgTypes := AuthzDisabledMsgTypes()
 
 	return sdk.ChainAnteDecorators(
 		cosmosante.NewRejectMessagesDecorator(), // reject MsgEthereumTxs
