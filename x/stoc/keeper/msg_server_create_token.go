@@ -40,6 +40,33 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		"creator", canonicalCreator)
 	// Create a token object
 
+	// SA-AUDIT-2026-06-07 LOW-2 (round 2 re-audit R2-LOW2): the fix13 MED-4 fix
+	// canonicalized token.Creator but missed two adjacent bech32 fields the
+	// same uppercase-Normalize trick can brick / dedup-bypass:
+	//   (a) token.Distributions[i].Address — was persisted with caller's
+	//       literal case. ValidateBasic's seenAddrs string-compare dedup
+	//       (types/msg_create_token.go:102-110) treats "stoc1abc" and
+	//       "STOC1ABC" as distinct keys, so a creator can split the same
+	//       wallet across two entries that both canonicalize to the same
+	//       AccAddress. Persistence/UX defect today, not a theft vector
+	//       (handler resolves both to the same canonical AccAddress and
+	//       sends the combined balance there), but the stored
+	//       Distributions slice ends up with a duplicate-canonical-address
+	//       footprint that downstream indexers / explorers render as two
+	//       separate holders.
+	//   (b) token.Tax.RecipientAddress — was persisted from msg.Tax raw.
+	//       Subsequent tax PostHandler bech32-validates the field on every
+	//       send (tax_post.go:204) and canonicalizes at compare time
+	//       (tax_post.go:208), so the live runtime is already safe per
+	//       fix11 M1. But the persisted RAW form leaks the input case to
+	//       indexers + event attributes and is inconsistent with the
+	//       canonicalized token.Creator stored two lines below.
+	//
+	// Canonicalize both on the way in so token.Distributions and
+	// token.Tax.RecipientAddress mirror the MED-4 invariant for
+	// token.Creator: every bech32 stored under this handler is the
+	// AccAddress.String() canonical lowercase form, regardless of caller
+	// input case.
 	distributions := msg.Distributions
 	if len(distributions) == 0 {
 		distributions = []types.WalletDistribution{
@@ -48,12 +75,36 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 				Percent: 100,
 			},
 		}
+	} else {
+		canonicalDistributions := make([]types.WalletDistribution, 0, len(distributions))
+		for i, d := range distributions {
+			distAddr, distErr := sdk.AccAddressFromBech32(d.Address)
+			if distErr != nil {
+				return nil, sdkerrors.Wrapf(types.ErrInvalidCreatorAddress,
+					"invalid distributions[%d] address %q (%s)", i, d.Address, distErr)
+			}
+			canonicalDistributions = append(canonicalDistributions, types.WalletDistribution{
+				Address: distAddr.String(),
+				Percent: d.Percent,
+			})
+		}
+		distributions = canonicalDistributions
 	}
 	taxToUse := msg.Tax
 	if taxToUse.Percent.IsNil() {
 		taxToUse = types.TokenTax{
 			Percent:          math.LegacyZeroDec(),
 			RecipientAddress: "",
+		}
+	} else if taxToUse.RecipientAddress != "" {
+		taxRecipAddr, taxRecipErr := sdk.AccAddressFromBech32(taxToUse.RecipientAddress)
+		if taxRecipErr != nil {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidTokenAmount,
+				"invalid tax.recipient_address %q (%s)", taxToUse.RecipientAddress, taxRecipErr)
+		}
+		taxToUse = types.TokenTax{
+			Percent:          taxToUse.Percent,
+			RecipientAddress: taxRecipAddr.String(),
 		}
 	}
 	// Build token for validation BEFORE incrementing counter

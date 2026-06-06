@@ -403,6 +403,82 @@ func TestCreateToken_UppercaseCreator_StoredAsCanonicalLowercase(t *testing.T) {
 		"MED-4: default distribution address must use canonicalized creator")
 }
 
+// SA-AUDIT-2026-06-07 LOW-2 regression coverage (R2-LOW2): fix14 extends the
+// MED-4 canonicalization to token.Distributions[i].Address and
+// token.Tax.RecipientAddress. Verify that uppercase entries on either field
+// are persisted in canonical lowercase form.
+func TestCreateToken_UppercaseDistributions_StoredAsCanonical(t *testing.T) {
+	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	canonicalCreator := creatorAddr.String()
+	upperCreator := strings.ToUpper(canonicalCreator)
+	recipientAddr := sdk.AccAddress([]byte("recipient_addr_1234"))
+	canonicalRecipient := recipientAddr.String()
+	upperRecipient := strings.ToUpper(canonicalRecipient)
+
+	mockBank.Balances[canonicalCreator] = sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, math.NewInt(200_000_000)))
+
+	msg := &types.MsgCreateToken{
+		Creator:       canonicalCreator,
+		Name:          "Dist Uppercase",
+		Symbol:        "DUP",
+		InitialSupply: math.NewInt(1_000_000),
+		TotalSupply:   math.NewInt(1_000_000),
+		Decimals:      6,
+		Logo:          "https://example.com/logo.png",
+		Distributions: []types.WalletDistribution{
+			{Address: upperCreator, Percent: 60},
+			{Address: upperRecipient, Percent: 40},
+		},
+	}
+
+	_, err := ms.CreateToken(ctx, msg)
+	require.NoError(t, err)
+
+	stored, found := k.GetToken(ctx, "DUP_0")
+	require.True(t, found)
+	require.Len(t, stored.Distributions, 2)
+	require.Equal(t, canonicalCreator, stored.Distributions[0].Address,
+		"LOW-2: distributions[0].Address must persist canonical lowercase")
+	require.Equal(t, canonicalRecipient, stored.Distributions[1].Address,
+		"LOW-2: distributions[1].Address must persist canonical lowercase")
+}
+
+func TestCreateToken_UppercaseTaxRecipient_StoredAsCanonical(t *testing.T) {
+	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	recipientAddr := sdk.AccAddress([]byte("tax_recipient_______"))
+	canonicalRecipient := recipientAddr.String()
+	upperRecipient := strings.ToUpper(canonicalRecipient)
+
+	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, math.NewInt(200_000_000)))
+
+	msg := &types.MsgCreateToken{
+		Creator:       creator,
+		Name:          "Tax Uppercase",
+		Symbol:        "TUP",
+		InitialSupply: math.NewInt(1_000_000),
+		TotalSupply:   math.NewInt(1_000_000),
+		Decimals:      6,
+		Logo:          "https://example.com/logo.png",
+		Tax: types.TokenTax{
+			Percent:          math.LegacyMustNewDecFromStr("0.05"),
+			RecipientAddress: upperRecipient,
+		},
+	}
+
+	_, err := ms.CreateToken(ctx, msg)
+	require.NoError(t, err)
+
+	stored, found := k.GetToken(ctx, "TUP_0")
+	require.True(t, found)
+	require.Equal(t, canonicalRecipient, stored.Tax.RecipientAddress,
+		"LOW-2: token.Tax.RecipientAddress must persist canonical lowercase")
+}
+
 // SA-AUDIT-2026-06-06 MED-4: the read-side counterpart in ReleaseTokens
 // canonicalizes msg.Creator before comparing against token.Creator. Verify
 // that a release call with an uppercase msg.Creator succeeds when the
