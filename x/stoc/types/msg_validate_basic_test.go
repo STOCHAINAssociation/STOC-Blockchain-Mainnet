@@ -595,3 +595,62 @@ func TestMsgBurnToken_ValidateBasic(t *testing.T) {
 		})
 	}
 }
+
+// SA-AUDIT-2026-06-08 fix15-4 regression coverage (R3 fix14-regression-1 +
+// ante-chain-cumulative-1 + token-keeper-fresh-0): ValidateBasic must dedup
+// distribution addresses by canonical bech32 form so an uppercase /
+// lowercase pair that resolves to the same AccAddress is caught at the
+// validation gate rather than slipping to the handler.
+func TestMsgCreateToken_ValidateBasic_UppercaseDedup(t *testing.T) {
+	oldBondDenom := sdk.DefaultBondDenom
+	sdk.DefaultBondDenom = "ustoc"
+	defer func() { sdk.DefaultBondDenom = oldBondDenom }()
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	upperCreator := strings.ToUpper(creator)
+	require.NotEqual(t, creator, upperCreator, "test premise: cases must differ")
+
+	msg := types.MsgCreateToken{
+		Creator:       creator,
+		Name:          "My Token",
+		Symbol:        "MYT",
+		Decimals:      6,
+		Logo:          "https://example.com/logo.png",
+		InitialSupply: math.NewInt(500),
+		TotalSupply:   math.NewInt(1000),
+		Unlimited:     false,
+		Distributions: []types.WalletDistribution{
+			{Address: creator, Percent: 50},
+			{Address: upperCreator, Percent: 50},
+		},
+	}
+	err := msg.ValidateBasic()
+	require.Error(t, err, "fix15-4: same-wallet split across case-different entries must be rejected at ValidateBasic")
+	require.Contains(t, err.Error(), "duplicate distribution address")
+}
+
+func TestMsgReleaseTokens_ValidateBasic_UppercaseDedup(t *testing.T) {
+	oldBondDenom := sdk.DefaultBondDenom
+	sdk.DefaultBondDenom = "ustoc"
+	defer func() { sdk.DefaultBondDenom = oldBondDenom }()
+
+	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
+	creator := creatorAddr.String()
+	recipientAddr := sdk.AccAddress([]byte("recipient_addr_456"))
+	canonical := recipientAddr.String()
+	upper := strings.ToUpper(canonical)
+	require.NotEqual(t, canonical, upper)
+
+	msg := types.MsgReleaseTokens{
+		Creator: creator,
+		Symbol:  "MYT",
+		Distributions: []types.ReleaseRecipient{
+			{Address: canonical, Amount: math.NewInt(100)},
+			{Address: upper, Amount: math.NewInt(50)},
+		},
+	}
+	err := msg.ValidateBasic()
+	require.Error(t, err, "fix15-4: case-variant duplicate must be rejected at ValidateBasic")
+	require.Contains(t, err.Error(), "appears more than once")
+}

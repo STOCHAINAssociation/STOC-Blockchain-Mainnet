@@ -99,15 +99,31 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	}
 	if len(m.Distributions) > 0 {
 		totalPercent := uint32(0)
+		// SA-AUDIT-2026-06-08 fix15-4 (R3 fix14-regression-1 +
+		// ante-chain-cumulative-1): key seenAddrs by the canonical bech32
+		// form (AccAddressFromBech32(addr).String()) instead of the raw
+		// caller string. cosmos-sdk Normalize accepts all-uppercase bech32,
+		// so pre-fix15 the dedup compared "stoc1abc..." against
+		// "STOC1ABC..." as distinct strings and a creator could split the
+		// same wallet across two entries that both canonicalized to the
+		// same AccAddress. The handler resolved both to the same wallet
+		// and sent the combined balance there (no theft), but the
+		// persisted Token.Distributions slice ended up with a
+		// duplicate-canonical-address footprint that indexers rendered as
+		// two separate holders. Canonical key closes the gap at the
+		// ValidateBasic gate so the caller sees a clear duplicate error
+		// before the handler runs.
 		seenAddrs := make(map[string]bool, len(m.Distributions))
 		for _, dist := range m.Distributions {
-			if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
+			parsedAddr, err := sdk.AccAddressFromBech32(dist.Address)
+			if err != nil {
 				return errorsmod.Wrapf(ErrInvalidAddress, "invalid distribution address: %s", err)
 			}
-			if seenAddrs[dist.Address] {
+			canonical := parsedAddr.String()
+			if seenAddrs[canonical] {
 				return errorsmod.Wrap(ErrInvalidToken, "duplicate distribution address")
 			}
-			seenAddrs[dist.Address] = true
+			seenAddrs[canonical] = true
 			if dist.Percent == 0 || dist.Percent > 100 {
 				return errorsmod.Wrap(ErrInvalidToken, "distribution percentage must be between 1 and 100")
 			}

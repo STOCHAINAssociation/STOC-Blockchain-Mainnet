@@ -55,17 +55,24 @@ func (m *MsgReleaseTokens) ValidateBasic() error {
 			len(m.Distributions), MaxMultiSendOutputs)
 	}
 
+	// SA-AUDIT-2026-06-08 fix15-4 (R3 token-keeper-fresh-0 +
+	// completeness-critic-r3-1): key seenAddrs by canonical bech32 form so
+	// uppercase / mixed-case duplicates surface here at ValidateBasic
+	// rather than at the bank-op layer. Mirror of the fix15-4 change in
+	// types/msg_create_token.go ValidateBasic.
 	seenAddrs := make(map[string]struct{}, len(m.Distributions))
 	for i, dist := range m.Distributions {
-		if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
+		parsedAddr, err := sdk.AccAddressFromBech32(dist.Address)
+		if err != nil {
 			return errorsmod.Wrapf(err, "distributions[%d]: invalid address", i)
 		}
-		if _, dup := seenAddrs[dist.Address]; dup {
+		canonical := parsedAddr.String()
+		if _, dup := seenAddrs[canonical]; dup {
 			return errorsmod.Wrapf(ErrInvalidAmount,
 				"distributions[%d]: address %s appears more than once — collapse to a single entry",
-				i, dist.Address)
+				i, canonical)
 		}
-		seenAddrs[dist.Address] = struct{}{}
+		seenAddrs[canonical] = struct{}{}
 
 		if dist.Amount.IsNil() || dist.Amount.IsZero() || dist.Amount.IsNegative() {
 			return errorsmod.Wrapf(ErrInvalidAmount, "distributions[%d]: amount must be positive (got %s)", i, dist.Amount.String())
