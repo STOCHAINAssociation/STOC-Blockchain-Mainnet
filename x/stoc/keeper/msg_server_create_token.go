@@ -193,10 +193,17 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	}
 
 	// Mint initial supply and distribute according to distribution list
-	creator, err := sdk.AccAddressFromBech32(msg.Creator)
-	if err != nil {
-		return nil, sdkerrors.Wrap(err, "invalid creator address")
-	}
+	// SA-AUDIT-2026-06-08 fix15-6 (round 3 evm-cosmos-fresh-4 +
+	// token-keeper-fresh-7 R3 findings): drop the redundant
+	// sdk.AccAddressFromBech32(msg.Creator) parse here. msg.Creator was
+	// already parsed at the top of this handler into creatorAddr (line
+	// ~31) and the canonical string is available as canonicalCreator. The
+	// pre-fix15-6 code re-parsed into a shadowed local `creator` and
+	// `err` (the second parse can only succeed because the first parse
+	// succeeded), then used `creator` once in a debug-style logger call
+	// far below. Use creatorAddr directly so the second parse + the
+	// shadow of `err` are gone.
+	creator := creatorAddr
 
 	// InitialSupply and TotalSupply are in raw minimal units (decimals field is metadata only)
 	initialSupply := token.InitialSupply
