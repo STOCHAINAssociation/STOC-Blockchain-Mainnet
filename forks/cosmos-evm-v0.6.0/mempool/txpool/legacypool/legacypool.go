@@ -1379,7 +1379,32 @@ func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, 
 	if reset != nil {
 		pool.demoteUnexecutables()
 		if reset.newHead != nil {
-			if pool.chainconfig.IsLondon(new(big.Int).Add(reset.newHead.Number, big.NewInt(1))) {
+			// SA-AUDIT-2026-06-09 testnet-bootstrap-fix: defensive nil-BaseFee
+			// guard for fresh-genesis EVM deployments. On a chain whose
+			// just-committed block has not yet populated the EIP-1559
+			// header.BaseFee field (typical for a brand-new EVM-enabled
+			// testnet that has not yet executed any EIP-1559 transaction
+			// AND for which the feemarket module has not written a base fee
+			// into block headers), reset.newHead.BaseFee may be nil while
+			// chainconfig.IsLondon(newHead.Number+1) returns true (London is
+			// active from block 0 in the default cosmos-evm v0.6.0
+			// ChainConfig). go-ethereum's eip1559.CalcBaseFee dereferences
+			// parent.BaseFee at line 88 inside new(big.Int).Set(...) →
+			// SIGSEGV nil pointer dereference, panic on every block commit,
+			// validator restart loop.
+			//
+			// Production chains (mainnet / existing chains) never hit this
+			// branch because every committed block past genesis already has
+			// a populated BaseFee, so the guard is a no-op there. The
+			// fallback to pool.priced.Reheap() is the same path the
+			// non-London branch already uses — semantically equivalent to
+			// "no base fee data, just reorganize the price queue".
+			//
+			// Discovered during STOChain testnet v2 redeploy 2026-06-09 with
+			// fix15 binary deployed directly (no 3-phase upgrade). Minimum-
+			// surface workaround that lets us bootstrap a brand-new
+			// EVM-enabled chain without the mainnet-replay phased pattern.
+			if pool.chainconfig.IsLondon(new(big.Int).Add(reset.newHead.Number, big.NewInt(1))) && reset.newHead.BaseFee != nil {
 				pendingBaseFee := eip1559.CalcBaseFee(pool.chainconfig, reset.newHead)
 				pool.priced.SetBaseFee(pendingBaseFee)
 			} else {
