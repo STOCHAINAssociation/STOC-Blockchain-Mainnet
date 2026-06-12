@@ -76,6 +76,16 @@ import (
 //
 // Matches the design pattern of IBCCustomTokenRestriction: block custom stoc
 // tokens from any path other than wallet-to-wallet transfer + self-burn.
+//
+// SA-AUDIT-2026-06-11 fix19 A16-BOUNDARY-I2 — forward-defense note on
+// feegrant: there is deliberately no feegrant case in the blocklist above
+// because the feegrant+custom-token combination is a DEAD PATH today — fee
+// denoms are always native (feemarket/ante reject custom denoms as fees),
+// so a feegrant allowance can never move custom-token value by itself, and
+// the feegrant module account is bank-blocked (A16-APP-H2) so coins cannot
+// be parked there either. IF a future change ever allows non-native fee
+// denoms, revisit this walker AND the AllowedMsgAllowance msg-type surface
+// at the same time.
 type CustomTokenChainOpsRestriction struct {
 	k keeper.Keeper
 }
@@ -160,6 +170,28 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 		// -------- Governance v1 (current) --------
 		case *govv1types.MsgSubmitProposal:
 			if err := d.rejectCustomTokens(ctx, m.InitialDeposit, "gov.v1.MsgSubmitProposal.InitialDeposit", m.Proposer, "gov_module"); err != nil {
+				return err
+			}
+			// SA-AUDIT-2026-06-10 fix18 A15-BOUNDARY-M2: gov v1 proposals
+			// dispatch arbitrary inner messages from the gov module account on
+			// execution. Bank SendRestriction catches inner bank.MsgSend
+			// (gov is ModuleAccountI), but MsgFundCommunityPool /
+			// MsgCreateVestingAccount / erc20.MsgConvertCoin embedded in a
+			// gov v1 proposal are NOT cleanly validated at runtime (they
+			// either panic in their respective keepers or trip the EvmBank
+			// gate with a generic error). Recurse here so the proposal is
+			// rejected at submit time with a clear, per-msg error — matches
+			// the group.MsgSubmitProposal recursion above. insideProposalWrapper
+			// flag flipped because gov inner messages execute from the gov
+			// module account, bypassing both ante and tax PostDecorator.
+			if depth >= stoctypes.MaxAuthzUnwrapDepth {
+				return fmt.Errorf("gov.v1 MsgSubmitProposal nesting depth exceeded (%d)", depth)
+			}
+			govInnerMsgs, err := m.GetMsgs()
+			if err != nil {
+				return fmt.Errorf("failed to unwrap gov.v1 MsgSubmitProposal inner messages: %w", err)
+			}
+			if err := d.checkMsgs(ctx, govInnerMsgs, depth+1, true); err != nil {
 				return err
 			}
 		case *govv1types.MsgDeposit:

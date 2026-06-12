@@ -248,14 +248,15 @@ func TestReleaseTokens_TokenNotFound(t *testing.T) {
 	require.ErrorIs(t, err, types.ErrTokenNotFound)
 }
 
-// SA-AUDIT-2026-06-08 fix15-3 regression coverage (R3 token-keeper-fresh-1):
-// MsgReleaseTokens persists the recipient via SendCoinsFromModuleToAccount
-// using the canonical AccAddress, but the per-recipient event stream was
-// emitting the raw msg.dist.Address. fix15-3 closes that drift — the
-// EventTypeReleaseTokens.AttributeKeyRecipient now carries the canonical
-// lowercase bech32 form so indexers see the same address whether they read
-// persisted Token.Distributions or stream EventTypeReleaseTokens.
-func TestReleaseTokens_UppercaseRecipient_EventEmitsCanonical(t *testing.T) {
+// SA-AUDIT-2026-06-08 fix15-3 regression coverage (R3 token-keeper-fresh-1),
+// REWRITTEN for SA-AUDIT-2026-06-11 fix19 A16-STO-M2: non-canonical (e.g.
+// ALL-UPPERCASE) recipients in the release manifest are now REJECTED at the
+// handler gate instead of silently canonicalized. The fix15-3 concern (event
+// stream emitting raw msg bytes that diverge from the persisted canonical
+// form) is closed one layer earlier — non-canonical input never reaches the
+// bank op or the event emitter at all. Canonical input still succeeds and
+// still emits the canonical form (second half of this test).
+func TestReleaseTokens_UppercaseRecipient_RejectedNonCanonical(t *testing.T) {
 	k, ms, ctx, _ := setupMsgServerWithMock(t)
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
 	creator := creatorAddr.String()
@@ -281,6 +282,9 @@ func TestReleaseTokens_UppercaseRecipient_EventEmitsCanonical(t *testing.T) {
 	}
 	require.NoError(t, k.SetToken(ctx, token))
 
+	// A16-STO-M2: uppercase manifest entry must be rejected with a
+	// per-index canonical-mismatch error, mirroring MsgCreateToken
+	// (fix16 A14-STOC-M1).
 	_, err := ms.ReleaseTokens(ctx, &types.MsgReleaseTokens{
 		Creator: creator,
 		Symbol:  denom,
@@ -288,9 +292,20 @@ func TestReleaseTokens_UppercaseRecipient_EventEmitsCanonical(t *testing.T) {
 			{Address: upperRecipient, Amount: math.NewInt(100)},
 		},
 	})
-	require.NoError(t, err, "fix15-3: uppercase recipient must succeed at the bank-op layer (cosmos-sdk Normalize accepts uppercase)")
+	require.Error(t, err, "A16-STO-M2: non-canonical recipient must be rejected")
+	require.Contains(t, err.Error(), "not canonical bech32")
 
-	// Verify the per-recipient event surfaced the canonical lowercase form.
+	// Canonical input still succeeds and the event stream still carries
+	// the canonical form (fix15-3 invariant preserved).
+	_, err = ms.ReleaseTokens(ctx, &types.MsgReleaseTokens{
+		Creator: creator,
+		Symbol:  denom,
+		Distributions: []types.ReleaseRecipient{
+			{Address: canonicalRecipient, Amount: math.NewInt(100)},
+		},
+	})
+	require.NoError(t, err, "canonical recipient must still succeed")
+
 	events := ctx.EventManager().Events()
 	var found bool
 	for _, ev := range events {
@@ -300,7 +315,7 @@ func TestReleaseTokens_UppercaseRecipient_EventEmitsCanonical(t *testing.T) {
 		for _, a := range ev.Attributes {
 			if a.Key == types.AttributeKeyRecipient {
 				require.Equal(t, canonicalRecipient, a.Value,
-					"fix15-3: AttributeKeyRecipient must emit canonical lowercase form (caller passed uppercase)")
+					"fix15-3: AttributeKeyRecipient must emit canonical lowercase form")
 				found = true
 			}
 		}

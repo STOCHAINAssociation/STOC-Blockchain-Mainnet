@@ -49,10 +49,38 @@ mkdir -p "$OUT_DIR"
 # Optional Telegram notification. The env file lives outside the stoc-current-dev
 # repository and must not be committed. Sourcing it is best-effort: missing file
 # or missing variables simply skip the ping at the end of the run.
+#
+# SA-AUDIT-2026-06-10 fix16 A14-CROSS-H1: do NOT `source` the env file
+# directly — `source` executes arbitrary shell, so a tampered devnet.env
+# outside the repo's review surface can run as the build operator. Parse
+# only KEY=VALUE lines for the three Telegram keys we use, regex-validate
+# values, and refuse files with world/group write bits.
 TELEGRAM_ENV="$REPO_ROOT/../private/telegram/devnet.env"
 if [[ -f "$TELEGRAM_ENV" ]]; then
-  # shellcheck disable=SC1090
-  source "$TELEGRAM_ENV"
+  perms="$(stat -c %a "$TELEGRAM_ENV" 2>/dev/null || stat -f %A "$TELEGRAM_ENV" 2>/dev/null || echo 600)"
+  # SA-AUDIT-2026-06-11 fix19 A16-CROSS-L1: accept optional leading digit —
+  # GNU stat prints 4 chars when setuid/setgid/sticky bits are set (e.g.
+  # "1644"), which the 3-char pattern silently classified as "safe".
+  # A17 follow-up: switch from a last-digit-only regex (missed group-write
+  # modes like 660/620) to an arithmetic mask. `8#$perms` parses the octal
+  # mode; `& 022` catches BOTH group-write (020) and other-write (002).
+  if (( 8#${perms#0} & 022 )); then
+    echo "[telegram] refusing to read $TELEGRAM_ENV — file is world/group writable (perms=$perms)" >&2
+  else
+    while IFS='=' read -r key value; do
+      value="${value%\"}"; value="${value#\"}"
+      value="${value%\'}"; value="${value#\'}"
+      case "$key" in
+        TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|TELEGRAM_TOPIC_ID)
+          if [[ "$value" =~ ^[A-Za-z0-9_:./-]+$ ]]; then
+            export "$key"="$value"
+          else
+            echo "[telegram] ignoring $key — value contains unsafe chars" >&2
+          fi
+          ;;
+      esac
+    done < <(grep -E '^[A-Z_][A-Z0-9_]*=' "$TELEGRAM_ENV" || true)
+  fi
 fi
 
 notify_telegram() {

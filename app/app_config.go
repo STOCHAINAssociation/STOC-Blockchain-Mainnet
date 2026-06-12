@@ -198,6 +198,14 @@ var (
 		// SendCoinsFromAccountToModule (used by MsgBurnToken) bypasses this check
 		// by SDK design, so legitimate keeper flows continue to work.
 		stocmoduletypes.ModuleName,
+		// SA-AUDIT-2026-06-11 fix19 A16-APP-H2: block the feegrant module
+		// account. x/stoc tax is a PostDecorator on MsgSend and does NOT
+		// fire on module-account-sourced sends — coins parked in (or routed
+		// through) the feegrant module account would form a tax-bypass
+		// corridor for custom-token transfers. Feegrant allowance accounting
+		// is pure state (grants never require coins to sit in the module
+		// account), so blocking direct MsgSend to it loses nothing.
+		feegrant.ModuleName,
 		// We allow the following module accounts to receive funds:
 		// govtypes.ModuleName
 	}

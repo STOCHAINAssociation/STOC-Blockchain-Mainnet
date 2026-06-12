@@ -300,7 +300,19 @@ func NewRPCPendingTransaction(tx *ethtypes.Transaction, current *ethtypes.Header
 		blockTime   = uint64(0)
 	)
 	if current != nil {
-		baseFee = eip1559.CalcBaseFee(config, current)
+		// SA-AUDIT-2026-06-10 fix16 A14-FORKS-H1: companion guard to the
+		// commit 176066b nil-BaseFee patch in mempool/txpool/legacypool.
+		// On a fresh-genesis EVM chain whose feemarket has not yet
+		// populated header.BaseFee (EthHeaderFromTendermint at this file
+		// line ~158 returns nil when feemarket baseFee is zero), eip1559.CalcBaseFee
+		// dereferences parent.BaseFee → SIGSEGV in the JSON-RPC goroutine.
+		// A single txpool_content / txpool_contentFrom call from any external
+		// client crashes RPC for that endpoint. Mirror the runReorg guard:
+		// when BaseFee is nil, leave baseFee nil — NewRPCTransaction already
+		// handles nil baseFee by falling back to tx.GasFeeCap().
+		if current.BaseFee != nil {
+			baseFee = eip1559.CalcBaseFee(config, current)
+		}
 		blockNumber = current.Number.Uint64()
 		blockTime = current.Time
 	}

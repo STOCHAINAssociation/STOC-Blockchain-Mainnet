@@ -471,9 +471,32 @@ func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, stateDB *statedb.StateD
 		// Apply EIP-7702 authorizations.
 		if msg.SetCodeAuthorizations != nil {
 			for _, auth := range msg.SetCodeAuthorizations {
-				// Note errors are ignored, we simply skip invalid authorizations here.
+				// SA-AUDIT-2026-06-10 fix18 A15-CRYPTO-M3: structured Debug log
+				// so operators can see WHICH authorization was rejected (chain
+				// id / address / nonce) without reading the full marshalled
+				// SetCodeAuthorization. fix17-H2 hard-rejects ChainID=0 — this
+				// surfaces the rejection in logs at full fidelity. Per spec we
+				// must continue (invalid auths are skipped, not the whole tx),
+				// so behavior is identical; only observability changes.
 				if err := k.applyAuthorization(&auth, stateDB, ethCfg.ChainID); err != nil {
-					k.Logger(ctx).Debug("failed to apply authorization", "error", err, "authorization", auth)
+					// SA-AUDIT-2026-06-11 fix19 A16-CRYPTO-I1: ChainID=0
+					// wildcard rejects log at Info — on a coin-type-118
+					// chain a wildcard authorization is the signature of a
+					// CROSS-CHAIN REPLAY attempt (fix17 A15-CRYPTO-H2
+					// threat model), not a user mistake, and prod log
+					// levels filter Debug out. Routine rejects (wrong
+					// concrete chain id, bad nonce, bad sig) stay Debug.
+					logFn := k.Logger(ctx).Debug
+					if auth.ChainID.IsZero() {
+						logFn = k.Logger(ctx).Info
+					}
+					logFn(
+						"eip-7702 authorization rejected",
+						"error", err,
+						"auth_chain_id", auth.ChainID.String(),
+						"auth_address", auth.Address.Hex(),
+						"auth_nonce", auth.Nonce,
+					)
 				}
 			}
 		}
@@ -618,8 +641,31 @@ func (k *Keeper) applyAuthorization(auth *ethtypes.SetCodeAuthorization, state v
 
 // validateAuthorization validates an EIP-7702 authorization against the state.
 func (k *Keeper) validateAuthorization(auth *ethtypes.SetCodeAuthorization, state vm.StateDB, chainID *big.Int) (authority common.Address, err error) {
-	// Verify chain ID is null or equal to current chain ID.
-	if !auth.ChainID.IsZero() && auth.ChainID.CmpBig(chainID) != 0 {
+	// SA-AUDIT-2026-06-10 fix17 A15-CRYPTO-H2: STOChain uses coin-type 118
+	// (Cosmos standard) — the same secp256k1 keypair signs valid txs on every
+	// cosmos-evm sibling chain. EIP-7702's ChainID=0 "any chain" wildcard
+	// therefore lets a SetCodeAuthorization minted on a sibling chain be
+	// replayed against the same EOA on STOChain, installing attacker-chosen
+	// delegation on the victim's account. Reject the wildcard entirely and
+	// require chain-id-bound authorizations. This is a strict deviation from
+	// EIP-7702 §verification rationalized by the shared-key threat model; can
+	// be relaxed via gov param if a future use case justifies wildcard.
+	//
+	// SA-AUDIT-2026-06-11 fix19 A16-CRYPTO-L1 — DETERMINISM NOTE for future
+	// upstream re-syncs: because this reject fires BEFORE auth.Authority()
+	// recovery and BEFORE state.AddAddressToAccessList(authority) below,
+	// a ChainID=0 authorization on STOChain never warms the authority
+	// address. Upstream go-ethereum (wildcard allowed) recovers + warms it
+	// even when other checks fail, so gas-used may diverge from upstream by
+	// up to one cold-vs-warm access delta (≤2400 gas) per ChainID=0 auth in
+	// the tx. All STOChain nodes run this same fork, so consensus is
+	// unaffected — but DO NOT blindly replace this function on the next
+	// cosmos-evm bump. Pinned by TestValidateAuthorizationRejectsChainIDZero.
+	if auth.ChainID.IsZero() {
+		return authority, fmt.Errorf("%w: STOChain rejects EIP-7702 ChainID=0 wildcard (coin-type 118 shared-key replay risk)", core.ErrAuthorizationWrongChainID)
+	}
+	// Verify chain ID equals current chain ID.
+	if auth.ChainID.CmpBig(chainID) != 0 {
 		return authority, core.ErrAuthorizationWrongChainID
 	}
 	// Limit nonce to 2^64-1 per EIP-2681.

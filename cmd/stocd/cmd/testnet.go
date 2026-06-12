@@ -272,8 +272,19 @@ func getCommandArgs(appOpts servertypes.AppOptions) (valArgs, error) {
 	// validate  and set accounts to fund
 	accountsString := cast.ToString(appOpts.Get(flagAccountsToFund))
 
+	// SA-AUDIT-2026-06-11 fix19 A16-CROSS-L2: bound the list. Each entry
+	// triggers a MintCoins of 1000 STOC in initAppForTestnet — an unbounded
+	// comma list (e.g. a generated file pasted into the flag) would mint
+	// without limit. 100 covers any realistic local-testnet need. Dev-only
+	// command (build tag !stocrelease).
+	const maxAccountsToFund = 100
+	accountEntries := strings.Split(accountsString, ",")
+	if len(accountEntries) > maxAccountsToFund {
+		return args, fmt.Errorf("--%s lists %d accounts, max %d", flagAccountsToFund, len(accountEntries), maxAccountsToFund)
+	}
+
 	expectedPrefix := sdk.GetConfig().GetBech32AccountAddrPrefix()
-	for _, account := range strings.Split(accountsString, ",") {
+	for _, account := range accountEntries {
 		if account != "" {
 			// SA-2026-06-02 LOW-12: sdk.AccAddressFromBech32 does NOT validate
 			// HRP, so a `cosmos1...` address typed by mistake would be funded

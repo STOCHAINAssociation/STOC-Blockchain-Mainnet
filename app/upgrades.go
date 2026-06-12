@@ -203,6 +203,12 @@ func (app *App) RegisterUpgradeHandlers() {
 			feemarketParams.NoBaseFee = true
 			feemarketParams.BaseFee = math.LegacyZeroDec()
 			feemarketParams.MinGasPrice = math.LegacyZeroDec()
+			// SA-AUDIT-2026-06-10 fix16 A14-APP-M5: full Validate() catches
+			// any other internal invariant the cherry-picked checks above
+			// don't cover (MinBaseFee bounds, gas-target relationships).
+			if err := feemarketParams.Validate(); err != nil {
+				return vm, fmt.Errorf("v2-evm upgrade aborted: post-migration feemarket params invalid: %w", err)
+			}
 			if err := app.FeeMarketKeeper.SetParams(cacheCtx, feemarketParams); err != nil {
 				return vm, fmt.Errorf("failed to set feemarket params: %w", err)
 			}
@@ -254,6 +260,10 @@ func (app *App) RegisterUpgradeHandlers() {
 			feemarketParams.NoBaseFee = true
 			feemarketParams.BaseFee = math.LegacyZeroDec()
 			feemarketParams.MinGasPrice = math.LegacyNewDec(1_000_000_000)
+			// SA-AUDIT-2026-06-10 fix16 A14-APP-M5: full Validate() defense-in-depth.
+			if err := feemarketParams.Validate(); err != nil {
+				return vm, fmt.Errorf("v3-fix-evm-denom upgrade aborted: post-migration feemarket params invalid: %w", err)
+			}
 			if err := app.FeeMarketKeeper.SetParams(cacheCtx, feemarketParams); err != nil {
 				return vm, fmt.Errorf("failed to set feemarket MinGasPrice: %w", err)
 			}
@@ -315,6 +325,10 @@ func (app *App) RegisterUpgradeHandlers() {
 			params.NoBaseFee = false
 			params.BaseFee = math.LegacyNewDecWithPrec(1, 3)     // 0.001 ustoc/gas = 1 gwei effective
 			params.MinGasPrice = math.LegacyNewDecWithPrec(1, 3) // same — feemarket floor
+			// SA-AUDIT-2026-06-10 fix16 A14-APP-M5: full Validate() defense-in-depth.
+			if err := params.Validate(); err != nil {
+				return vm, fmt.Errorf("v5.0.0 upgrade aborted: post-migration feemarket params invalid: %w", err)
+			}
 			if err := app.FeeMarketKeeper.SetParams(cacheCtx, params); err != nil {
 				return vm, fmt.Errorf("failed to apply v5.0.0 feemarket params: %w", err)
 			}
@@ -396,13 +410,23 @@ func setEvmDenomFromStaking(app *App, sdkCtx sdk.Context) error {
 	existing, foundMeta := app.BankKeeper.GetDenomMetaData(sdkCtx, bondDenom)
 	existing.Base = bondDenom
 	existing.Display = displayDenom
-	existing.DenomUnits = []*banktypes.DenomUnit{
-		{Denom: bondDenom, Exponent: 0},
-		{Denom: displayDenom, Exponent: 6},
+	if !foundMeta {
+		// SA-AUDIT-2026-06-10 fix16 A14-CROSS-H3: previously this handler
+		// UNCONDITIONALLY overwrote Name/Symbol/DenomUnits on every replay
+		// of this upgrade height. Any subsequent governance MsgSetDenomMetadata
+		// (e.g. adding an "mstoc" DenomUnit, renaming Symbol) would be
+		// silently reverted whenever a new validator cold-synced from genesis
+		// through this upgrade height — producing app-hash divergence vs
+		// live-synced nodes on the next block that read metadata-derived
+		// state. Only write the full block on first-time init; on replay,
+		// leave Name/Symbol/DenomUnits alone and let governance own them.
+		existing.DenomUnits = []*banktypes.DenomUnit{
+			{Denom: bondDenom, Exponent: 0},
+			{Denom: displayDenom, Exponent: 6},
+		}
+		existing.Name = strings.ToUpper(displayDenom)
+		existing.Symbol = strings.ToUpper(displayDenom)
 	}
-	existing.Name = strings.ToUpper(displayDenom)
-	existing.Symbol = strings.ToUpper(displayDenom)
-	_ = foundMeta // keep for future telemetry if we want to log first-time writes
 	app.BankKeeper.SetDenomMetaData(sdkCtx, existing)
 
 	// Initialize EVM coin info from bank metadata + params → stores in KV store

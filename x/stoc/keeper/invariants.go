@@ -26,6 +26,15 @@ func RegisterInvariants(ir sdk.InvariantRegistry, k Keeper) {
 // trigger halt if state drift exists (and SA-C2 module-lock vulnerability
 // guaranteed drift would exist). Operators monitor `stoc_supply_drift`
 // events instead. To restore hard-halt behavior, set `broken = true` again.
+//
+// SA-AUDIT-2026-06-11 fix19 A16-STO-L2 (BY DESIGN per SA-H14, re-confirmed):
+// mint/burn/release handlers intentionally do NOT cross-check bank supply
+// inline — the per-block invariant here is the single detection point, and
+// it must stay non-halting. OPS REQUIREMENT: alerting must subscribe to the
+// `stoc_supply_drift` event (validator-watcher / BE indexer); a drift event
+// with no page = silent accounting divergence. Genesis boots get the strict
+// counterpart check in x/stoc/module/genesis.go (A16-STO-L4), where
+// panicking is safe because there is no liveness to protect yet.
 func SupplyInvariant(k Keeper) sdk.Invariant {
 	return func(ctx sdk.Context) (string, bool) {
 		var msg string

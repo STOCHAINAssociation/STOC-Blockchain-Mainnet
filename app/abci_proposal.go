@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"runtime/debug"
-	"strings"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -80,11 +79,51 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 		// proposer hitting the same adversarial tx → chain liveness halt.
 		// Fall back to inner default handler on panic so the block still
 		// proposes (loses Bug B cascade-skip benefit for THIS block only).
+		// SA-AUDIT-2026-06-10 fix17 A15-DELTA-H1 (regression from fix16 H1):
+		// the original nested-recover returned an empty block but did NOT
+		// evict the poison tx that caused the panic, so EVERY subsequent
+		// block re-panics on the same tx → empty-block DoS forever. We track
+		// `currentMemTx` as the iterator advances so the panic-recovery path
+		// can identify and remove the poison tx from the mempool, allowing
+		// future blocks to make progress.
+		var currentMemTx sdk.Tx
 		defer func() {
 			if r := recover(); r != nil {
-				h.logger.Error("PrepareProposal panic — falling back to default handler",
+				h.logger.Error("PrepareProposal panic — attempting poison-tx eviction + fallback",
 					"panic", r, "stack", string(debug.Stack()))
-				resp, err = h.inner.PrepareProposalHandler()(ctx, req)
+				// Best-effort evict the in-flight tx that triggered the panic.
+				// Ignore errors (Remove may report ErrTxNotFound if the tx was
+				// already invalidated elsewhere). This breaks the empty-block
+				// DoS loop by ensuring the next PrepareProposal cycle sees a
+				// clean mempool head.
+				if currentMemTx != nil && h.mp != nil {
+					if remErr := h.mp.Remove(currentMemTx); remErr != nil {
+						// SA-AUDIT-2026-06-10 fix18 A15-DELTA-L1: panic-path
+						// eviction failures are operationally significant —
+						// they mean the empty-block DoS guard could not
+						// confirm removal of the poison tx. Warn so prod
+						// log levels surface it (Debug is filtered out).
+						// ErrTxNotFound included is benign but rare enough
+						// to be worth a signal.
+						h.logger.Warn("PrepareProposal panic: poison-tx evict failed",
+							"err", remErr)
+					}
+				}
+				// Inner default handler also iterates the same mempool. After
+				// eviction the poison is gone; if a SECOND independent panic
+				// still fires (unrelated tx), the nested recover returns an
+				// empty block so chain liveness is preserved.
+				func() {
+					defer func() {
+						if r2 := recover(); r2 != nil {
+							h.logger.Error("PrepareProposal inner-fallback panic — returning empty block",
+								"panic", r2, "stack", string(debug.Stack()))
+							resp = &abci.ResponsePrepareProposal{Txs: nil}
+							err = nil
+						}
+					}()
+					resp, err = h.inner.PrepareProposalHandler()(ctx, req)
+				}()
 			}
 		}()
 
@@ -116,6 +155,17 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 			invalidTxs      []sdk.Tx
 		)
 
+		// SA-AUDIT-2026-06-10 fix18 A15-DELTA-M1: bound proposer memory
+		// under adversarial mempool spam. Empirically 5K txs all failing
+		// ante pushes transient heap >50MB per block (invalid sdk.Tx ptr
+		// retains the full decoded tree, ~10KB each). Cap invalidTxs at
+		// 1024 — excess remain in mempool one extra block and evict on
+		// next cycle. Iteration cap (8× invalidTxs cap) is defense-in-depth
+		// against a pathological mempool failing to terminate.
+		const maxInvalidTxsPerBlock = 1024
+		const maxIterations = 8 * maxInvalidTxsPerBlock
+		iterCount := 0
+
 		// Direct iterator — bypass SelectBy so we keep concrete type access.
 		iter := h.mp.Select(ctx, req.Txs)
 
@@ -132,13 +182,31 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 			if memTx == nil {
 				break
 			}
-
+			// SA-AUDIT-2026-06-10 fix18 A15-DELTA-M1: hard cap iteration
+			// count. Truncate proposal building rather than risk an
+			// unterminated loop on a misbehaving mempool.
+			iterCount++
+			if iterCount > maxIterations {
+				h.logger.Warn("PrepareProposal: maxIterations cap reached — truncating",
+					"iter_count", iterCount, "invalid_so_far", len(invalidTxs))
+				break
+			}
 			// SA-H4: detect non-advancing iterator and force-Next to escape loop.
 			if memTx == prevMemTx {
 				sameTxCount++
 				if sameTxCount >= 2 {
 					h.logger.Warn("PrepareProposal: iter not advancing on same memTx, forcing Next()",
 						"iter_stuck_count", sameTxCount)
+					// SA-AUDIT-2026-06-11 fix19 A16-DELTA-H1: clear the
+					// eviction target before the forced Next(). A panic here
+					// originates in iterator/mempool internal state, not in a
+					// specific tx — the tx currently tracked was already
+					// processed (possibly selected into this proposal), so
+					// evicting it would remove an innocent tx while leaving
+					// the real poison in place, defeating the empty-block
+					// DoS guard. With nil the recover path skips eviction
+					// and falls back to the inner handler.
+					currentMemTx = nil
 					iter = iter.Next()
 					sameTxCount = 0
 					continue
@@ -147,6 +215,14 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 				sameTxCount = 0
 			}
 			prevMemTx = memTx
+
+			// A15-DELTA-H1 wiring: track current head so panic-recover can
+			// evict the poison tx from mempool.
+			// SA-AUDIT-2026-06-11 fix19 A16-DELTA-H1: assignment MUST stay
+			// AFTER the SA-H4 force-Next branch above — assigning before it
+			// made the panic-recovery evict the wrong tx on a forced-Next
+			// panic (see comment in that branch).
+			currentMemTx = memTx
 
 			evmIter, _ := iter.(*evmmempool.EVMMempoolIterator)
 
@@ -180,7 +256,21 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 
 			txBz, err := h.txVerifier.PrepareProposalVerifyTx(memTx)
 			if err != nil {
-				invalidTxs = append(invalidTxs, memTx)
+				// SA-AUDIT-2026-06-10 fix18 A15-DELTA-M1: cap invalidTxs
+				// slice. Beyond the cap the iterator still advances so
+				// block-building finishes, but the slice stops growing —
+				// remaining invalid txs persist one extra block and get
+				// cleaned on the next PrepareProposal cycle.
+				// SA-AUDIT-2026-06-11 fix19 A16-DELTA-MED-1: this cap bounds
+				// MEMORY only. It must NEVER gate the Bug B cascade-skip
+				// below — PopCurrentAccount advances the iterator past a
+				// poisoned sender bucket regardless of whether the tx was
+				// recorded in invalidTxs. Gating Pop on the cap would let an
+				// attacker fill the cap with 1024 cheap invalid txs and then
+				// park permanent-nonce-error EVM txs that never get skipped.
+				if len(invalidTxs) < maxInvalidTxsPerBlock {
+					invalidTxs = append(invalidTxs, memTx)
+				}
 
 				// SA-H3 audit-2026-05-29: only pop sender bucket on PERMANENT
 				// nonce errors. Transient errors (insufficient funds mid-block,
@@ -195,14 +285,7 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 				// cascade-skip silently DISABLED in production. Match BOTH legacy
 				// (go-ethereum core) AND fork phrasings.
 				errMsg := err.Error()
-				isPermanentNonceErr :=
-					strings.Contains(errMsg, "nonce too high") ||
-						strings.Contains(errMsg, "nonce too low") ||
-						strings.Contains(errMsg, "nonce is higher than account nonce") ||
-						strings.Contains(errMsg, "nonce is lower than account nonce") ||
-						strings.Contains(errMsg, "intrinsic gas") ||
-						strings.Contains(errMsg, "invalid nonce") ||
-						strings.Contains(errMsg, "invalid sequence")
+				isPermanentNonceErr := IsPermanentNonceErr(errMsg)
 
 				// Bug B wire: if current head is an EVM tx AND the err is a
 				// permanent nonce-class error, pop the entire sender bucket so we
@@ -242,13 +325,41 @@ func (h *STOCProposalHandler) PrepareProposalHandler() sdk.PrepareProposalHandle
 			iter = iter.Next()
 		}
 
+		// SA-AUDIT-2026-06-10 fix18 A15-DELTA-L2: per-block summary so
+		// operators can spot adversarial mempool conditions (high
+		// invalid_ratio = spam, high iter_count = pressure on the M1 cap).
+		// Promote to Info when invalid > selected (canonical "spam in
+		// progress" signal); Debug otherwise.
+		// SA-AUDIT-2026-06-11 fix19 A16-DELTA-LOW-1: materialize SelectedTxs
+		// ONCE and reuse for both the summary log and the response below —
+		// each call allocates a fresh copy of the selected-tx slice.
+		selectedTxs := h.txSelector.SelectedTxs(ctx)
+		selectedCount := len(selectedTxs)
+		invalidCount := len(invalidTxs)
+		if invalidCount > 0 && invalidCount > selectedCount {
+			h.logger.Info("PrepareProposal: high invalid-tx ratio",
+				"selected", selectedCount, "invalid", invalidCount, "iter_count", iterCount)
+		} else {
+			h.logger.Debug("PrepareProposal: block built",
+				"selected", selectedCount, "invalid", invalidCount, "iter_count", iterCount)
+		}
+
+		// SA-AUDIT-2026-06-10 fix18 A15-DELTA-M2: best-effort cleanup.
+		// Previously any Remove error other than ErrTxNotFound aborted the
+		// proposal entirely — a transient mempool error (iterator lock
+		// contention, codec drift on one tx) would force fallback via the
+		// outer recover, replacing a valid built block with an empty one.
+		// Log warn + continue so liveness is preserved; un-removed tx
+		// retries cleanup on the next PrepareProposal cycle. Aligned with
+		// the relaxed semantics of the panic-recover branch.
 		for _, tx := range invalidTxs {
 			if err := h.mp.Remove(tx); err != nil && !errors.Is(err, mempool.ErrTxNotFound) {
-				return nil, err
+				h.logger.Warn("PrepareProposal: failed to evict invalid tx, will retry next block",
+					"err", err)
 			}
 		}
 
-		return &abci.ResponsePrepareProposal{Txs: h.txSelector.SelectedTxs(ctx)}, nil
+		return &abci.ResponsePrepareProposal{Txs: selectedTxs}, nil
 	}
 }
 

@@ -163,6 +163,11 @@ func TestAuthzDisabledMsgTypes_StableInvariant(t *testing.T) {
 		"/cosmos.vesting.v1beta1.MsgCreateVestingAccount",
 		"/cosmos.vesting.v1beta1.MsgCreatePermanentLockedAccount",
 		"/cosmos.vesting.v1beta1.MsgCreatePeriodicVestingAccount",
+		// SA-AUDIT-2026-06-10 fix18 A15-STO-L3: x/stoc lifecycle msgs.
+		"/stoc.stoc.MsgCreateToken",
+		"/stoc.stoc.MsgMintTokens",
+		"/stoc.stoc.MsgReleaseTokens",
+		"/stoc.stoc.MsgBurnToken",
 	}
 	require.Equal(t, expected, got,
 		"fix15-2: AuthzDisabledMsgTypes invariant — any change must be intentional; both pre-sig screen and post-fee AuthzLimiter must reject the same set")

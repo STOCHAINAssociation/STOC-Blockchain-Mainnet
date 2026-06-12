@@ -35,7 +35,16 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	// Tax.RecipientAddress without any error surfaced to operators.
 	seenMinimalDenoms := make(map[string]struct{}, len(genState.Tokens))
 	var maxCounter uint64
-	for _, token := range genState.Tokens {
+	for i, token := range genState.Tokens {
+		// SA-AUDIT-2026-06-10 fix16 A14-CROSS-M1: proto3 zero-value defense.
+		// Reject empty MinimalDenom at genesis. Without this guard, a token
+		// proto with the MinimalDenom field omitted (proto3 default = "")
+		// installs a bank balance entry keyed by the empty string — a
+		// collision landmine for any future denom that happens to coerce to
+		// "" in iterator key-formation. SupplyInvariant break risk.
+		if token.MinimalDenom == "" {
+			panic(fmt.Sprintf("genesis token[%d] has empty MinimalDenom — refusing to import", i))
+		}
 		if _, exists := seenMinimalDenoms[token.MinimalDenom]; exists {
 			panic(fmt.Sprintf("genesis contains duplicate MinimalDenom %q — token keys must be unique", token.MinimalDenom))
 		}
@@ -82,6 +91,26 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	if maxCounter > 0 {
 		if err := k.SetTokenCounter(ctx, maxCounter); err != nil {
 			panic(err)
+		}
+	}
+
+	// SA-AUDIT-2026-06-11 fix19 A16-STO-L4: cross-check bank supply against
+	// the module's tracked TotalSupply for every imported token. The runtime
+	// invariant (bankSupply == token.TotalSupply, maintained by
+	// CreateToken/MintTokens/BurnToken — see msg_server_burn_token.go godoc)
+	// is deliberately non-halting at runtime per SA-H14 (drift emits
+	// stoc_supply_drift instead of breaking consensus), but at the genesis
+	// boundary there is no liveness to protect — a hand-edited or
+	// mis-exported genesis whose books disagree should refuse to boot here
+	// rather than run indefinitely with divergent accounting. O(N) bank
+	// reads, genesis-boot only. Requires bank InitGenesis to run before
+	// x/stoc (guaranteed by genesisModuleOrder in app_config.go).
+	for _, token := range genState.Tokens {
+		bankSupply := k.GetBankKeeper().GetSupply(ctx, token.MinimalDenom)
+		if !bankSupply.Amount.Equal(token.TotalSupply) {
+			panic(fmt.Sprintf(
+				"genesis supply mismatch for token %q: bank supply %s != tracked TotalSupply %s — reconcile the genesis file before boot",
+				token.MinimalDenom, bankSupply.Amount.String(), token.TotalSupply.String()))
 		}
 	}
 }

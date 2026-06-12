@@ -123,6 +123,33 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 			return nil, sdkerrors.Wrapf(err, "distributions[%d]: invalid address %s", i, dist.Address)
 		}
 		canonicalRecipient := recipientAddr.String()
+		// SA-AUDIT-2026-06-11 fix19 A16-STO-M2: reject non-canonical (e.g.
+		// ALL-UPPERCASE) bech32 in the release manifest instead of silently
+		// canonicalizing. Events already emit the canonical form (fix15-3),
+		// but a forensic replay reading raw msg bytes would see dist.Address
+		// diverge from the emitted attribute — for an STO chain the on-chain
+		// tx bytes and the event stream must agree byte-for-byte. Mirrors
+		// the MsgCreateToken canonical-mismatch reject (fix16 A14-STOC-M1)
+		// so both issuance gates enforce the same rule.
+		if dist.Address != canonicalRecipient {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+				"distributions[%d]: address %q is not canonical bech32 (expected %s)",
+				i, dist.Address, canonicalRecipient)
+		}
+		// SA-AUDIT-2026-06-10 fix18 A15-STO-L1: reject module-account
+		// recipients before bank ops. `SendCoinsFromModuleToAccount` will
+		// revert if recipient is blocked, but mid-loop the error reads as
+		// a generic bank error ("address is blocked: stoc...") instead of
+		// pointing at the failing distribution index. Pre-check at the
+		// creator gate surfaces the rejection with a precise per-index
+		// message so the issuer can fix the release manifest without
+		// spelunking bank errors. Mirrors the SA-H11 + MsgCreateToken
+		// Tax.RecipientAddress pre-check pattern.
+		if k.bankKeeper.BlockedAddr(recipientAddr) {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+				"distributions[%d]: recipient %s is a blocked module address; use a non-module account",
+				i, canonicalRecipient)
+		}
 		coin := sdk.NewCoin(token.MinimalDenom, dist.Amount)
 		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipientAddr, sdk.NewCoins(coin)); err != nil {
 			return nil, sdkerrors.Wrapf(err, "distributions[%d]: SendCoinsFromModuleToAccount failed for recipient %s", i, canonicalRecipient)

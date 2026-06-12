@@ -18,12 +18,21 @@ import (
 )
 
 var (
+	// SA-AUDIT-2026-06-11 fix19 A16-CRYPTO-I2: STOC defaults hardcoded in
+	// the fork (upstream shipped uatom/aatom/atom). app.DefaultGenesis()
+	// already overrides these for genesis, but every OTHER consumer of the
+	// package defaults — future upgrade handlers calling
+	// evmtypes.DefaultParams(), test helpers, simulators — silently
+	// inherited the aatom landmine (the exact class of bug behind the
+	// v3-fix-evm-denom mainnet incident). Running chains read params from
+	// state, so this only affects fresh genesis + default-constructed
+	// params.
 	// DefaultEVMDenom is the default value for the evm denom
-	DefaultEVMDenom = "uatom"
+	DefaultEVMDenom = "ustoc"
 	// DefaultEVMExtendedDenom is the default value for the evm extended denom
-	DefaultEVMExtendedDenom = "aatom"
+	DefaultEVMExtendedDenom = "astoc"
 	// DefaultEVMDisplayDenom is the default value for the display denom in the bank metadata
-	DefaultEVMDisplayDenom = "atom"
+	DefaultEVMDisplayDenom = "stoc"
 	// DefaultEVMChainID is the default value for the evm chain ID
 	DefaultEVMChainID uint64 = 262144
 	// DefaultEVMDecimals is the default value for the evm denom decimal precision

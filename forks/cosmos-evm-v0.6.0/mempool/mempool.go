@@ -510,6 +510,11 @@ func (m *ExperimentalEVMMempool) IsOrphanEVMTx(txBytes []byte) bool {
 		// Tx that was admitted once and no longer decodes is dead — drop.
 		// Do NOT cache: a transient decode error should not pin a "drop"
 		// verdict if the codec recovers (e.g. proto registry reloads).
+		// SA-AUDIT-2026-06-11 fix19 A16-DELTA-LOW-2: surface the drop at
+		// Debug — a sustained stream of decode-fail drops here is a codec
+		// drift / proto registry regression signal that was previously
+		// invisible (the eviction itself is correct, observability only).
+		m.logger.Debug("IsOrphanEVMTx: decode failed, dropping as orphan", "err", err)
 		return true
 	}
 	msgs := tx.GetMsgs()

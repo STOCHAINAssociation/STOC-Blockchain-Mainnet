@@ -103,6 +103,24 @@ func (md MonoDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, ne
 		return ctx, err
 	}
 
+	// SA-AUDIT-2026-06-10 fix17 A15-CRYPTO-H1: reject unprotected (non-EIP-155)
+	// legacy transactions submitted via the Cosmos broadcast path. The JSON-RPC
+	// layer already guards this via the AllowUnprotectedTxs server flag in
+	// sign_tx.go, but a client that wraps a raw legacy ETH tx inside a Cosmos
+	// SDK Tx with ExtensionOptionsEthereumTx and broadcasts via /broadcast_tx_sync
+	// bypassed that path entirely. Without this ante check, a coin-type-118
+	// secp256k1 keypair shared across cosmos-evm sibling chains was exposed to
+	// cross-chain replay. Default-deny — there is no operational reason to
+	// admit pre-EIP-155 transactions onto a STOChain-class securities chain.
+	// If a future use case requires opt-in, add an `AllowUnprotectedTxs` field
+	// to x/vm Params (proto migration) and gate this guard on it.
+	if !ethTx.Protected() {
+		return ctx, errorsmod.Wrap(
+			errortypes.ErrInvalidRequest,
+			"rejected unprotected Ethereum transaction (chain-id replay protection required)",
+		)
+	}
+
 	// call go-ethereum transaction validation
 	header := ethtypes.Header{
 		GasLimit:   ethTx.Gas(),

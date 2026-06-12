@@ -185,12 +185,18 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 	}
 
 	//Emit event
+	// SA-AUDIT-2026-06-11 fix19 A16-STO-I1: emit token.Creator (persisted
+	// canonical source) instead of owner.String() — values are identical
+	// here because the auth check above already proved owner == Creator,
+	// but sourcing the attribute from state makes the event stream
+	// symmetric with CreateToken/ReleaseTokens (both emit token.Creator)
+	// and immune to a future refactor that loosens the owner param.
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeMintToken,
 			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
 			sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
-			sdk.NewAttribute(types.AttributeKeyTokenCreator, owner.String()),
+			sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
 			sdk.NewAttribute(types.AttributeKeyMintAmount, amount.String()),
 		),
 	)

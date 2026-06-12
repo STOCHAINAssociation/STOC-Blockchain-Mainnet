@@ -59,8 +59,16 @@ func (p Precompile) RequiredGas(_ []byte) uint64 {
 //   - 32 bytes of the x coordinate of the public key
 //   - 32 bytes of the y coordinate of the public key
 //
-// Output data: 32 bytes of result data and error
-//   - If the signature verification process succeeds, it returns 1 in 32 bytes format
+// Output data:
+//   - On success: 32 bytes encoding uint256(1) (right-aligned, big-endian) and nil error.
+//   - On failure (bad input length, invalid range, or curve check fail):
+//     (high-S is ACCEPTED as of fix19 NHÓM-5 Q5=A — see crypto/secp256r1/verify.go)
+//     returns nil output and nil error. Per RIP-7212 §Output, "On invalid signature,
+//     returns empty bytes" — callers MUST treat empty return as failure and NOT
+//     decode as uint256(0) (which would conflate "verified false" with "verified 0").
+//
+// SA-AUDIT-2026-06-10 fix18 A15-CRYPTO-I1: godoc accuracy — prior wording
+// claimed 32 bytes always; actual contract is empty-on-fail per RIP-7212.
 func (p *Precompile) Run(_ *vm.EVM, contract *vm.Contract, _ bool) (bz []byte, err error) {
 	input := contract.Input
 	// Check the input length

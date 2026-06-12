@@ -1,6 +1,7 @@
 package evm
 
 import (
+	"fmt"
 	"math/big"
 
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -66,7 +67,18 @@ func SignatureVerification(
 	signer ethtypes.Signer,
 ) error {
 	if err := msg.VerifySender(signer); err != nil {
-		return errorsmod.Wrapf(errortypes.ErrorInvalidSigner, "signature verification failed: %s", err.Error())
+		// SA-AUDIT-2026-06-10 fix18 A15-CRYPTO-L1: preserve underlying error
+		// via Go's multi-%w wrap so callers can errors.Is(err, ErrorInvalidSigner)
+		// AND errors.Is/As the original signer-recovery cause (e.g.,
+		// secp256k1 short-signature, EIP-2098 compact-sig parse, EIP-7702
+		// SetCodeTx with unexpected V). cosmossdk.io/errors Wrapf used a
+		// flattened %s string which lost the wrap chain for downstream
+		// log/metric pipelines.
+		// SA-AUDIT-2026-06-11 fix19 A16-CRYPTO-L2: return the wrapped error
+		// directly — the previous errorsmod.Wrap(wrapped, "") added no
+		// information and prefixed log/RPC strings with a stray ": ".
+		// errors.Is/As traversal is identical either way.
+		return fmt.Errorf("signature verification failed: %w (cause: %w)", errortypes.ErrorInvalidSigner, err)
 	}
 
 	return nil

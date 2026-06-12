@@ -134,6 +134,16 @@ const MaxTokenIDLength = 64
 // for genesis import + any direct SetToken caller that bypasses MsgCreateToken
 // validation. All field-level invariants enforced by ValidateBasic must also
 // appear here so a malicious genesis cannot inject malformed tokens.
+//
+// SA-AUDIT-2026-06-11 fix19 A16-STO-I2 — INTENTIONAL DIVERGENCE from
+// Validate(): the "dead token" shape (Unlimited=false, InitialSupply=0,
+// TotalSupply>0) is REJECTED by Validate() at creation time but ACCEPTED
+// here. Burn/mint sequences on a limited token can legitimately walk state
+// through shapes creation would never produce, and genesis must be able to
+// re-import ANY state a legal operation sequence can reach. Do NOT "align"
+// the two functions — that would brick genesis export/import for chains
+// whose history contains such tokens. The supply-vs-bank cross-check for
+// genesis lives in x/stoc/module/genesis.go (A16-STO-L4), not here.
 func ValidateState(token Token) error {
 	// SA-M15: cap token ID length at the state-import boundary. Proto schema
 	// declares ID as unbounded `string`; ValidateBasic does not see genesis.
@@ -145,6 +155,12 @@ func ValidateState(token Token) error {
 	}
 	if len(token.Name) > 64 {
 		return fmt.Errorf("token name too long (max 64 characters)")
+	}
+	// SA-AUDIT-2026-06-10 fix16 A14-STOC-L1: control-character rejection (see Validate above).
+	for _, r := range token.Name {
+		if r < 32 || r == 127 {
+			return fmt.Errorf("token name contains invalid control characters")
+		}
 	}
 	if token.Symbol == "" {
 		return fmt.Errorf("token symbol cannot be empty")
@@ -242,8 +258,18 @@ func ValidateState(token Token) error {
 	if token.Creator == "" {
 		return fmt.Errorf("creator address cannot be empty")
 	}
-	if _, err := sdk.AccAddressFromBech32(token.Creator); err != nil {
+	creatorAddr, err := sdk.AccAddressFromBech32(token.Creator)
+	if err != nil {
 		return fmt.Errorf("invalid creator address in state: %s", err)
+	}
+	// SA-AUDIT-2026-06-10 fix16 A14-STOC-M1: require canonical lowercase bech32
+	// for storage. cosmos-sdk's bech32 codec accepts uppercase round-trips, so a
+	// genesis Token with all-uppercase Creator parses fine and persists, but
+	// ReleaseTokens / MintToken compare creatorAddr.String() (canonical
+	// lowercase) != stored raw Creator → ErrUnauthorized → token permanently
+	// uncontrollable. Enforce canonical form at every write boundary.
+	if creatorAddr.String() != token.Creator {
+		return fmt.Errorf("creator address must be canonical lowercase bech32 (got %q, canonical %q)", token.Creator, creatorAddr.String())
 	}
 	// Validate tax fields — prevents genesis import of tokens with out-of-range tax or invalid recipient
 	if !token.Tax.Percent.IsNil() {
@@ -260,6 +286,10 @@ func ValidateState(token Token) error {
 			taxAddr, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
 			if err != nil {
 				return fmt.Errorf("invalid tax recipient address in state: %s", err)
+			}
+			// A14-STOC-M1: canonical-form enforcement (see Creator above).
+			if taxAddr.String() != token.Tax.RecipientAddress {
+				return fmt.Errorf("tax recipient must be canonical lowercase bech32 (got %q, canonical %q)", token.Tax.RecipientAddress, taxAddr.String())
 			}
 			if mod := BlockedTaxRecipientModule(taxAddr); mod != "" {
 				return fmt.Errorf("tax recipient cannot be module account %s (%s)", mod, token.Tax.RecipientAddress)
@@ -289,8 +319,13 @@ func ValidateState(token Token) error {
 	if len(token.Distributions) > 0 {
 		totalPercent := uint32(0)
 		for i, dist := range token.Distributions {
-			if _, err := sdk.AccAddressFromBech32(dist.Address); err != nil {
+			distAddr, err := sdk.AccAddressFromBech32(dist.Address)
+			if err != nil {
 				return fmt.Errorf("invalid address in distribution[%d]: %s", i, err)
+			}
+			// A14-STOC-M1: canonical-form enforcement.
+			if distAddr.String() != dist.Address {
+				return fmt.Errorf("distribution[%d] address must be canonical lowercase bech32 (got %q, canonical %q)", i, dist.Address, distAddr.String())
 			}
 			if dist.Percent == 0 || dist.Percent > 100 {
 				return fmt.Errorf("distribution[%d] percent must be between 1 and 100, got %d", i, dist.Percent)
@@ -312,6 +347,16 @@ func ValidateState(token Token) error {
 func Validate(token Token) error {
 	if token.Name == "" {
 		return fmt.Errorf("token name cannot be empty")
+	}
+	// SA-AUDIT-2026-06-10 fix16 A14-STOC-L1: control-character rejection mirrors
+	// MsgCreateToken.ValidateBasic. cosmos-sdk authz.DispatchActions bypasses
+	// ValidateBasic, so without this guard a MsgCreateToken wrapped in
+	// authz.MsgExec can persist a Name with NUL/BEL/etc — XSS/display landmine
+	// in explorers/wallets that render Name without escaping.
+	for _, r := range token.Name {
+		if r < 32 || r == 127 {
+			return fmt.Errorf("token name contains invalid control characters")
+		}
 	}
 
 	if token.Symbol == "" {

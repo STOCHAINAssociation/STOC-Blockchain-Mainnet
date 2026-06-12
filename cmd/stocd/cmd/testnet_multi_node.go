@@ -276,6 +276,14 @@ func initTestnetFiles(
 		if err := writeFile(file, nodeDir, cliPrint); err != nil {
 			return err
 		}
+		// SA-AUDIT-2026-06-11 fix19 A16-CROSS-M2: best-effort zero the
+		// mnemonic-bearing buffer after persisting. Go GC may still hold
+		// earlier copies (json.Marshal internals, the keyring's own
+		// buffers); this shrinks the heap-residue window rather than
+		// eliminating it. Dev-only command (build tag !stocrelease).
+		for j := range cliPrint {
+			cliPrint[j] = 0
+		}
 
 		accTokens := sdk.TokensFromConsensusPower(1000, sdk.DefaultPowerReduction)
 		accStakingTokens := sdk.TokensFromConsensusPower(500, sdk.DefaultPowerReduction)
@@ -385,11 +393,23 @@ func writeFile(file, dir string, contents []byte) error {
 		return fmt.Errorf("could not create directory %q: %w", dir, err)
 	}
 
-	if err := os.WriteFile(file, contents, 0o600); err != nil {
+	// SA-AUDIT-2026-06-11 fix19 A16-CROSS-M1: O_EXCL refuses to follow a
+	// pre-planted symlink (TOCTOU write-redirect on a shared host) and
+	// refuses to clobber an existing secret-bearing file (key_seed.json /
+	// gentx). Re-running init on a dirty node dir now fails loudly instead
+	// of silently overwriting — wipe the dir first. Dev-only command
+	// (build tag !stocrelease), defense in depth.
+	f, err := os.OpenFile(file, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("could not create %q (already exists or symlink in path?): %w", file, err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(contents); err != nil {
 		return err
 	}
 
-	return nil
+	return f.Sync()
 }
 
 func initGenFiles(

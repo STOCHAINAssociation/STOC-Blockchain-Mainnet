@@ -52,6 +52,14 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	}
 
 	// Check if this is a stoc-managed token (optional — native denom burns are allowed)
+	// SA-AUDIT-2026-06-11 fix19 A16-STO-L1 (DEFENSIVE/ACCEPT, no fix needed):
+	// GetToken is case-SENSITIVE on denom, matching Cosmos SDK convention
+	// (bank denoms are case-sensitive byte strings — "mytoken_0" and
+	// "MYTOKEN_0" are distinct denoms chain-wide). A wrong-case msg.Denom
+	// simply resolves to isManaged=false and takes the unmanaged-denom burn
+	// path against the same case-sensitive bank balance, so no supply
+	// accounting can desync. Revisit ONLY if token lookup ever loosens to
+	// symbol-based matching.
 	token, isManaged := k.GetToken(ctx, msg.Denom)
 
 	// Determine amount to burn
@@ -160,7 +168,11 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeBurnToken,
-			sdk.NewAttribute(types.AttributeKeyBurner, msg.Creator),
+			// SA-AUDIT-2026-06-10 fix16 A14-STOC-L5: emit canonical bech32 (not raw msg.Creator)
+			// so indexers + explorers see the same lowercase form fix15-3 established for
+			// ReleaseTokens.AttributeKeyRecipient. Bank op already uses canonical bytes via
+			// `creator` AccAddress at line 49, so no fund-flow change.
+			sdk.NewAttribute(types.AttributeKeyBurner, creator.String()),
 			sdk.NewAttribute(types.AttributeKeyMinimalDenom, msg.Denom),
 			sdk.NewAttribute(types.AttributeKeyBurnAmount, amountToBurn.String()),
 		),

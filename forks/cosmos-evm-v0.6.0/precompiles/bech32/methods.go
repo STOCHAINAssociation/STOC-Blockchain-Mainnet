@@ -40,9 +40,36 @@ func (p Precompile) HexToBech32(
 	cfg := sdk.GetConfig()
 
 	prefix, _ := args[1].(string)
-	if strings.TrimSpace(prefix) == "" {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
 		return nil, fmt.Errorf(
 			"invalid bech32 human readable prefix (HRP). Please provide a either an account, validator or consensus address prefix (eg: %s, %s, %s)",
+			cfg.GetBech32AccountAddrPrefix(), cfg.GetBech32ValidatorAddrPrefix(), cfg.GetBech32ConsensusAddrPrefix(),
+		)
+	}
+	// SA-AUDIT-2026-06-10 fix18 A15-CRYPTO-M2: symmetric guard to SA-L11
+	// (Bech32ToHex HRP whitelist). Without it, HexToBech32 will render any
+	// STOC hex address as `cosmos1...`, `osmo1...`, `injvaloper1...`, etc.,
+	// producing a string that LOOKS like a foreign-chain address but is
+	// derived from a local STOC keypair (coin-type 118 means the same key
+	// signs on cosmos/osmosis/injective). A downstream UI/contract that
+	// trusts the precompile output for cross-chain reasoning is fooled.
+	hexToBech32AllowedPrefixes := map[string]struct{}{
+		cfg.GetBech32AccountAddrPrefix():   {},
+		cfg.GetBech32ValidatorAddrPrefix(): {},
+		cfg.GetBech32ConsensusAddrPrefix(): {},
+	}
+	if _, ok := hexToBech32AllowedPrefixes[prefix]; !ok {
+		// SA-AUDIT-2026-06-11 fix19 A16-CRYPTO-L3 (ACCEPT, no change):
+		// enumerating the allowed HRPs in the error is deliberate — the
+		// prefixes are public chain constants (bech32 config), so this is
+		// not information disclosure, and contract developers debugging a
+		// revert through eth_call get an actionable message instead of a
+		// generic refusal. Revisit only if the prefix set ever becomes
+		// configuration an operator could consider private.
+		return nil, fmt.Errorf(
+			"bech32 HRP %q not allowed; expected one of [%s, %s, %s] (cross-chain address spoofing prevented)",
+			prefix,
 			cfg.GetBech32AccountAddrPrefix(), cfg.GetBech32ValidatorAddrPrefix(), cfg.GetBech32ConsensusAddrPrefix(),
 		)
 	}
