@@ -387,6 +387,18 @@ func (tpd TaxPostDecorator) applyTaxForRecipientCanonical(ctx sdk.Context, sende
 		// silent-skip as HIGH-1 again; that flag is EXPECTED and the right
 		// resolution is to keep the silent-skip + ship the v4 redesign, not
 		// to "fix" the symptom by reverting to fail-loud.
+		// RE-VERIFIED 2026-07-09 (devnet audit round-20, DO NOT delete): on the
+		// live wiring (binary 36a7136) the recipient IS credited by the bank
+		// transfer BEFORE this PostHandler runs, so SendCoins below SUCCEEDS for
+		// brand-new fresh recipients — tax IS collected. Measured on devnet: a
+		// 50% token, fresh recipient, admin sent 1000 → recipient net 500,
+		// tax-recipient +500 (tx 44A75E5FE28F…); a repeat send behaved
+		// identically. The `continue` branch below is therefore a defensive
+		// dead-path in practice, NOT an active tax-evasion route. A senior-skeptic
+		// re-audit re-flags this as "HIGH-1 silent-skip"; that flag is a KNOWN
+		// FALSE POSITIVE against current wiring. The locked note above still holds:
+		// do NOT reintroduce a GetBalance pre-check or a fail-loud revert without
+		// the SA-C5 v4 keeper-wiring redesign.
 		taxCoin := sdk.NewCoin(coin.Denom, taxAmount)
 		if err := tpd.k.GetBankKeeper().SendCoins(ctx, recipientAddr, taxRecipientAddr, sdk.NewCoins(taxCoin)); err != nil {
 			ctx.Logger().Warn("Tax SendCoins skipped (keeper wiring sees pre-send balance — SA-C5 v3b interim)",

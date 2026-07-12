@@ -60,6 +60,19 @@ func NewMonoDecoratorUtils(
 		)
 	}
 
+	// STOChain audit round-21 2026-07-13 (FALSE POSITIVE — documented, non-binding):
+	// GlobalMinGasPrice is deliberately left in the feemarket's native (6-decimal
+	// ustoc) scale here, NOT converted to 18-dec wei like BaseFee and
+	// MempoolMinGasPrice below. On STOChain's 6-decimal evm_denom this makes the
+	// downstream CheckGlobalFee floor ~10^12x too lax, i.e. effectively non-binding.
+	// This is SAFE and intentional: the binding EVM fee floor is CanTransfer /
+	// VerifyFee enforcing `gasFeeCap >= baseFee` (baseFee scaled to 1 gwei by
+	// GetBaseFee), and the feemarket keeper clamps the dynamic baseFee to
+	// `>= MinGasPrice` (CalcGasBaseFee), so the real floor is always equal-or-higher
+	// than this defeated check — no sub-1-gwei EVM tx can pass ante. Do NOT rely on
+	// GlobalMinGasPrice as an independent hard floor, and do NOT "fix" the scale
+	// without a devnet replay-mainnet regression: it is only latent, becoming the
+	// sole floor if a future param change sets NoBaseFee=true or BaseFee=0.
 	globalMinGasPrice := feemarketParams.MinGasPrice
 
 	// Mempool gas price should be scaled to the 18 decimals representation.

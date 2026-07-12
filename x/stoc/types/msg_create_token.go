@@ -49,8 +49,11 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	if !TokenSymbolRegex.MatchString(m.Symbol) {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
-	// Prevent symbols that could be confused with native denoms (dynamically detected)
-	if IsNativeDenom(m.Symbol) {
+	// Prevent symbols that could be confused with native denoms (dynamically detected).
+	// Case-INSENSITIVE: tickers are display-facing and wallets upper-case them, so
+	// "STOC"/"USTOC"/"ASTOC" must be rejected like their lowercase forms (SA-H8;
+	// round-20 regression fixed round-21). See IsNativeSymbol godoc in token.go.
+	if IsNativeSymbol(m.Symbol) {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol cannot be a native denom")
 	}
 

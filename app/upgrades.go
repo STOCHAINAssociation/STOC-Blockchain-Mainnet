@@ -17,8 +17,19 @@ import (
 	evmutiltypes "stoc/x/evmutil/types"
 )
 
-// Upgrade history (chronological — handlers below MUST stay in source for
-// new nodes to sync correctly from genesis):
+// Upgrade history (chronological). Keeping every handler in source is NECESSARY
+// but NOT SUFFICIENT for a new node to reach the tip:
+//   - NECESSARY: a node that has ALREADY applied an upgrade must still carry that
+//     handler or x/upgrade ApplyUpgrade panics "wrong app version, upgrade handler
+//     is missing" (cosmossdk.io/x/upgrade abci.go).
+//   - NOT SUFFICIENT: a SINGLE binary carrying ALL handlers CANNOT cold-sync from
+//     genesis. During every window [gov-prop-exec-height, upgrade-trigger-height)
+//     the x/upgrade PreBlocker sees the plan scheduled-but-not-triggered while the
+//     handler is present and panics "BINARY UPDATED BEFORE TRIGGER" (BUG-4).
+//     Cold-sync of post-upgrade history therefore requires the phased-binary
+//     lineage (stoc_p0_genesis_d → stoc_v2_only_d → stoc_fixed_evm_d → … → v5,
+//     each carrying handlers only up to its own phase) or cosmovisor/state-sync.
+//     Authoritative runbook: wiki/stochain/mainnet-lifecycle.md (BUG-4).
 //
 //   v2-evm                   — mainnet block 4455467 (Mar 2026): introduce EVM
 //                              (cosmos/evm rc2 → v0.6.0). Sets MinGasPrice=0.

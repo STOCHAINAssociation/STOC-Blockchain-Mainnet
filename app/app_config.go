@@ -206,6 +206,16 @@ var (
 		// is pure state (grants never require coins to sit in the module
 		// account), so blocking direct MsgSend to it loses nothing.
 		feegrant.ModuleName,
+		// Audit round-20 2026-07-09 (A3 I1) — DEFERRED, intentionally NOT shipped:
+		// blocking the ibctransfer + ICA host module accounts (defense-in-depth vs
+		// self-inflicted fund-lock) was prototyped then reverted before prop5.
+		// Rationale: IBC is a known-fragile area with open issues (notably the
+		// x/stoc MsgCreateToken tax ↔ IBC interaction), and the block could not be
+		// relay-tested on a single-node devnet. Adding it here without a full
+		// 2-chain IBC transfer-in/out + ICA host regression risks breaking legit
+		// relayer flows. These accounts therefore stay UNBLOCKED for now
+		// (direct-send fund-lock is a user footgun, not an attacker vector). Revisit
+		// only after IBC is stabilised and the block is relay-verified end-to-end.
 		// We allow the following module accounts to receive funds:
 		// govtypes.ModuleName
 	}

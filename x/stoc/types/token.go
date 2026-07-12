@@ -59,33 +59,48 @@ func BlockedTaxRecipientModule(addr sdk.AccAddress) string {
 	return ""
 }
 
-// IsNativeDenom dynamically checks if a denom is a native chain denom.
-// Uses sdk.DefaultBondDenom and evmutil.GetEvmDenom() as single source of truth:
+// IsNativeDenom dynamically checks if a denom is a native chain denom
+// (case-SENSITIVE). Uses sdk.DefaultBondDenom and evmutil.GetEvmDenom() as the
+// single source of truth:
 // - Cosmos denom (e.g. "ustoc" or "utstoc")
 // - EVM denom (e.g. "astoc" or "atstoc") — from evmutil.GetEvmDenom()
 // - Display denom (e.g. "stoc" or "tstoc") — derived by trimming 'u' prefix
-// SA-L3 audit-2026-05-29 (FALSE POSITIVE — already handled): the input denom
-// is lowercased on line below before every comparison, so "USTOC", "Ustoc",
-// "uStOc" all collide with "ustoc" / "astoc" / "stoc" exactly the same way
-// the canonical lowercase forms do. No mixed-case phishing surface remains
-// at the IsNativeDenom boundary. Ensure any future variant check preserves
-// this lowercase-first invariant.
+//
+// Audit round-20 2026-07-09 (SUPERSEDES the earlier SA-L3 "lowercase is fine"
+// note): bank denoms are CASE-SENSITIVE in Cosmos SDK — "USTOC" is a distinct
+// coin from "ustoc". The prior implementation lowercased the input before every
+// comparison, so a mixed-case denom like "USTOC" was classified as native and
+// would take the native fast-path that SKIPS the custom-token SendRestrictions.
+// Because IsNativeDenom==true means "unrestricted", mis-classifying a non-native
+// denom as native is the unsafe direction. Comparison is now exact (no ToLower):
+// canonical ustoc/astoc/stoc still match as before (they ARE lowercase), while a
+// mixed-case near-collision is correctly NOT native.
+//
+// POLARITY WARNING (audit round-21 2026-07-13): this exact-match form is correct
+// ONLY for the bank coin.Denom SendRestriction gates (custom_token_restriction.go,
+// ibc_restriction.go, tax_post.go, app.go), where "not native" == more restriction
+// and real bank denoms are always the unique SYMBOL_<counter>. It is the WRONG
+// primitive for validating a user-supplied token.Symbol at CreateToken / Validate /
+// ValidateState, where "not native" == symbol allowed. Round-20 dropped the ToLower
+// unconditionally, which let uppercase symbols "STOC"/"USTOC"/"ASTOC" bypass the
+// SA-H8 native-symbol block and register a byte-identical clone of the native gas
+// ticker (display-layer phishing). Symbol validators MUST use the case-INSENSITIVE
+// IsNativeSymbol / SafeIsNativeSymbol below — never call IsNativeDenom on a raw Symbol.
 func IsNativeDenom(denom string) bool {
-	d := strings.ToLower(denom)
-	cosmosDenom := strings.ToLower(sdk.DefaultBondDenom)
-	if d == cosmosDenom {
+	cosmosDenom := sdk.DefaultBondDenom
+	if denom == cosmosDenom {
 		return true
 	}
 	// Use SafeGetEvmDenom to prevent consensus panic from misconfigured denom.
 	// If DefaultBondDenom is corrupted, treat as "not native" instead of halting chain.
 	evmDenomStr, err := evmutiltypes.SafeGetEvmDenom()
-	if err == nil && d == strings.ToLower(evmDenomStr) {
+	if err == nil && denom == evmDenomStr {
 		return true
 	}
 	// Display denom: trim 'u' prefix (e.g. "ustoc" -> "stoc")
 	if len(cosmosDenom) > 0 && cosmosDenom[0] == 'u' {
 		displayDenom := cosmosDenom[1:]
-		if d == displayDenom {
+		if denom == displayDenom {
 			return true
 		}
 	}
@@ -119,6 +134,32 @@ func SafeIsNativeDenom(denom string) (isNative bool, panicked bool) {
 // safeIsNativeDenom is the internal-package alias retained for existing callers.
 func safeIsNativeDenom(denom string) (bool, bool) {
 	return SafeIsNativeDenom(denom)
+}
+
+// IsNativeSymbol reports whether a user-supplied token Symbol collides with a
+// reserved native chain denom, compared CASE-INSENSITIVELY.
+//
+// This is the SYMBOL-validation polarity (REJECT-if-native at MsgCreateToken
+// ValidateBasic). Token symbols are display-facing tickers and wallets / Keplr /
+// explorers routinely upper-case them, so "STOC" / "Ustoc" / "ASTOC" must be
+// rejected exactly like "stoc" / "ustoc" / "astoc" — otherwise a custom token
+// renders a byte-identical clone of the native gas asset (SA-H8 native-symbol
+// carve-out; round-20 regression fixed round-21 2026-07-13).
+//
+// Deliberately case-insensitive, UNLIKE IsNativeDenom which is case-SENSITIVE for
+// the bank coin.Denom SendRestriction polarity (bank denoms are unique
+// SYMBOL_<counter>, exact match is correct + safe there). The two guard OPPOSITE
+// directions — do NOT unify them or drop the ToLower here.
+func IsNativeSymbol(symbol string) bool {
+	return IsNativeDenom(strings.ToLower(symbol))
+}
+
+// SafeIsNativeSymbol is the panic-recovering, case-insensitive Symbol check used
+// by the consensus-path validators (Token.Validate / Token.ValidateState). It
+// mirrors SafeIsNativeDenom's fail-closed contract: panicked==true means the
+// native-denom config was uninitialised and the caller MUST reject (audit fix H2).
+func SafeIsNativeSymbol(symbol string) (isNative bool, panicked bool) {
+	return SafeIsNativeDenom(strings.ToLower(symbol))
 }
 
 // MaxTokenIDLength bounds the on-chain token ID string. IDs are produced by
@@ -176,7 +217,7 @@ func ValidateState(token Token) error {
 	// A panic indicates DefaultBondDenom is uninitialized, which is the same
 	// window during which a token with symbol "stoc"/"astoc" could be accepted
 	// and later collide with the real native denom once initialization completes.
-	isNative, panicked := safeIsNativeDenom(token.Symbol)
+	isNative, panicked := SafeIsNativeSymbol(token.Symbol)
 	if panicked {
 		return fmt.Errorf("cannot validate token symbol %q: native denom configuration not initialized", token.Symbol)
 	}
@@ -367,7 +408,7 @@ func Validate(token Token) error {
 	}
 	// Block native denom symbols to prevent confusion (mirrors ValidateState check)
 	// Audit fix H2: fail closed if native-denom check panicked (see safeIsNativeDenom comment).
-	isNative, panicked := safeIsNativeDenom(token.Symbol)
+	isNative, panicked := SafeIsNativeSymbol(token.Symbol)
 	if panicked {
 		return fmt.Errorf("cannot validate token symbol %q: native denom configuration not initialized", token.Symbol)
 	}

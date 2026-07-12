@@ -161,13 +161,30 @@ Registered in `app/evm.go:postRegisterEVMModules()`:
 - **Bech32 Precompile**: Convert between Ethereum and Cosmos addresses
 - **P256 Precompile**: secp256r1 signature verification (EIP-7212)
 
-### Custom EVM Activators
+### Custom EVM Activators (compiled-in but NOT active — chain runs standard geth gas)
 
-Gas multipliers for specific opcodes (defined in `app/evm.go:getCustomEVMActivators()`):
+The cosmos/evm fork ships a set of custom opcode gas modifiers in
+`forks/cosmos-evm-v0.6.0/x/vm/types/activators.go` (`DefaultCosmosEVMActivators`),
+registered as *available* via `x/vm/module.go` `WithExtendedEips(...)`:
 
-- CREATE/CREATE2: 10x multiplier
-- CALL: 10x multiplier
-- SSTORE: Fixed 2100 gas (EIP-2929 warm access cost)
+- EIP `0o000` `Enable0000`: CREATE/CREATE2 10x multiplier
+- EIP `0o001` `Enable0001`: CALL 10x multiplier
+- EIP `0o002` `Enable0002`: SSTORE constant gas = **500** (`eips.go:9`, NOT 2100)
+
+**These are DORMANT.** An activator only fires when its EIP number is present in
+the `x/vm` `Params.ExtraEIPs` list. STOChain never sets `ExtraEIPs`
+(no `WithExtendedDefaultExtraEIPs` call, empty in genesis + `config.yml`), so the
+EVM runs at **standard go-ethereum gas pricing** — the audited baseline. The 10x
+anti-spam multiplier is intentionally OFF (product decision 2026-07-09: standard
+pricing is sufficient given EIP-1559 feemarket + per-wallet mempool cap). To
+enable later, add `ExtraEIPs = [0,1]` via a param-change gov proposal (activators
+are already compiled in; no binary swap needed) and pin it with a test. **Only
+`[0,1]`** (CREATE/CALL 10× multipliers, gas-*increasing*) can be enabled by gov:
+EIP `0o002` (SSTORE=500, the ~44× discount) is on the SA-H17 deny-list
+(`forks/cosmos-evm-v0.6.0/x/vm/types/params.go`) and `MsgUpdateParams → SetParams
+→ Validate()` rejects it — a gov prop including EIP `2` passes the vote then aborts
+at execution. Enabling `0o002` requires a source patch + binary swap (effective
+code timelock), never a runtime gov prop.
 
 ### Ante Handlers
 
