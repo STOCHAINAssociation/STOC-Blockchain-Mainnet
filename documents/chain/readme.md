@@ -1,6 +1,6 @@
-# STOC Chain - Node Setup Guide
+# STOChain - Node Setup Guide
 
-Complete guide for running a STOC Chain node (full node, validator, or indexer).
+Complete guide for running a STOChain node (full node, validator, or indexer).
 
 ## System Requirements
 
@@ -181,7 +181,7 @@ Create `/etc/systemd/system/stocd.service`:
 
 ```ini
 [Unit]
-Description=STOC Chain Node
+Description=STOChain Node
 After=network-online.target
 
 [Service]

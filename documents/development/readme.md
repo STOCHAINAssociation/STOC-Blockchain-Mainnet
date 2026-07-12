@@ -1,6 +1,6 @@
-# STOC Chain - Development Guide
+# STOChain - Development Guide
 
-Development documentation for building on and contributing to STOC Chain.
+Development documentation for building on and contributing to STOChain.
 
 ## Prerequisites
 

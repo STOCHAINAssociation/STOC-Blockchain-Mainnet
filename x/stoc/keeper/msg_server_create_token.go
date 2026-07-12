@@ -355,7 +355,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 
 	// Use minimalDenom as display to avoid metadata collision when multiple tokens share the same symbol
 	denomMetadata := banktypes.Metadata{
-		Description: fmt.Sprintf("Token %s (%s) created on Stoc chain", token.Name, token.Symbol),
+		Description: fmt.Sprintf("Token %s (%s) created on STOChain", token.Name, token.Symbol),
 		DenomUnits: []*banktypes.DenomUnit{
 			{
 				Denom:    minimalDenom,

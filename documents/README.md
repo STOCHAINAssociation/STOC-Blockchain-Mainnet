@@ -1,4 +1,4 @@
-# STOC Chain Documentation
+# STOChain Documentation
 
 ## Guides
 

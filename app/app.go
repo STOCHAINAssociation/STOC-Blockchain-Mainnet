@@ -117,7 +117,7 @@ import (
 const (
 	AccountAddressPrefix = "stoc"
 	Name                 = "stoc"
-	// ChainCoinType is the coin type for stoc chain
+	// ChainCoinType is the coin type for STOChain
 	// Using 118 (Cosmos standard) for backward compatibility with existing accounts
 	ChainCoinType = 118
 )

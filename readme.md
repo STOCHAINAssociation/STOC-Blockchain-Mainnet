@@ -1,6 +1,6 @@
-# STOC Chain
+# STOChain
 
-STOC Chain is a high-performance blockchain with full EVM (Ethereum Virtual Machine) compatibility, built on Cosmos SDK v0.53.4 and CometBFT consensus.
+STOChain is a high-performance blockchain with full EVM (Ethereum Virtual Machine) compatibility, built on Cosmos SDK v0.53.4 and CometBFT consensus.
 
 ## Features
 

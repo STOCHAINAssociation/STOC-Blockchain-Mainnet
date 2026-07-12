@@ -45,7 +45,7 @@ import (
 // holders. They must NOT:
 //   - Enter the community pool (funds controlled by chain governance, not the
 //     issuing company)
-//   - Back governance proposals on the STOC chain itself (the chain's gov is
+//   - Back governance proposals on STOChain itself (the chain's gov is
 //     about chain params, not company business)
 //   - Be locked in vesting accounts (vesting with end_time=now+1 trivially
 //     bypasses tax enforcement)
