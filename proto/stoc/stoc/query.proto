@@ -1,0 +1,101 @@
+syntax = "proto3";
+package stoc.stoc;
+
+import "amino/amino.proto";
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "cosmos/base/v1beta1/coin.proto";
+import "stoc/stoc/params.proto";
+import "stoc/stoc/token.proto";
+option go_package = "stoc/x/stoc/types";
+
+
+// Query defines the gRPC querier service.
+service Query {
+  // Parameters queries the parameters of the module.
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/stoc/stoc/params";
+  }
+
+   // Token returns information about a specific token by minimal_denom
+   rpc Token(QueryTokenRequest) returns (QueryTokenResponse) {
+    option (google.api.http).get = "/stoc/stoc/tokens/{minimal_denom}";
+  }
+  
+  // Tokens returns all tokens
+  rpc Tokens(QueryTokensRequest) returns (QueryTokensResponse) {
+    option (google.api.http).get = "/stoc/stoc/tokens";
+  }
+
+  // TokensBySymbol returns tokens with a specific symbol
+  rpc TokensBySymbol(QueryTokensBySymbolRequest) returns (QueryTokensBySymbolResponse) {
+    option (google.api.http).get = "/stoc/stoc/tokens_by_symbol/{symbol}";
+  }
+
+  // BalancesWithMetadata returns balances with token metadata for an address
+  rpc BalancesWithMetadata(QueryBalancesWithMetadataRequest) returns (QueryBalancesWithMetadataResponse) {
+    option (google.api.http).get = "/stoc/stoc/balances/{address}";
+  }
+}
+
+// QueryParamsRequest is request type for the Query/Params RPC method.
+message QueryParamsRequest {}
+
+// QueryParamsResponse is response type for the Query/Params RPC method.
+message QueryParamsResponse {
+  // params holds all the parameters of this module.
+  Params params = 1 [
+    (gogoproto.nullable) = false,
+    (amino.dont_omitempty) = true
+  ];
+}
+
+// QueryTokenRequest is the request type for the Query/Token RPC method
+message QueryTokenRequest {
+  string minimal_denom = 1;
+}
+
+// QueryTokenResponse is the response type for the Query/Token RPC method
+message QueryTokenResponse {
+  Token token = 1 [(gogoproto.nullable) = false];
+}
+
+// QueryTokensRequest is the request type for the Query/Tokens RPC method
+message QueryTokensRequest {
+  // pagination defines an optional pagination for the request.
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryTokensResponse is the response type for the Query/Tokens RPC method
+message QueryTokensResponse {
+  repeated Token tokens = 1 [(gogoproto.nullable) = false];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryTokensBySymbolRequest {
+  string symbol = 1;
+}
+
+message QueryTokensBySymbolResponse {
+  repeated Token tokens = 1 [(gogoproto.nullable) = false];
+}
+
+// BalanceWithMetadata represents a balance with its token metadata
+message BalanceWithMetadata {
+  string denom = 1;
+  string amount = 2;
+  Token metadata = 3;
+}
+
+// QueryBalancesWithMetadataRequest is the request type for the Query/BalancesWithMetadata RPC method
+message QueryBalancesWithMetadataRequest {
+  string address = 1;
+  cosmos.base.query.v1beta1.PageRequest pagination = 2;
+}
+
+// QueryBalancesWithMetadataResponse is the response type for the Query/BalancesWithMetadata RPC method
+message QueryBalancesWithMetadataResponse {
+  repeated BalanceWithMetadata balances = 1 [(gogoproto.nullable) = false];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
