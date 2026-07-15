@@ -178,7 +178,8 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// "🚫 Scam" badges per token. On-chain layer stays permissionless.
 	//
 	// MinimalDenom uniqueness preserved via counter (see line 41 + 178 below).
-	// SafeIsNativeDenom (SA-H8) still blocks ustoc/astoc symbol collision.
+	// Native-denom symbol collision ALSO allowed (round-22 2026-07-15, SA-H8 removed):
+	// Symbol "ustoc"/"stoc" still mints a unique "ustoc_1" denom — no denom collision.
 	// Tax recipient blocklist (SA-H11) still blocks soft-rug.
 
 	// Validate generated denom against SDK rules

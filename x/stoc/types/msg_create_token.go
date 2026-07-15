@@ -49,13 +49,12 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	if !TokenSymbolRegex.MatchString(m.Symbol) {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
-	// Prevent symbols that could be confused with native denoms (dynamically detected).
-	// Case-INSENSITIVE: tickers are display-facing and wallets upper-case them, so
-	// "STOC"/"USTOC"/"ASTOC" must be rejected like their lowercase forms (SA-H8;
-	// round-20 regression fixed round-21). See IsNativeSymbol godoc in token.go.
-	if IsNativeSymbol(m.Symbol) {
-		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol cannot be a native denom")
-	}
+	// Native-denom symbol collision is INTENTIONALLY ALLOWED (audit round-22 2026-07-15,
+	// supersedes SA-H8): the on-chain denom is the unique minimalDenom SYMBOL_<counter>
+	// (e.g. "STOC_1"), never the bare native denom, so there is no denom/fund collision.
+	// Ticker collision is a display concern handled off-chain by the BE indexer verified
+	// badge (SA-H13 + industry norm: Osmosis tokenfactory namespacing, ERC20 token lists).
+	// Do NOT re-add a native-symbol block here.
 
 	if m.Decimals > 18 {
 		return errorsmod.Wrap(ErrInvalidToken, "decimals must be between 0 and 18")
