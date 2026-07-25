@@ -675,7 +675,17 @@ func (app *App) blockCustomTokenIBCTransfers() {
 			// Double-check after acquiring write lock (must match read-lock threshold)
 			if escrowAddrs == nil || currentHeight-cacheHeight >= 1 {
 				newCache := make(map[string]string)
-				channels := ibcKeeper.ChannelKeeper.GetAllChannels(sdkCtx)
+				// AppHash-race fix (cosmos-sdk #18521 class): charging this rebuild's store
+				// reads to the tx gas meter makes the first custom-token send's gas depend on
+				// in-memory cache/warmth state (even an empty channel set bills one
+				// IterNextFlat=30 on the iterator seek). Nodes whose cache-refresh phase
+				// differed then metered the same tx by 30 gas -> feemarket block-gas diverged
+				// -> AppHash fork (2026-07-16 mainnet VPS5 zombie; reproduced deterministically
+				// on devnet block 74916). Read channels under an infinite (non-tx) gas meter so
+				// the rebuild never bills the tx: gas is deterministic across all nodes,
+				// independent of when the cache was built. Content/blocking decision unchanged.
+				rebuildCtx := sdkCtx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+				channels := ibcKeeper.ChannelKeeper.GetAllChannels(rebuildCtx)
 				for _, ch := range channels {
 					if ch.PortId == ibctransfertypes.PortID {
 						addr := ibctransfertypes.GetEscrowAddress(ch.PortId, ch.ChannelId)
