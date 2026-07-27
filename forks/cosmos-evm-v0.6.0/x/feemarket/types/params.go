@@ -100,6 +100,22 @@ func (p Params) Validate() error {
 		return fmt.Errorf("base fee (%s) must be >= min gas price (%s)", p.BaseFee, p.MinGasPrice)
 	}
 
+	// FEE1 audit-2026-07-27: when base fee is enabled (NoBaseFee=false), a zero
+	// BaseFee removes the sole Cosmos-tx consensus fee floor — DynamicFeeChecker
+	// compares feeCap >= BaseFee, so BaseFee=0 admits zero-fee txs (free spam).
+	// Reject an explicit zero. This is conditional and cannot break existing
+	// configs: NoBaseFee=true legitimately uses BaseFee=0 (v2/v3 upgrade era,
+	// skipped by !NoBaseFee); DefaultParams keeps BaseFee=1e9; v5.0.0 sets 0.001.
+	// NOTE: the *persistent* floor is MinGasPrice (it clamps the per-block
+	// dynamic BaseFee). A code guard on MinGasPrice==0 is intentionally NOT added
+	// here because DefaultMinGasPrice=0 with DefaultNoBaseFee=false would reject
+	// DefaultParams() and brick fresh genesis. Keep "MinGasPrice > 0 when
+	// NoBaseFee=false" as a gov-proposal checklist invariant instead; v5.0.0
+	// satisfies it (MinGasPrice=0.001).
+	if !p.NoBaseFee && p.BaseFee.IsZero() {
+		return fmt.Errorf("base fee cannot be zero when base fee is enabled (NoBaseFee=false): removes the cosmos-tx fee floor")
+	}
+
 	return nil
 }
 

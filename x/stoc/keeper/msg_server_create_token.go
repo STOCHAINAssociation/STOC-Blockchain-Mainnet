@@ -76,6 +76,14 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// in that case. The contradictory pair (Unlimited+InitialSupply=0 AND
 	// non-empty msg.Distributions) is rejected by the explicit check
 	// further down before the mint loop runs.
+	// F1 audit-2026-07-27: authz MsgExec dispatches inner msgs without running
+	// ValidateBasic, so a nil InitialSupply (proto field omitted on the wire)
+	// can reach here and nil-deref on IsZero(). Reject explicitly, mirroring the
+	// ValidateBasic IsNil guard the authz path bypasses. (Recovered by runTx
+	// today, so this hardens robustness, not liveness.)
+	if msg.InitialSupply.IsNil() {
+		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "initial supply cannot be nil")
+	}
 	skipDistributionForToken := msg.Unlimited && msg.InitialSupply.IsZero()
 
 	distributions := msg.Distributions

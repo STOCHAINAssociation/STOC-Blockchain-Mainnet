@@ -66,7 +66,9 @@ func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTok
 	// Sum cumulative amount and bail before any bank mutation.
 	totalAmount := math.ZeroInt()
 	for i, dist := range msg.Distributions {
-		if !dist.Amount.IsPositive() {
+		// F1 audit-2026-07-27: authz MsgExec bypasses ValidateBasic; a nil
+		// dist.Amount would nil-deref on IsPositive(). Guard IsNil first.
+		if dist.Amount.IsNil() || !dist.Amount.IsPositive() {
 			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
 				"distributions[%d] (%s): release amount must be positive (got %s)",
 				i, dist.Address, dist.Amount.String())

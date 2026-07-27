@@ -73,7 +73,11 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	}
 
 	// Validate amount
-	if amountToBurn.IsZero() {
+	// F1 audit-2026-07-27: authz MsgExec bypasses ValidateBasic; on the
+	// !BurnAll path amountToBurn = msg.Amount, which can be nil (proto field
+	// omitted) and would nil-deref on IsZero(). Guard IsNil first. (BurnAll
+	// path sets it from GetBalance, never nil.)
+	if amountToBurn.IsNil() || amountToBurn.IsZero() {
 		if msg.BurnAll {
 			return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "no tokens remaining after gas deduction")
 		}
