@@ -68,6 +68,15 @@ func (p Params) Validate() error {
 		return fmt.Errorf("base fee change denominator cannot be 0")
 	}
 
+	// FEE1 audit-2026-07-28: guard nil BEFORE any Dec method call. Validate is
+	// now reached on the gov MsgUpdateParams path (feemarket msg_server calls it),
+	// and a proposal that omits base_fee unmarshals to a nil LegacyDec — the
+	// IsNegative() below would nil-panic. Return an error instead (fail-closed:
+	// the proposal is rejected at submission, never a halt).
+	if p.BaseFee.IsNil() {
+		return fmt.Errorf("base fee cannot be nil")
+	}
+
 	if p.BaseFee.IsNegative() {
 		return fmt.Errorf("initial base fee cannot be negative: %s", p.BaseFee)
 	}
