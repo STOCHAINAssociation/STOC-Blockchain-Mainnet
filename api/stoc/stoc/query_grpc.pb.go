@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_Params_FullMethodName         = "/stoc.stoc.Query/Params"
-	Query_Token_FullMethodName          = "/stoc.stoc.Query/Token"
-	Query_Tokens_FullMethodName         = "/stoc.stoc.Query/Tokens"
-	Query_TokensBySymbol_FullMethodName = "/stoc.stoc.Query/TokensBySymbol"
+	Query_Params_FullMethodName               = "/stoc.stoc.Query/Params"
+	Query_Token_FullMethodName                = "/stoc.stoc.Query/Token"
+	Query_Tokens_FullMethodName               = "/stoc.stoc.Query/Tokens"
+	Query_TokensBySymbol_FullMethodName       = "/stoc.stoc.Query/TokensBySymbol"
+	Query_BalancesWithMetadata_FullMethodName = "/stoc.stoc.Query/BalancesWithMetadata"
 )
 
 // QueryClient is the client API for Query service.
@@ -37,6 +38,8 @@ type QueryClient interface {
 	Tokens(ctx context.Context, in *QueryTokensRequest, opts ...grpc.CallOption) (*QueryTokensResponse, error)
 	// TokensBySymbol returns tokens with a specific symbol
 	TokensBySymbol(ctx context.Context, in *QueryTokensBySymbolRequest, opts ...grpc.CallOption) (*QueryTokensBySymbolResponse, error)
+	// BalancesWithMetadata returns balances with token metadata for an address
+	BalancesWithMetadata(ctx context.Context, in *QueryBalancesWithMetadataRequest, opts ...grpc.CallOption) (*QueryBalancesWithMetadataResponse, error)
 }
 
 type queryClient struct {
@@ -83,6 +86,15 @@ func (c *queryClient) TokensBySymbol(ctx context.Context, in *QueryTokensBySymbo
 	return out, nil
 }
 
+func (c *queryClient) BalancesWithMetadata(ctx context.Context, in *QueryBalancesWithMetadataRequest, opts ...grpc.CallOption) (*QueryBalancesWithMetadataResponse, error) {
+	out := new(QueryBalancesWithMetadataResponse)
+	err := c.cc.Invoke(ctx, Query_BalancesWithMetadata_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
@@ -95,6 +107,8 @@ type QueryServer interface {
 	Tokens(context.Context, *QueryTokensRequest) (*QueryTokensResponse, error)
 	// TokensBySymbol returns tokens with a specific symbol
 	TokensBySymbol(context.Context, *QueryTokensBySymbolRequest) (*QueryTokensBySymbolResponse, error)
+	// BalancesWithMetadata returns balances with token metadata for an address
+	BalancesWithMetadata(context.Context, *QueryBalancesWithMetadataRequest) (*QueryBalancesWithMetadataResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -113,6 +127,9 @@ func (UnimplementedQueryServer) Tokens(context.Context, *QueryTokensRequest) (*Q
 }
 func (UnimplementedQueryServer) TokensBySymbol(context.Context, *QueryTokensBySymbolRequest) (*QueryTokensBySymbolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TokensBySymbol not implemented")
+}
+func (UnimplementedQueryServer) BalancesWithMetadata(context.Context, *QueryBalancesWithMetadataRequest) (*QueryBalancesWithMetadataResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BalancesWithMetadata not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -199,6 +216,24 @@ func _Query_TokensBySymbol_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_BalancesWithMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryBalancesWithMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).BalancesWithMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_BalancesWithMetadata_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).BalancesWithMetadata(ctx, req.(*QueryBalancesWithMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -221,6 +256,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TokensBySymbol",
 			Handler:    _Query_TokensBySymbol_Handler,
+		},
+		{
+			MethodName: "BalancesWithMetadata",
+			Handler:    _Query_BalancesWithMetadata_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -191,6 +191,27 @@ var (
 		erc20types.ModuleName,
 		feemarkettypes.ModuleName,
 		evmutiltypes.ModuleName,
+		// x/stoc module holds custom-token reserves; direct MsgSend to it would
+		// (a) permanently lock funds (no withdrawal path for
+		// non-managed denoms) and (b) inflate moduleBalance vs token.RemainingSupply
+		// → SupplyInvariant break → chain-halt-as-a-weapon via MsgVerifyInvariant.
+		// SendCoinsFromAccountToModule (used by MsgBurnToken) bypasses this check
+		// by SDK design, so legitimate keeper flows continue to work.
+		stocmoduletypes.ModuleName,
+		// Block the feegrant module account. x/stoc tax is a PostDecorator on
+		// MsgSend and does NOT
+		// fire on module-account-sourced sends — coins parked in (or routed
+		// through) the feegrant module account would form a tax-bypass
+		// corridor for custom-token transfers. Feegrant allowance accounting
+		// is pure state (grants never require coins to sit in the module
+		// account), so blocking direct MsgSend to it loses nothing.
+		feegrant.ModuleName,
+		// The ibctransfer + ICA host module accounts are intentionally NOT
+		// blocked. Blocking them would be defense-in-depth against
+		// self-inflicted fund-lock, but it can break legitimate relayer flows
+		// and must be verified with a full two-chain IBC transfer-in/out + ICA
+		// host regression before it is enabled. Direct-send fund-lock is a user
+		// footgun, not an attacker vector.
 		// We allow the following module accounts to receive funds:
 		// govtypes.ModuleName
 	}

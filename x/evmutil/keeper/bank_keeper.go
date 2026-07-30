@@ -75,10 +75,10 @@ func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, deno
 }
 
 // SendCoins transfers coins from one account to another.
-// For EVM denom, it converts and uses Cosmos denom under the hood.
-// Custom tokens (created via STOC module) are NOT transferable from EVM.
+// Outflow: rounds DOWN (caller bears dust). Rounding up would overcharge the
+// sender and corrupt contract-internal Transfer(N) accounting.
 func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
@@ -86,10 +86,10 @@ func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, a
 }
 
 // MintCoins mints coins to the module account.
-// For EVM denom, it converts to Cosmos denom.
-// Custom tokens cannot be minted from EVM context.
+// Outflow (creates supply): rounds DOWN.
+// Rounding up would over-mint vs caller intent, breaking supply accounting.
 func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
@@ -97,10 +97,10 @@ func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk
 }
 
 // BurnCoins burns coins from the module account.
-// For EVM denom, it converts to Cosmos denom.
-// Custom tokens cannot be burned from EVM context.
+// Outflow (destroys supply): rounds DOWN.
+// Rounding up would over-burn vs caller intent.
 func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
@@ -108,9 +108,12 @@ func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk
 }
 
 // SendCoinsFromModuleToAccount transfers coins from module to account.
-// Custom tokens cannot be transferred from EVM context.
+// Outflow (e.g. RefundGas from FeeCollector): rounds DOWN.
+// Rounding up would gift 1 ustoc from the FeeCollector to the user on every tx
+// with non-aligned leftover gas, a measurable validator-reward drain under
+// low-fee spam.
 func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
@@ -118,9 +121,11 @@ func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderM
 }
 
 // SendCoinsFromAccountToModule transfers coins from account to module.
-// Custom tokens cannot be transferred from EVM context.
+// Inflow (e.g. fee collection, deposit): rounds UP.
+// Caller overpays at most 1 ustoc; protects module-account accounting from
+// sub-ustoc dust loss.
 func (k EvmBankKeeper) SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForInflow(amt)
 	if err != nil {
 		return err
 	}
@@ -269,39 +274,39 @@ func (k EvmBankKeeper) SpendableCoin(ctx context.Context, addr sdk.AccAddress, d
 }
 
 // SendCoinsFromModuleToModule transfers coins between modules.
-// Custom tokens cannot be transferred from EVM context.
+// Outflow: rounds DOWN.
 func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderModule string, recipientModule string, amt sdk.Coins) error {
-	convertedAmt, err := k.convertAndValidateCoins(amt)
+	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
 		return err
 	}
 	return k.bankKeeper.SendCoinsFromModuleToModule(ctx, senderModule, recipientModule, convertedAmt)
 }
 
-// convertAndValidateCoins converts EVM coins to Cosmos coins with dust remainder and zero-amount validation.
-// Rejects custom tokens and ensures converted amounts are non-zero.
-func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error) {
+// convertCoinsForInflow converts EVM coins to Cosmos coins with round-UP (ceiling).
+// Use only for inflow paths (account → module fee deposit). Caller overpays at
+// most 1 ustoc (1e-6 STOC) per coin entry — negligible cost protecting module
+// accounting from sub-ustoc dust loss. Intended for fee collection only.
+func (k EvmBankKeeper) convertCoinsForInflow(amt sdk.Coins) (sdk.Coins, error) {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
+		if coin.Amount.IsNegative() {
+			return nil, errorsmod.Wrapf(types.ErrInvalidDenom, "negative amount %s for denom %s", coin.Amount.String(), coin.Denom)
+		}
+		if coin.Amount.IsZero() {
+			continue // skip zero amounts to prevent a phantom 1-ustoc charge
+		}
 		if coin.Denom == k.getEvmDenom() {
-			// Reject amounts with dust remainder to prevent silent value loss
-			remainder := coin.Amount.Mod(types.ConversionMultiplier)
+			amount := coin.Amount
+			remainder := amount.Mod(types.ConversionMultiplier)
 			if !remainder.IsZero() {
-				return nil, fmt.Errorf(
-					"amount %s %s has dust remainder %s wei that would be lost in conversion. "+
-						"Use multiples of %s wei (1 %s)",
-					coin.Amount.String(), k.getEvmDenom(), remainder.String(),
-					types.ConversionMultiplier.String(), k.getCosmosDenom(),
-				)
+				amount = amount.Sub(remainder).Add(types.ConversionMultiplier)
 			}
-			cosmosCoin, err := ConvertEvmCoinToCosmosCoin(coin)
-			if err != nil {
-				return nil, err
-			}
-			if cosmosCoin.Amount.IsZero() {
+			cosmosAmount := amount.Quo(types.ConversionMultiplier)
+			if cosmosAmount.IsZero() {
 				return nil, fmt.Errorf("amount too small: %s %s converts to 0 %s", coin.Amount.String(), k.getEvmDenom(), k.getCosmosDenom())
 			}
-			convertedAmt = convertedAmt.Add(cosmosCoin)
+			convertedAmt = convertedAmt.Add(sdk.NewCoin(k.getCosmosDenom(), cosmosAmount))
 		} else if coin.Denom == k.getCosmosDenom() {
 			convertedAmt = convertedAmt.Add(coin)
 		} else {
@@ -309,6 +314,106 @@ func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error)
 		}
 	}
 	return convertedAmt, nil
+}
+
+// trySDKContext returns the sdk.Context wrapped inside ctx, if any. The
+// emission of the `evm_dust_dropped` event is best-effort: production paths
+// always wrap an sdk.Context via baseapp's sdk.WrapSDKContext before invoking
+// keeper methods, so emission fires. Tests that pass context.Background()
+// directly (no SDK wrap, no EventManager) silently skip emission instead of
+// panicking the way sdk.UnwrapSDKContext would.
+func trySDKContext(ctx context.Context) (sdk.Context, bool) {
+	if c, ok := ctx.(sdk.Context); ok {
+		return c, true
+	}
+	v := ctx.Value(sdk.SdkContextKey)
+	if v == nil {
+		return sdk.Context{}, false
+	}
+	c, ok := v.(sdk.Context)
+	return c, ok
+}
+
+// convertCoinsForOutflow converts EVM coins to Cosmos coins with round-DOWN
+// (truncation) and silently drops dust legs that round to zero ustoc.
+//
+// Use for all outflow paths: SendCoins, MintCoins, BurnCoins,
+// SendCoinsFromModuleToAccount (incl. RefundGas), SendCoinsFromModuleToModule.
+// Round-DOWN prevents:
+//   - FeeCollector drain via RefundGas rounding up sub-ustoc leftover gas.
+//   - contract-internal Transfer(N) corruption where caller intent diverges
+//     from on-chain debit.
+//
+// Caller's astoc balance shows the truncated amount; dust below 1 ustoc is
+// burned by the conversion (not leaked to anyone) and cannot be recovered.
+//
+// Dust legs never revert the calling EVM frame: reverting whenever any leg
+// rounds to zero ustoc (amount < 1e12 wei) would break otherwise-valid EVM
+// contract calls and gas refunds that emit sub-ustoc legs. Dust legs are
+// dropped and the remaining Coins are processed. If EVERY leg rounds to zero
+// an empty sdk.Coins is returned, which downstream bank calls treat as a
+// no-op. Non-dust amounts still truncate (never round up), so the
+// protections above still hold.
+//
+// Caveat: an EVM contract that maintains an independent ledger synced with
+// its native astoc balance can drift out of sync, because the bank call
+// returns success while no state changed. The standard ERC-20 precompile
+// reads balance from bankKeeper and is therefore not affected. So that
+// off-chain indexers and contract authors can detect dropped dust, an
+// observability event is emitted:
+//
+//	evm_dust_dropped{evm_denom, evm_amount, cosmos_denom, reason}
+//
+// emitted at the call's sdk.Context EventManager. The event is best-
+// effort: when ctx is unwrapped to a no-op sdk.Context (e.g. tests that
+// don't wire an EventManager), the EmitEvent call no-ops, so this path
+// stays safe for all callers.
+func (k EvmBankKeeper) convertCoinsForOutflow(ctx context.Context, amt sdk.Coins) (sdk.Coins, error) {
+	convertedAmt := sdk.NewCoins()
+	for _, coin := range amt {
+		if coin.Amount.IsNegative() {
+			return nil, errorsmod.Wrapf(types.ErrInvalidDenom, "negative amount %s for denom %s", coin.Amount.String(), coin.Denom)
+		}
+		if coin.Amount.IsZero() {
+			continue
+		}
+		if coin.Denom == k.getEvmDenom() {
+			// Round DOWN: truncate sub-ustoc remainder.
+			cosmosAmount := coin.Amount.Quo(types.ConversionMultiplier)
+			if cosmosAmount.IsZero() {
+				// Silent drop (matches the godoc dust-burn contract). Emit an
+				// observability event so contracts with independent ledgers and
+				// off-chain indexers can reconcile dropped dust. Best-effort emission:
+				// callers that pass context.Background() (no SDK wrap, no
+				// EventManager) silently skip the event without panic.
+				if sdkCtx, ok := trySDKContext(ctx); ok {
+					sdkCtx.EventManager().EmitEvent(
+						sdk.NewEvent(
+							"evm_dust_dropped",
+							sdk.NewAttribute("evm_denom", coin.Denom),
+							sdk.NewAttribute("evm_amount", coin.Amount.String()),
+							sdk.NewAttribute("cosmos_denom", k.getCosmosDenom()),
+							sdk.NewAttribute("reason", "amount below 1 ustoc resolution after round-down (SA-2026-06-02 MED-3 silent drop)"),
+						),
+					)
+				}
+				continue
+			}
+			convertedAmt = convertedAmt.Add(sdk.NewCoin(k.getCosmosDenom(), cosmosAmount))
+		} else if coin.Denom == k.getCosmosDenom() {
+			convertedAmt = convertedAmt.Add(coin)
+		} else {
+			return nil, errorsmod.Wrapf(types.ErrInvalidDenom, "custom token %s cannot be transferred from EVM context", coin.Denom)
+		}
+	}
+	return convertedAmt, nil
+}
+
+// convertAndValidateCoins is kept as a deprecated alias to the inflow variant.
+// All keeper methods have been migrated to the directional helpers above.
+// Deprecated: use convertCoinsForInflow or convertCoinsForOutflow per direction.
+func (k EvmBankKeeper) convertAndValidateCoins(amt sdk.Coins) (sdk.Coins, error) {
+	return k.convertCoinsForInflow(amt)
 }
 
 // SetDenomMetaData sets the metadata for a denom.

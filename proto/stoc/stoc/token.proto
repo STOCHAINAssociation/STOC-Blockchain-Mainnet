@@ -47,9 +47,25 @@ message Token {
 // WalletDistribution defines how initial tokens are distributed
 message WalletDistribution {
   option (gogoproto.equal) = true;
-  
+
   string address = 1;
   uint32 percent = 2;
+}
+
+// ReleaseRecipient is a single recipient + absolute amount entry for
+// MsgReleaseTokens distributions. Unlike WalletDistribution (percent-based,
+// used at CreateToken time), ReleaseRecipient uses an absolute Int amount
+// because drip-release rounds (ICO tranches, vesting unlocks, founder
+// allocations) carry exact per-recipient values rather than percentages of
+// a fixed total.
+message ReleaseRecipient {
+  option (gogoproto.equal) = true;
+
+  string address = 1;
+  string amount = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false
+  ];
 }
 
 // TokenTax defines tax configuration for token transactions

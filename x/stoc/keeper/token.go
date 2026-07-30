@@ -66,6 +66,15 @@ func (k Keeper) HasToken(ctx sdk.Context, minimalDenom string) bool {
 	return store.Has([]byte(minimalDenom))
 }
 
+// HasTokenSymbol returns whether ANY token with the given symbol exists.
+func (k Keeper) HasTokenSymbol(ctx sdk.Context, symbol string) bool {
+	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
+	iterator := storetypes.KVStorePrefixIterator(indexStore, []byte(symbol+":"))
+	defer iterator.Close()
+	return iterator.Valid()
+}
+
 // DeleteToken removes a token from the store and cleans up the symbol index.
 // Returns error if the token exists but cannot be unmarshaled (prevents orphan index entries).
 func (k Keeper) DeleteToken(ctx sdk.Context, minimalDenom string) error {
@@ -151,18 +160,41 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 		return err
 	}
 
-	// Persist state — already validated above, SetToken re-validates defensively
+	// Persist state AFTER all bank ops succeed.
+	//
+	// NOTE — NOT A CEI VIOLATION:
+	// In Solidity, state updates must come BEFORE external calls to prevent
+	// re-entrancy attacks (Checks-Effects-Interactions pattern). In Cosmos SDK,
+	// this concern does NOT apply because:
+	//   1. bankKeeper.MintCoins and SendCoinsFromModuleToAccount are synchronous
+	//      in-process calls, not external contract calls — no re-entrancy vector.
+	//   2. The entire msg handler runs inside BaseApp.cacheTxContext (baseapp.go:975).
+	//      If SetToken fails here, the handler returns an error, and BaseApp
+	//      discards the cache — ALL prior bank ops (MintCoins, SendCoins) revert
+	//      atomically. No orphan coins, no supply desync.
+	//   3. Pre-validation above (ValidateState) ensures SetToken will not reject
+	//      the updated state under normal conditions. SetToken re-validates
+	//      defensively but should never fail after pre-validation passes.
+	//
+	// DO NOT reorder SetToken before bank ops — manual rollback on bank failure
+	// is error-prone and unnecessary given cosmos-sdk tx atomicity.
 	if err := k.SetToken(ctx, token); err != nil {
 		return err
 	}
 
 	//Emit event
+	// Emit token.Creator (persisted
+	// canonical source) instead of owner.String() — values are identical
+	// here because the auth check above already proved owner == Creator,
+	// but sourcing the attribute from state makes the event stream
+	// symmetric with CreateToken/ReleaseTokens (both emit token.Creator)
+	// and immune to a future refactor that loosens the owner param.
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeMintToken,
 			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
 			sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
-			sdk.NewAttribute(types.AttributeKeyTokenCreator, owner.String()),
+			sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
 			sdk.NewAttribute(types.AttributeKeyMintAmount, amount.String()),
 		),
 	)

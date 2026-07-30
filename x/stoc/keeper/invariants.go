@@ -20,11 +20,23 @@ func RegisterInvariants(ir sdk.InvariantRegistry, k Keeper) {
 //   - bank total supply == token.TotalSupply
 //   - module account balance == token.RemainingSupply
 //
-// If either condition fails, the chain halts so operators can investigate.
+// Returns broken=false (non-halting) and instead logs + emits an event when
+// divergence is detected. A halting invariant would be chain-halt-as-a-weapon:
+// any user could send `MsgVerifyInvariant` to trigger a halt if state drift
+// exists. Operators monitor `stoc_supply_drift` events instead. To restore
+// hard-halt behavior, set `broken = true` again.
+//
+// By design, mint/burn/release handlers do NOT cross-check bank supply
+// inline — the per-block invariant here is the single detection point, and
+// it must stay non-halting. Alerting must subscribe to the
+// `stoc_supply_drift` event; a drift event that nobody observes means
+// silent accounting divergence. Genesis boots get the strict counterpart
+// check in x/stoc/module/genesis.go, where panicking is safe because there
+// is no liveness to protect yet.
 func SupplyInvariant(k Keeper) sdk.Invariant {
 	return func(ctx sdk.Context) (string, bool) {
 		var msg string
-		var broken bool
+		var drift bool
 
 		moduleAddr := authtypes.NewModuleAddress(types.ModuleName)
 		tokens := k.GetAllTokens(ctx)
@@ -32,36 +44,42 @@ func SupplyInvariant(k Keeper) sdk.Invariant {
 		for _, token := range tokens {
 			denom := token.MinimalDenom
 
-			// Check 1: bank supply == token.TotalSupply
 			bankSupply := k.bankKeeper.GetSupply(ctx, denom)
 			if !bankSupply.Amount.Equal(token.TotalSupply) {
 				msg += fmt.Sprintf(
 					"\ttoken %s (%s): bank supply %s != tracked TotalSupply %s\n",
 					token.Symbol, denom, bankSupply.Amount, token.TotalSupply,
 				)
-				broken = true
+				drift = true
 			}
 
-			// Check 2: module account balance == token.RemainingSupply
 			moduleBalance := k.bankKeeper.GetBalance(ctx, moduleAddr, denom)
 			if !moduleBalance.Amount.Equal(token.RemainingSupply) {
 				msg += fmt.Sprintf(
 					"\ttoken %s (%s): module balance %s != tracked RemainingSupply %s\n",
 					token.Symbol, denom, moduleBalance.Amount, token.RemainingSupply,
 				)
-				broken = true
+				drift = true
 			}
 
-			// Check 3: RemainingSupply must never exceed TotalSupply
 			if token.RemainingSupply.GT(token.TotalSupply) {
 				msg += fmt.Sprintf(
 					"\ttoken %s (%s): RemainingSupply %s > TotalSupply %s\n",
 					token.Symbol, denom, token.RemainingSupply, token.TotalSupply,
 				)
-				broken = true
+				drift = true
 			}
 		}
 
-		return sdk.FormatInvariant(types.ModuleName, supplyInvariantRoute, msg), broken
+		// Log + emit event for operator observability; return broken=false
+		// so MsgVerifyInvariant cannot weaponize the check to halt the chain.
+		if drift {
+			k.Logger().Error("x/stoc supply drift detected (non-halting)", "details", msg)
+			ctx.EventManager().EmitEvent(sdk.NewEvent(
+				"stoc_supply_drift",
+				sdk.NewAttribute("details", msg),
+			))
+		}
+		return sdk.FormatInvariant(types.ModuleName, supplyInvariantRoute, msg), false
 	}
 }

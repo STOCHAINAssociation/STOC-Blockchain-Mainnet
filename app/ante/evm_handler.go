@@ -13,6 +13,10 @@ func newMonoEVMAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHan
 	evmParams := options.EvmKeeper.GetParams(ctx)
 	feemarketParams := options.FeeMarketKeeper.GetParams(ctx)
 	decorators := []sdk.AnteDecorator{
+		// Reject EVM txs from wallets that already have >= max pending entries
+		// in the EVM mempool. Placed BEFORE EVMMonoDecorator so spammers don't
+		// waste cycles on fee/gas validation. CheckTx-only.
+		NewMaxPendingTxPerWalletDecorator(options.GetEVMMempool, options.MaxPendingTxPerWallet),
 		evmante.NewEVMMonoDecorator(
 			options.AccountKeeper,
 			options.FeeMarketKeeper,

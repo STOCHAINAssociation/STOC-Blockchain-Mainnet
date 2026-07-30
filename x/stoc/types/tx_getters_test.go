@@ -53,24 +53,24 @@ func TestMsgMintTokensGetters(t *testing.T) {
 func TestMsgReleaseTokensGetters(t *testing.T) {
 	amount := math.NewInt(750)
 	msg := &MsgReleaseTokens{
-		Creator:   "stoc1test",
-		Symbol:    "TEST",
-		Amount:    amount,
-		Recipient: "stoc1recipient",
+		Creator: "stoc1test",
+		Symbol:  "TEST",
+		Distributions: []ReleaseRecipient{
+			{Address: "stoc1recipient", Amount: amount},
+		},
 	}
 
-	// Test all getter methods and direct field access
 	require.Equal(t, "stoc1test", msg.GetCreator())
 	require.Equal(t, "TEST", msg.GetSymbol())
-	require.Equal(t, amount, msg.Amount) // Direct field access for custom type
-	require.Equal(t, "stoc1recipient", msg.GetRecipient())
+	require.Len(t, msg.Distributions, 1)
+	require.Equal(t, "stoc1recipient", msg.Distributions[0].Address)
+	require.Equal(t, amount, msg.Distributions[0].Amount)
 
 	// Test nil message
 	var nilMsg *MsgReleaseTokens
 	require.Equal(t, "", nilMsg.GetCreator())
 	require.Equal(t, "", nilMsg.GetSymbol())
-	// Cannot access Amount field directly on nil pointer, skip this test
-	require.Equal(t, "", nilMsg.GetRecipient())
+	require.Nil(t, nilMsg.GetDistributions())
 }
 
 func TestMsgCreateTokenGetters(t *testing.T) {

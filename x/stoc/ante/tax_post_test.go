@@ -97,6 +97,14 @@ func (m *mockBankKeeper) GetSupply(_ context.Context, denom string) sdk.Coin {
 	return sdk.NewCoin(denom, total)
 }
 func (m *mockBankKeeper) SetDenomMetaData(_ context.Context, _ banktypes.Metadata) {}
+func (m *mockBankKeeper) BlockedAddr(_ sdk.AccAddress) bool                         { return false }
+
+// mockAccountKeeper satisfies the nil-keeper guard in keeper.NewKeeper.
+type mockAccountKeeper struct{}
+
+func (m *mockAccountKeeper) GetAccount(_ context.Context, _ sdk.AccAddress) sdk.AccountI {
+	return nil
+}
 func (m *mockBankKeeper) IterateAccountBalances(_ context.Context, addr sdk.AccAddress, cb func(coin sdk.Coin) bool) {
 	for _, coin := range m.balances[addr.String()] {
 		if cb(coin) {
@@ -127,7 +135,7 @@ func setupTaxTest(t testing.TB) (keeper.Keeper, sdk.Context, *mockBankKeeper, co
 		log.NewNopLogger(),
 		authority.String(),
 		mockBank,
-		nil,
+		&mockAccountKeeper{},
 	)
 
 	ctx := sdk.NewContext(stateStore, cmtproto.Header{}, false, log.NewNopLogger())
@@ -450,8 +458,11 @@ func TestTaxPostDecorator_MicroTransferCap(t *testing.T) {
 	}
 	require.NoError(t, k.SetToken(ctx, token))
 
-	// Send 1 token: 0.1% of 1 = 0 → minimum 1, but recipient must retain at least 1 unit
-	// So tax = 0 on 1-unit transfers (recipient retains full amount)
+	// Taxable tokens reject transfers of 1 unit or less. A 1-unit transfer
+	// cannot be split into a non-zero tax share plus a non-zero recipient
+	// share, so allowing it would let a caller split a larger payment into
+	// N × 1-unit transfers to bypass the tax entirely. The post-handler
+	// must surface this as an error that reverts the transaction.
 	mockBank.balances[recipient.String()] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(1)))
 
 	msg := &banktypes.MsgSend{
@@ -464,9 +475,10 @@ func TestTaxPostDecorator_MicroTransferCap(t *testing.T) {
 	tx := mockTx{msgs: []sdk.Msg{msg}}
 
 	_, err := decorator.PostHandle(ctx, tx, false, true, noopPostHandler)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "below minimum taxable amount")
 
-	// Tax = 0 on 1-unit transfers (recipient always retains at least 1 unit)
+	// Recipient balance unchanged; tax collector received nothing.
 	recipientBal := mockBank.balances[recipient.String()].AmountOf(denom)
 	taxCollectorBal := mockBank.balances[taxCollector.String()].AmountOf(denom)
 
@@ -517,8 +529,77 @@ func TestTaxPostDecorator_TaxFailRevertsTx(t *testing.T) {
 	decorator := ante.NewTaxPostDecorator(k, cdc)
 	tx := mockTx{msgs: []sdk.Msg{msg}}
 
+	// When the BankKeeper's SendCoins returns an error (drain-then-evade OR
+	// a stale balance read for a fresh recipient), the tax decorator
+	// SILENTLY SKIPS the tax for that message and lets the original
+	// transfer stand. See the tax_post.go comment block at the SendCoins
+	// call site for the full rationale. The contract for this PostHandle
+	// is: never revert on tax SendCoins failure.
 	_, err := decorator.PostHandle(ctx, tx, false, true, noopPostHandler)
-	// Tax failure must revert the entire transaction
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "tax enforcement failed")
+	require.NoError(t, err, "SA-C5 v3b: tax SendCoins failure must NOT revert the tx until v4 redesign lands")
+}
+
+// TestTaxPostDecorator_FeegrantPayerDoesNotShiftTax pins the feegrant
+// interaction semantics: when a third party pays the tx FEES via a
+// feegrant allowance, the custom-token TAX must still be deducted from the
+// MsgSend RECIPIENT — never from the fee granter. The tax PostDecorator
+// reads only MsgSend.From/To and is blind to the FeeTx fee payer by
+// design; this test fails if a future refactor wires fee-payer identity
+// into tax attribution.
+func TestTaxPostDecorator_FeegrantPayerDoesNotShiftTax(t *testing.T) {
+	setDefaultBondDenom(t)
+	k, ctx, mockBank, cdc := setupTaxTest(t)
+
+	sender := sdk.AccAddress([]byte("sender______________"))
+	recipient := sdk.AccAddress([]byte("recipient___________"))
+	taxCollector := sdk.AccAddress([]byte("tax_collector_______"))
+	feeGranter := sdk.AccAddress([]byte("fee_granter_________"))
+
+	denom := "MYTOKEN_0"
+	token := types.Token{
+		Id:              denom,
+		Name:            "My Token",
+		Symbol:          "MYTOKEN",
+		Decimals:        6,
+		Logo:            "https://example.com/logo.png",
+		InitialSupply:   math.NewInt(10000),
+		TotalSupply:     math.NewInt(10000),
+		RemainingSupply: math.ZeroInt(),
+		MinimalDenom:    denom,
+		Creator:         sender.String(),
+		Unlimited:       false,
+		Tax: types.TokenTax{
+			Percent:          math.LegacyNewDecWithPrec(1, 1), // 10%
+			RecipientAddress: taxCollector.String(),
+		},
+	}
+	require.NoError(t, k.SetToken(ctx, token))
+
+	// Granter holds only native ustoc (fees are always native — custom
+	// tokens are rejected as fee denom). Recipient already received the
+	// 100-token transfer from runMsgs.
+	granterStart := sdk.NewCoins(sdk.NewCoin("ustoc", math.NewInt(5000)))
+	mockBank.balances[feeGranter.String()] = granterStart
+	mockBank.balances[recipient.String()] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(100)))
+
+	msg := &banktypes.MsgSend{
+		FromAddress: sender.String(),
+		ToAddress:   recipient.String(),
+		Amount:      sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(100))),
+	}
+
+	decorator := ante.NewTaxPostDecorator(k, cdc)
+	tx := mockTx{msgs: []sdk.Msg{msg}}
+
+	_, err := decorator.PostHandle(ctx, tx, false, true, noopPostHandler)
+	require.NoError(t, err)
+
+	// Tax fired on the recipient...
+	require.Equal(t, math.NewInt(90), mockBank.balances[recipient.String()].AmountOf(denom),
+		"tax must be deducted from the MsgSend recipient")
+	require.Equal(t, math.NewInt(10), mockBank.balances[taxCollector.String()].AmountOf(denom),
+		"tax must arrive at the token's tax collector")
+	// ...and the fee granter was never touched by the tax layer.
+	require.Equal(t, granterStart, mockBank.balances[feeGranter.String()],
+		"fee granter balance must be untouched by tax (fees are ante-layer, tax is post-layer)")
 }

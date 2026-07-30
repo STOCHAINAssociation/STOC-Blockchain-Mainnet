@@ -7,5 +7,5 @@ release/
 *.dot
 *.log
 *.ign
-stocd
+/stocd
 build/
