@@ -67,6 +67,10 @@ ignite chain serve
 
 See [Node Setup Guide](./documents/chain/readme.md) for full instructions including snapshot sync, peer configuration, and validator setup.
 
+> **Syncing from block 1?** Mainnet has run seven binaries since launch and a single one cannot replay
+> the history. [Binary History](./HISTORY.md) lists which commit produced which range of blocks, the Go
+> toolchain each needs, and the app hashes to check your replay against.
+
 > ⚠️ **EVM Chain ID**: After `stocd init`, you **must** set `evm-chain-id = 1306` in `~/.stoc/config/app.toml` under the `[evm]` section before starting the node. The default Cosmos chain ID (`stoc`) cannot be auto-parsed as EVM chain ID. See the [dedicated section](./documents/chain/readme.md#set-the-evm-chain-id-required) in the setup guide.
 
 ## Technology Stack
@@ -114,6 +118,7 @@ STOC-Blockchain-Mainnet/
 | Document | Description |
 |----------|-------------|
 | [Node Setup Guide](./documents/chain/readme.md) | Run a full node, sync, become a validator |
+| [Binary History](./HISTORY.md) | Which commit built which blocks — required to replay from block 1 |
 | [Development Guide](./documents/development/readme.md) | Dev environment, module development, testing |
 | [Documentation Index](./documents/README.md) | All documentation links |
 
