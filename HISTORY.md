@@ -30,8 +30,8 @@ into the single v5.0.0 release.
 | `v2-evm` *(upgrade block only)* | 4,455,467 | 4,455,467 | [`83111dd`](../../commit/83111dd) | `go1.24.3` | ✔ prop #2 | replay-verified |
 | `v2-evm` *(remainder)* | 4,455,468 | 4,705,315 | [`45b2bae`](../../commit/45b2bae) | `go1.24.3` | — | replay-verified |
 | `v3` | 4,705,316 | 4,794,076 | [`4d47b49`](../../commit/4d47b49) | `go1.24.3` | ✔ prop #4 | replay-verified |
-| `v3.1` | 4,794,077 | 6,408,099 | [`2f8e6c1`](../../commit/2f8e6c1) | `go1.24.3` | — | replay in progress |
-| `v5.0.0` | 6,408,100 | head | [`fe53cbd`](../../commit/fe53cbd) | `go1.25.8` | ✔ prop #5 | not yet replayed |
+| `v3.1` | 4,794,077 | 6,408,099 | [`2f8e6c1`](../../commit/2f8e6c1) | `go1.24.3` | — | replay-verified |
+| `v5.0.0` | 6,408,100 | head | [`fe53cbd`](../../commit/fe53cbd) | `go1.25.8` | ✔ prop #5 | upgrade block replay-verified |
 
 Tags exist for the rows marked *replay-verified* and for `v5.0.0`. A row is only tagged once a node has
 re-executed that range from block 1 and matched mainnet — pinning a tag we had not proven is exactly the
@@ -70,7 +70,9 @@ now listed; the `v3` range in particular ended ~88,000 blocks later than previou
   the app hash is wrong; executed with `2f8e6c1` it matches mainnet. No token creation happens between
   4,706,501 and 4,794,077, so any switch height inside that window produces identical state — but 4,794,077
   is the first block where the choice becomes visible, and the last one where it is still free.
-- **v5.0.0** — governance upgrade. Current consensus.
+- **v5.0.0** — governance upgrade. Current consensus. Unlike `v2-evm` this is a param-only migration
+  (EIP-1559 feemarket enable) with **no store migration**, so a wrong binary here is recoverable with
+  `stocd rollback` like any ordinary mismatch.
 
 ## Three things that will cost you a day if you miss them
 
@@ -203,10 +205,26 @@ what your node must hold after executing H−1.
 | 4,794,078 | `068E74A54D264C6E6879610AD8E349211D88AF44D01C45393D03C73ECAD880D2` |
 | 6,408,099 | `9B1D4E0032A49C414122893FD0B4100ED9EE3DB07E3109974DA2607888647D01` |
 | 6,408,100 | `AFD78BE6C4B343CD336EDE6FD4D3EEBC997B65BD4F9E3BEB63AB8B67FBFEC457` |
+| 6,408,101 | `C9701C0F809C5986DE8D3333BA8DF75BCE154885DACFBD49FE99A22488FEB370` |
 
 The 4,455,468 and 4,794,078 rows are the two that catch a wrong binary choice earliest: the first
 distinguishes `83111dd` from `45b2bae` at the EVM upgrade, the second distinguishes `2f8e6c1` from
 `4d47b49` at the token-fee change.
+
+## The chain is its own record
+
+For a governance upgrade you do not have to trust this file. The plan's `info` field is written on chain
+by the proposal and carries the deployment details, including the binary hash and the source commit. Your
+node writes it to `data/upgrade-info.json` the moment the old binary halts at the trigger:
+
+```json
+{"name":"v5.0.0","height":6408100,"info":"… Linux amd64 binary SHA256 c4185ed3069650f6f4e67e138a64095b26f892143ef115b530bc253a07fcf6af. Source commit eabdc0e on github.com/MinhAnh-Corp/stochain. …"}
+```
+
+`eabdc0e` is the commit in the private development repository; `fe53cbd` here is its published mirror.
+They are the same consensus source, which is the only thing that determines the app hash — a build from
+either produces a node that syncs. Verify a binary you were given by its SHA256; verify a binary you
+built yourself by replaying a boundary and comparing app hashes.
 
 ## If you only need a current node
 
