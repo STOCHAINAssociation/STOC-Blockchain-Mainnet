@@ -31,7 +31,7 @@ into the single v5.0.0 release.
 | `v2-evm` *(remainder)* | 4,455,468 | 4,705,315 | [`45b2bae`](../../commit/45b2bae) | `go1.24.3` | — | replay-verified |
 | `v3` | 4,705,316 | 4,794,076 | [`4d47b49`](../../commit/4d47b49) | `go1.24.3` | ✔ prop #4 | replay-verified |
 | `v3.1` | 4,794,077 | 6,408,099 | [`2f8e6c1`](../../commit/2f8e6c1) | `go1.24.3` | — | replay-verified |
-| `v5.0.0` | 6,408,100 | head | [`fe53cbd`](../../commit/fe53cbd) | `go1.25.8` | ✔ prop #5 | upgrade block replay-verified |
+| `v5.0.0` | 6,408,100 | head | [`fe53cbd`](../../commit/fe53cbd) | `go1.25.8` | ✔ prop #5 | replay-verified |
 
 Tags exist for the rows marked *replay-verified* and for `v5.0.0`. A row is only tagged once a node has
 re-executed that range from block 1 and matched mainnet — pinning a tag we had not proven is exactly the
@@ -40,6 +40,10 @@ mistake that broke partner sync in July 2026.
 Every boundary above was established by re-executing the block and comparing the resulting app hash
 against mainnet. Where an earlier revision of this file gave an approximate height, the exact height is
 now listed; the `v3` range in particular ended ~88,000 blocks later than previously estimated.
+
+A node has now replayed the whole chain against this table — block 1 to the live head, every boundary
+crossed in the order given, no app-hash divergence anywhere. The sequence below is known to work, not
+inferred.
 
 ### What each version changes
 
