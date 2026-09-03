@@ -28,7 +28,8 @@ into the single v5.0.0 release.
 | `v1.1` | 542,405 | 2,709,241 | [`50f6982`](../../commit/50f6982) | `go1.24.3` | — | replay-verified |
 | `v1.2` | 2,709,242 | 4,455,466 | [`a2d23f3`](../../commit/a2d23f3) | `go1.24.3` | — | replay-verified |
 | `v2-evm` *(upgrade block only)* | 4,455,467 | 4,455,467 | [`83111dd`](../../commit/83111dd) | `go1.24.3` | ✔ prop #2 | replay-verified |
-| `v2-evm` *(remainder)* | 4,455,468 | 4,705,315 | [`45b2bae`](../../commit/45b2bae) | `go1.24.3` | — | replay-verified |
+| `v2-evm` *(remainder)* | 4,455,468 | 4,699,537 | [`83111dd`](../../commit/83111dd) | `go1.24.3` | — | replay-verified |
+| `v2-evm` *(tail)* | 4,699,538 | 4,705,315 | [`45b2bae`](../../commit/45b2bae) | `go1.24.3` | — | replay-verified |
 | `v3` | 4,705,316 | 4,794,076 | [`4d47b49`](../../commit/4d47b49) | `go1.24.3` | ✔ prop #4 | replay-verified |
 | `v3.1` | 4,794,077 | 6,408,099 | [`2f8e6c1`](../../commit/2f8e6c1) | `go1.24.3` | — | replay-verified |
 | `v5.0.0` | 6,408,100 | head | [`fe53cbd`](../../commit/fe53cbd) | `go1.25.8` | ✔ prop #5 | replay-verified |
@@ -60,10 +61,14 @@ inferred.
   - `83111dd` reproduces the upgrade block itself. The upgrade handler writes state, so only a matching
     commit yields mainnet's app hash. `45b2bae` — the newest commit before the trigger, and the obvious
     guess — executes the upgrade cleanly but produces a different hash.
-  - `83111dd` cannot carry the range, because it also contains the `v3-fix-evm-denom` handler. The moment
-    proposal #4 writes the v3 plan into state, at block **4,699,538**, x/upgrade aborts with
-    `BINARY UPDATED BEFORE TRIGGER`. Switch back to `45b2bae` for 4,455,468 onward; the two commits differ
-    only in `app/upgrades.go`, which runs at the upgrade height and nowhere else.
+  - `83111dd` then carries the range as far as **4,699,537**. It cannot go further: it also contains the
+    `v3-fix-evm-denom` handler, so the moment proposal #4 writes the v3 plan into state at block 4,699,538,
+    x/upgrade aborts with `BINARY UPDATED BEFORE TRIGGER`. `45b2bae` — which predates that handler — takes
+    the remaining 5,777 blocks to 4,705,315.
+  - Do **not** use `45b2bae` for the whole span. The two commits differ only in `app/upgrades.go`, so it is
+    tempting to assume either will do, and that assumption is wrong for a reason unrelated to consensus:
+    `45b2bae` reliably dies a few hundred blocks in, on the nil base fee described under *Three things*
+    below. Both orders were tried; only this one runs to the end.
   - Mainnet itself ran a single binary here, equivalent to `83111dd` without the v3 handler — a tree that
     was never committed in that shape. The two-commit sequence reproduces the same state, which is what a
     replay needs.
@@ -126,6 +131,31 @@ halt-height = 4455000   → copy ~/.stoc/data somewhere safe
 ```
 
 `halt-height` exits with code **2**; the `UPGRADE NEEDED` panic exits with **1**. Neither is a crash.
+
+## Two crashes that are not your fault
+
+**`set min gas price in app.toml`** — the genesis binary refuses to start until
+`minimum-gas-prices` has a value; a fresh `stocd init` leaves it empty. Mainnet uses `0.001ustoc`. This is
+a node-local mempool policy and does not affect consensus, so any value lets the replay proceed, but the
+node will not boot without one.
+
+**A SIGSEGV in the EVM mempool, on binaries of the `v2-evm` era.** It looks fatal and is not:
+
+```
+panic: runtime error: invalid memory address or nil pointer dereference
+  eip1559.CalcBaseFee
+  legacypool.(*LegacyPool).runReorg
+```
+
+Peers gossip EVM transactions into the legacy pool, the pool's reorg loop reads a London header whose base
+fee is nil, and the process dies. It happens in a mempool goroutine, never mid-commit — Cosmos commits a
+block atomically, so the committed state is intact and restarting resumes from the next block. Because the
+trigger is whatever the network happens to gossip, it is not reproducible at a fixed height and it can hit
+any binary of that era.
+
+Restart and carry on; expect to do it more than once across the EVM range. `v5.0.1` fixes it
+(*guard nil base fee in London header to prevent CalcBaseFee nil-deref*), so the range from 6,408,100
+onward is unaffected.
 
 ## Copy the data directory before every governance boundary
 
@@ -203,6 +233,7 @@ what your node must hold after executing H−1.
 | 4,455,466 | `A64CF4F7184F7A89C400AA73E87E0F9F52EB179370A99E6C6B36F298120C10B5` |
 | 4,455,467 | `3DC21C2A02285A4C465BA306D63F7273FFFB020F7BBCF4F1676E9B431D30DA41` |
 | 4,455,468 | `6ADDC6A300E138ECF2886B6B81013879F6EDF74FBD2BA64F34CD7045A47E9A3E` |
+| 4,699,538 | `AA848D7C8AF62F4FF6C1196A4B9D5FC399B1793A4227BACAE7DB3A176E8CF12D` |
 | 4,705,315 | `B6032442B9FE68CCE8DC5694265F81C548E9C75846ED76B0A54E7284D29D511C` |
 | 4,705,316 | `C64073F64114BB7C8F60AB47AA5DE5BD258FA2697003DDBB6427DA083C5CF698` |
 | 4,794,077 | `9E99E79A05ADF8596D9B252C8480129C87D54C1E1D263570F9E7AC7DA0E583A0` |
