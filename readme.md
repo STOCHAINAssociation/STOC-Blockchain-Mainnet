@@ -1,6 +1,8 @@
-# STOC Chain
+# STOChain
 
-STOC Chain is a high-performance blockchain with full EVM (Ethereum Virtual Machine) compatibility, built on Cosmos SDK v0.53.4 and CometBFT consensus.
+STOChain is a high-performance blockchain with full EVM (Ethereum Virtual Machine) compatibility, built on Cosmos SDK v0.53.6 and CometBFT consensus.
+
+> **Current release: `v5.0.1`** — security patch backporting the upstream cosmos/evm v0.6.3 fix for GHSA-367m-g444-9mg3 ("non-atomic StateDB commit"). App-hash-identical to v5.0.0. Node operators: upgrade with a simple binary swap (no halt). See [HISTORY.md](./HISTORY.md).
 
 ## Features
 
@@ -14,8 +16,7 @@ STOC Chain is a high-performance blockchain with full EVM (Ethereum Virtual Mach
 
 | Parameter | Mainnet | Development |
 |-----------|---------|-------------|
-| Cosmos Chain ID | `stoc` | `stoc` |
-| EVM Chain ID (EIP-155) | `1306` | set via `app.toml` |
+| Chain ID | `stoc` | `stoc` |
 | Native Token | `ustoc` (6 decimals) | `ustoc` |
 | EVM Token | `astoc` (18 decimals) | `astoc` |
 | Coin Type | 118 | 118 |
@@ -29,49 +30,33 @@ STOC Chain is a high-performance blockchain with full EVM (Ethereum Virtual Mach
 
 ## Quick Start
 
-### Build from Source
-
-Requires **Go 1.25.8+** and **[Ignite CLI v29+](https://docs.ignite.com/welcome/install)**.
+### Development
 
 ```bash
-# Clone the public repository
+# Clone and start with hot reload
+git clone https://github.com/MinhAnh-Corp/stochain.git
+cd stochain
+ignite chain serve
+```
+
+### Build from Source (release node)
+
+```bash
+# Clone the public repository and check out the current release tag
 git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
 cd STOC-Blockchain-Mainnet
+git checkout v5.0.1
 
-# Recommended: Ignite CLI (auto proto-gen + tidy + install)
-ignite chain build
-
-# Alternative: pure-Go build (no Ignite needed; embeds branch + commit version)
+# Build binary (Go only — no buf/protoc needed; proto is generated + committed)
 make install
 
 # Verify
 stocd version
 ```
 
-> If `ignite chain build` reports `go: cannot find "go1.25.8" in PATH`, install the Go toolchain launcher once:
-> ```bash
-> go install golang.org/dl/go1.25.8@latest
-> $(go env GOPATH)/bin/go1.25.8 download
-> ```
->
-> Full setup instructions (including OS-level Go install) live in the [Node Setup Guide](./documents/chain/readme.md#2-install-ignite-cli-v29).
-
-### Local Development (Hot Reload)
-
-```bash
-# Requires Ignite CLI v29+
-ignite chain serve
-```
-
 ### Run a Node
 
 See [Node Setup Guide](./documents/chain/readme.md) for full instructions including snapshot sync, peer configuration, and validator setup.
-
-> **Syncing from block 1?** Mainnet has run seven binaries since launch and a single one cannot replay
-> the history. [Binary History](./HISTORY.md) lists which commit produced which range of blocks, the Go
-> toolchain each needs, and the app hashes to check your replay against.
-
-> ⚠️ **EVM Chain ID**: After `stocd init`, you **must** set `evm-chain-id = 1306` in `~/.stoc/config/app.toml` under the `[evm]` section before starting the node. The default Cosmos chain ID (`stoc`) cannot be auto-parsed as EVM chain ID. See the [dedicated section](./documents/chain/readme.md#set-the-evm-chain-id-required) in the setup guide.
 
 ## Technology Stack
 
@@ -80,17 +65,16 @@ See [Node Setup Guide](./documents/chain/readme.md) for full instructions includ
 | Cosmos SDK | v0.53.6 |
 | CometBFT | v0.38.21 |
 | IBC | v10.5.0 |
-| Cosmos EVM | v0.6.0 |
-| Go | 1.24.3 |
+| Cosmos EVM | v0.6.0 (in-tree fork; v0.6.3 security fix backported) |
+| Go | 1.25.8 |
 
 ## Architecture
 
 ```
-STOC-Blockchain-Mainnet/
+stochain/
 ├── app/                    # Core application, EVM integration, ante handlers
 │   ├── app.go              # Main app with dependency injection
 │   ├── evm.go              # EVM module, precompiles, gas multipliers
-│   ├── upgrades.go         # Chain upgrade handlers
 │   └── ante/               # Cosmos + EVM ante handler routing
 ├── cmd/stocd/              # CLI binary entry point
 ├── x/stoc/                 # Custom token module (create, mint, burn, tax)
@@ -118,15 +102,13 @@ STOC-Blockchain-Mainnet/
 | Document | Description |
 |----------|-------------|
 | [Node Setup Guide](./documents/chain/readme.md) | Run a full node, sync, become a validator |
-| [Binary History](./HISTORY.md) | Which commit built which blocks — required to replay from block 1 |
 | [Development Guide](./documents/development/readme.md) | Dev environment, module development, testing |
 | [Documentation Index](./documents/README.md) | All documentation links |
 
 ## Build & Test Commands
 
 ```bash
-ignite chain build  # Recommended: build + install stocd (auto proto-gen)
-make install        # Alternative: pure-Go build with branch+commit version
+make install        # Build and install stocd
 make test           # Full test suite (vet + vuln + unit)
 make test-unit      # Unit tests only
 make test-race      # Tests with race detection
@@ -138,8 +120,8 @@ make proto-gen      # Regenerate protobuf code
 
 ## Source Code
 
-- **GitHub**: https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet
-- **Block Explorer**: https://stochainscan.io
+- **GitHub**: https://github.com/MinhAnh-Corp/stochain
+- **Mainnet Binary**: https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet
 
 ## License
 

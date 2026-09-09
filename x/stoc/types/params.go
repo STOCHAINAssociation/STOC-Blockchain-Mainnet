@@ -28,12 +28,14 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 
 // Validate validates the set of params.
 //
-// Params currently carries no fields, so every instance passes validation.
-// When a field is added (for example a gov-adjustable cap on tax percentage
-// or token supply), this function must check bounds, address formats and
-// any cross-field invariants before returning nil. Skipping that update
-// would let a governance proposal persist out-of-range values that later
-// crash consensus or silently disable enforcement.
+// SA-L2 audit-2026-05-29: intentionally a no-op because the Params struct
+// currently has no fields. When a field is added (e.g. a gov-adjustable cap
+// on tax percentage or token supply), this function MUST check bounds,
+// address formats and cross-field invariants before returning nil. The
+// keeper-level MsgUpdateParams handler must also be extended to call
+// Validate() so governance cannot install out-of-range values that later
+// crash consensus or silently disable enforcement. ParamSetPairs() above is
+// a no-op for the same reason — keep both in sync when fields land.
 func (p Params) Validate() error {
 	return nil
 }

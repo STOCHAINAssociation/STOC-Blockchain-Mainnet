@@ -6,9 +6,7 @@ import (
 	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
-	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 // BurnToken allows ANY token holder to burn their own tokens (similar to ERC20 burn).
@@ -54,6 +52,14 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	}
 
 	// Check if this is a stoc-managed token (optional — native denom burns are allowed)
+	// SA-AUDIT-2026-06-11 fix19 A16-STO-L1 (DEFENSIVE/ACCEPT, no fix needed):
+	// GetToken is case-SENSITIVE on denom, matching Cosmos SDK convention
+	// (bank denoms are case-sensitive byte strings — "mytoken_0" and
+	// "MYTOKEN_0" are distinct denoms chain-wide). A wrong-case msg.Denom
+	// simply resolves to isManaged=false and takes the unmanaged-denom burn
+	// path against the same case-sensitive bank balance, so no supply
+	// accounting can desync. Revisit ONLY if token lookup ever loosens to
+	// symbol-based matching.
 	token, isManaged := k.GetToken(ctx, msg.Denom)
 
 	// Determine amount to burn
@@ -67,7 +73,11 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	}
 
 	// Validate amount
-	if amountToBurn.IsZero() {
+	// F1 audit-2026-07-27: authz MsgExec bypasses ValidateBasic; on the
+	// !BurnAll path amountToBurn = msg.Amount, which can be nil (proto field
+	// omitted) and would nil-deref on IsZero(). Guard IsNil first. (BurnAll
+	// path sets it from GetBalance, never nil.)
+	if amountToBurn.IsNil() || amountToBurn.IsZero() {
 		if msg.BurnAll {
 			return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "no tokens remaining after gas deduction")
 		}
@@ -81,15 +91,27 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount, "burn amount %s exceeds tracked total supply %s — state may be corrupted", amountToBurn.String(), token.TotalSupply.String())
 		}
 
-		// Pre-validate: ensure post-burn TotalSupply will pass basic validation BEFORE any bank mutations.
-		// Note: RemainingSupply adjustment depends on module balance (computed post-burn),
-		// so full state validation is deferred to SetToken after all mutations.
+		// Pre-validate post-burn state BEFORE any bank mutations.
+		//
+		// SA-H9-v2 audit-2026-05-30: auto-adjust of RemainingSupply was removed
+		// (see commentary at SetToken site below). Burning user balance reduces
+		// TotalSupply but NOT RemainingSupply (the latter tracks module reserve
+		// and is reduced via MsgReleaseTokens → MsgBurnToken 2-step flow). If
+		// the existing RemainingSupply already exceeds the post-burn TotalSupply,
+		// proceeding would persist a drift state that Token.Validate() rejects
+		// at SetToken time, wasting the bank ops and producing a confusing
+		// downstream error. Reject early with an actionable message instead.
 		preValidateToken := token
 		preValidateToken.TotalSupply = token.TotalSupply.Sub(amountToBurn)
-		// Use conservative estimate: if remaining > new total, clamp to new total
-		// (actual clamp uses min of excess and module balance, which may be less)
-		if preValidateToken.RemainingSupply.GT(preValidateToken.TotalSupply) {
-			preValidateToken.RemainingSupply = preValidateToken.TotalSupply
+		// SA-2026-06-04 LOW-1 (comprehensive audit): a genesis-imported token
+		// can legitimately omit RemainingSupply (nil math.Int). Guard the
+		// comparison so an unset reserve does not panic at the GT call —
+		// "no reserve set" is functionally equivalent to "reserve == 0",
+		// which can never exceed a non-negative post-burn TotalSupply.
+		if !preValidateToken.RemainingSupply.IsNil() && preValidateToken.RemainingSupply.GT(preValidateToken.TotalSupply) {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+				"burn would create RemainingSupply (%s) > post-burn TotalSupply (%s) drift; reduce reserve via MsgReleaseTokens then MsgBurnToken (SA-H9-v2 2-step flow)",
+				preValidateToken.RemainingSupply.String(), preValidateToken.TotalSupply.String())
 		}
 		if err := types.ValidateState(preValidateToken); err != nil {
 			return nil, sdkerrors.Wrap(err, "burn would produce invalid token state")
@@ -116,32 +138,30 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	if isManaged {
 		token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
 
-		// If TotalSupply dropped below RemainingSupply, burn excess from module account
-		if token.RemainingSupply.GT(token.TotalSupply) {
-			excess := token.RemainingSupply.Sub(token.TotalSupply)
-
-			// Check actual module balance to avoid BurnCoins failure on stale state
-			moduleAddr := authtypes.NewModuleAddress(types.ModuleName)
-			moduleBalance := k.bankKeeper.GetBalance(ctx, moduleAddr, msg.Denom)
-			actualBurnable := math.MinInt(excess, moduleBalance.Amount)
-
-			if actualBurnable.IsPositive() {
-				ctx.Logger().Warn("Burning excess module tokens after user burn",
-					"denom", token.MinimalDenom,
-					"excess", excess.String(),
-					"actual_burnable", actualBurnable.String(),
-					"remaining_before", token.RemainingSupply.String(),
-					"total_after", token.TotalSupply.String(),
-				)
-				excessCoins := sdk.NewCoins(sdk.NewCoin(msg.Denom, actualBurnable))
-				if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, excessCoins); err != nil {
-					return nil, sdkerrors.Wrap(err, "failed to burn excess module tokens")
-				}
-			}
-			// Track actual amount burned from module — prevents invariant violation
-			// when actualBurnable < excess (e.g., stale state)
-			token.RemainingSupply = token.RemainingSupply.Sub(actualBurnable)
-		}
+		// SA-H9-v2 audit-2026-05-30 (user policy clarification):
+		// REMOVED the auto module-reserve burn entirely.
+		//
+		// BUSINESS RULE (user explicit 2026-05-30):
+		//   MsgBurnToken = burn token holder ĐANG SỞ HỮU (universal user action).
+		//   Creator KHÔNG có privilege đặc biệt — phải sở hữu mới burn được.
+		//   Để giảm RemainingSupply (reserve), creator MUST use 2-step flow:
+		//     1) MsgReleaseTokens (creator-only) → move reserve to creator balance
+		//     2) MsgBurnToken → burn the released balance
+		//
+		// Why this is better than auto-trigger reserve burn:
+		//   - Clean audit trail: 2 explicit events (Release + Burn) instead of
+		//     1 implicit cascade.
+		//   - Compliance: regulated security token requires authorized intent
+		//     declaration per reserve change.
+		//   - State drift safety: auto-reconcile MASKS drift. Manual reconcile
+		//     FORCES creator notice + investigate via SupplyInvariant warning
+		//     (SA-H14 soft fail emits drift event).
+		//   - Separation of concerns: MsgBurnToken = balance action,
+		//     MsgReleaseTokens = reserve action. Don't collapse.
+		//
+		// If RemainingSupply > TotalSupply drift happens (shouldn't in normal
+		// flows), SupplyInvariant logs warning + emits stoc_supply_drift event
+		// (see x/stoc/keeper/invariants.go). Creator reconciles via Release+Burn.
 
 		if err := k.SetToken(ctx, token); err != nil {
 			return nil, err
@@ -152,7 +172,11 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeBurnToken,
-			sdk.NewAttribute(types.AttributeKeyBurner, msg.Creator),
+			// SA-AUDIT-2026-06-10 fix16 A14-STOC-L5: emit canonical bech32 (not raw msg.Creator)
+			// so indexers + explorers see the same lowercase form fix15-3 established for
+			// ReleaseTokens.AttributeKeyRecipient. Bank op already uses canonical bytes via
+			// `creator` AccAddress at line 49, so no fund-flow change.
+			sdk.NewAttribute(types.AttributeKeyBurner, creator.String()),
 			sdk.NewAttribute(types.AttributeKeyMinimalDenom, msg.Denom),
 			sdk.NewAttribute(types.AttributeKeyBurnAmount, amountToBurn.String()),
 		),

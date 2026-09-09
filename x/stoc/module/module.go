@@ -92,25 +92,28 @@ func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *r
 // ----------------------------------------------------------------------------
 
 // AppModule implements the AppModule interface that defines the inter-dependent methods that modules need to implement
+//
+// SA-H15 (OCAP narrowing, 2026-06-17): AppModule deliberately does NOT hold a
+// bank keeper. The only code path that touches bank state is keeper.Keeper,
+// which is constructed in ProvideModule with the narrow types.BankKeeper
+// interface (the capability boundary). Storing the full bankkeeper.Keeper here
+// was dead weight that handed the module manager more capability than it used.
 type AppModule struct {
 	AppModuleBasic
 
 	keeper        keeper.Keeper
 	accountKeeper types.AccountKeeper
-	bankKeeper    bankkeeper.Keeper
 }
 
 func NewAppModule(
 	cdc codec.Codec,
 	keeper keeper.Keeper,
 	accountKeeper types.AccountKeeper,
-	bankKeeper bankkeeper.Keeper,
 ) AppModule {
 	return AppModule{
 		AppModuleBasic: NewAppModuleBasic(cdc),
 		keeper:         keeper,
 		accountKeeper:  accountKeeper,
-		bankKeeper:     bankKeeper,
 	}
 }
 
@@ -208,11 +211,13 @@ func ProvideModule(in ModuleInputs) ModuleOutputs {
 		in.BankKeeper,
 		in.AccountKeeper,
 	)
+	// in.BankKeeper is passed only to keeper.NewKeeper above, where it is
+	// narrowed to the types.BankKeeper interface (SA-H15). NewAppModule no
+	// longer receives it — the module manager holds no bank capability.
 	m := NewAppModule(
 		in.Cdc,
 		k,
 		in.AccountKeeper,
-		in.BankKeeper,
 	)
 
 	return ModuleOutputs{StocKeeper: k, Module: m}

@@ -86,6 +86,7 @@ import (
 	_ "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts" // import for side-effects
 	icacontrollerkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller/keeper"
 	icahostkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/host/keeper"
+	icagenesistypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/genesis/types"
 	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
 	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
@@ -103,6 +104,7 @@ import (
 	sdkmempool "github.com/cosmos/cosmos-sdk/types/mempool"
 	evmante "github.com/cosmos/evm/ante"
 	antetypes "github.com/cosmos/evm/ante/types"
+	evmmempool "github.com/cosmos/evm/mempool"
 	erc20keeper "github.com/cosmos/evm/x/erc20/keeper"
 	evmkeeper "github.com/cosmos/evm/x/vm/keeper"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
@@ -115,7 +117,7 @@ import (
 const (
 	AccountAddressPrefix = "stoc"
 	Name                 = "stoc"
-	// ChainCoinType is the coin type for stoc chain
+	// ChainCoinType is the coin type for STOChain
 	// Using 118 (Cosmos standard) for backward compatibility with existing accounts
 	ChainCoinType = 118
 )
@@ -366,6 +368,17 @@ func New(
 		return nil, err
 	}
 
+	// SA-AUDIT-2026-06-11 fix19 A16-APP-M1 (resolves deferred A14-APP-M1):
+	// fail loudly if EVM registration left a nil keeper. A depinject panic
+	// recovered upstream can leave app.EVMKeeper nil; the symptom would
+	// otherwise surface as an opaque nil-pointer panic deep inside ante
+	// wiring on the first EVM tx. FeeMarketKeeper is a value type and
+	// cannot be nil-checked — a nil EVMKeeper is the reliable sentinel
+	// that EVM module registration did not complete.
+	if app.EVMKeeper == nil {
+		return nil, fmt.Errorf("EVM module registration completed without populating EVMKeeper — aborting app init")
+	}
+
 	// Block transfers to EVM precompile addresses.
 	// NOTE: BlockedModuleAccountsOverride only handles module names (via NewModuleAddress),
 	// so precompile hex addresses must be blocked via SendRestriction instead.
@@ -419,6 +432,16 @@ func New(
 		maxGasWanted = 50_000_000
 	}
 
+	// SA-L5 audit-2026-05-29: per-wallet pending EVM tx cap can be tuned via
+	// app.toml key `max-pending-tx-per-wallet` (or env var). Zero / unset
+	// falls back to DefaultMaxPendingTxPerWallet so existing deployments keep
+	// the audited default. Validators can raise the cap for high-throughput
+	// dapps or lower it during attack mitigation without a binary rebuild.
+	maxPendingTxPerWallet := cast.ToInt(appOpts.Get("max-pending-tx-per-wallet"))
+	if maxPendingTxPerWallet <= 0 {
+		maxPendingTxPerWallet = stocappante.DefaultMaxPendingTxPerWallet
+	}
+
 	anteOptions := stocappante.StocAnteOptions{
 		HandlerOptions: evmante.HandlerOptions{
 			Cdc:                    app.appCodec,
@@ -440,6 +463,17 @@ func New(
 			IBCKeeper: app.IBCKeeper,
 		},
 		StocKeeper: app.StocKeeper,
+		// Late-binding getter for the ExperimentalEVMMempool. The mempool is
+		// constructed after SetAnteHandler below; the decorator queries it
+		// lazily at CheckTx time via this closure.
+		GetEVMMempool: func() *evmmempool.ExperimentalEVMMempool {
+			if app.EVMMempool == nil {
+				return nil
+			}
+			m, _ := app.EVMMempool.(*evmmempool.ExperimentalEVMMempool)
+			return m
+		},
+		MaxPendingTxPerWallet: maxPendingTxPerWallet,
 	}
 	if err := anteOptions.Validate(); err != nil {
 		panic(err)
@@ -582,6 +616,12 @@ func (app *App) blockCustomTokenIBCTransfers() {
 	// Cached escrow addresses with mutex protection.
 	// SendRestriction is called from both DeliverTx (serial) and CheckTx (concurrent),
 	// so the cache MUST be protected against concurrent access.
+	// SA-AUDIT-2026-06-11 fix19 A16-APP-L1 (ACCEPT for v5.0.0): the write
+	// lock serializes concurrent CheckTx callers once per block during the
+	// rebuild. Mainnet channel count is single-digit, so the held-lock
+	// GetAllChannels scan is microseconds — contention is theoretical at
+	// current scale. DEFERRED post-mainnet: add a cache_rebuild_duration_ms
+	// metric and revisit (e.g. copy-on-write swap) only if p99 > 50ms.
 	var mu sync.RWMutex
 	var escrowAddrs map[string]string // bech32 addr → channelId
 	var cacheHeight int64
@@ -604,18 +644,48 @@ func (app *App) blockCustomTokenIBCTransfers() {
 			return toAddr, nil
 		}
 
-		// Rebuild escrow address cache every 10 blocks to pick up new channels
+		// SA-AUDIT-2026-06-10 fix17 A15-BOUNDARY-M1: previously the cache
+		// rebuilt every 10 blocks → newly opened transfer channels were
+		// unprotected for up to 10 blocks (group/gov exec window for a
+		// freshly opened channel escaped this restriction). Reduce to
+		// 1-block rebuild so a channel-open at block N is reflected at
+		// block N+1 SendRestriction lookup. Channel count is bounded on
+		// realistic mainnet topology, GetAllChannels iteration cost is
+		// linear in channel count — trade 10× cache miss frequency for
+		// shrinking the unprotected window from 10 blocks → 1 block.
+		//
+		// SA-AUDIT-2026-06-11 fix19 A16-BOUNDARY-L1 — DOCUMENTED RESIDUAL:
+		// a channel opened at block N is invisible to this cache for the
+		// REST of block N (cache was built at the first send in N, before
+		// the open). Exploiting that single-block gap requires bundling
+		// channel-open + custom-token MsgTransfer in one block via gov or
+		// group dispatch — channel-open handshake completion is permission-
+		// less but the dispatch leg is gov-authority-gated, and the
+		// ante-level IBCCustomTokenRestriction still rejects the direct
+		// MsgTransfer path regardless of this cache. Accepted as LOW; the
+		// airtight alternative (rebuild on OnChanOpenConfirm callback) adds
+		// an IBC middleware hop for a gov-gated vector and is deferred.
 		currentHeight := sdkCtx.BlockHeight()
 		mu.RLock()
-		needRebuild := escrowAddrs == nil || currentHeight-cacheHeight >= 10
+		needRebuild := escrowAddrs == nil || currentHeight-cacheHeight >= 1
 		mu.RUnlock()
 
 		if needRebuild {
 			mu.Lock()
 			// Double-check after acquiring write lock (must match read-lock threshold)
-			if escrowAddrs == nil || currentHeight-cacheHeight >= 10 {
+			if escrowAddrs == nil || currentHeight-cacheHeight >= 1 {
 				newCache := make(map[string]string)
-				channels := ibcKeeper.ChannelKeeper.GetAllChannels(sdkCtx)
+				// AppHash-race fix (cosmos-sdk #18521 class): charging this rebuild's store
+				// reads to the tx gas meter makes the first custom-token send's gas depend on
+				// in-memory cache/warmth state (even an empty channel set bills one
+				// IterNextFlat=30 on the iterator seek). Nodes whose cache-refresh phase
+				// differed then metered the same tx by 30 gas -> feemarket block-gas diverged
+				// -> AppHash fork (2026-07-16 mainnet VPS5 zombie; reproduced deterministically
+				// on devnet block 74916). Read channels under an infinite (non-tx) gas meter so
+				// the rebuild never bills the tx: gas is deterministic across all nodes,
+				// independent of when the cache was built. Content/blocking decision unchanged.
+				rebuildCtx := sdkCtx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+				channels := ibcKeeper.ChannelKeeper.GetAllChannels(rebuildCtx)
 				for _, ch := range channels {
 					if ch.PortId == ibctransfertypes.PortID {
 						addr := ibctransfertypes.GetEscrowAddress(ch.PortId, ch.ChannelId)
@@ -631,6 +701,7 @@ func (app *App) blockCustomTokenIBCTransfers() {
 		// O(1) lookup with read lock
 		mu.RLock()
 		channelId, blocked := escrowAddrs[toAddr.String()]
+		_, fromEscrow := escrowAddrs[fromAddr.String()]
 		mu.RUnlock()
 
 		if blocked {
@@ -641,6 +712,24 @@ func (app *App) blockCustomTokenIBCTransfers() {
 			)
 			return toAddr, fmt.Errorf(
 				"IBC transfer of custom token %q is not allowed: custom tokens created via x/stoc are Cosmos-only and cannot be transferred cross-chain",
+				customDenom,
+			)
+		}
+
+		// SA-C6 audit-2026-05-29: also reject INBOUND credits from IBC escrow
+		// addresses for x/stoc custom denoms. Prevents foreign chain from minting
+		// collision-denom into a recipient via OnRecvPacket → SupplyInvariant break →
+		// chain halt via MsgVerifyInvariant. Effective gate even without IBC
+		// middleware install since OnRecvPacket internally uses SendCoinsFromModule
+		// to user, which routes through SendRestriction.
+		if fromEscrow {
+			sdkCtx.Logger().Warn("Blocked IBC inbound credit of custom token via SendRestriction",
+				"denom", customDenom,
+				"from_escrow", fromAddr.String(),
+				"to", toAddr.String(),
+			)
+			return toAddr, fmt.Errorf(
+				"IBC inbound credit of custom-token denom %q rejected: foreign chain cannot mint collision denoms",
 				customDenom,
 			)
 		}
@@ -789,20 +878,75 @@ func (app *App) DefaultGenesis() map[string]json.RawMessage {
 	evmGenState.Preinstalls = evmtypes.DefaultPreinstalls
 	genesis[evmtypes.ModuleName] = app.appCodec.MustMarshalJSON(evmGenState)
 
+	// SA-AUDIT-2026-06-10 fix17 A15-BOUNDARY-H1: ICA host AllowMessages
+	// defaults to ["*"] in ibc-go v10, which lets any counterparty IBC chain
+	// dispatch ANY Cosmos message as the ICA on STOChain — including
+	// stoc.MsgCreateToken / MsgMintTokens / MsgReleaseTokens / MsgBurnToken.
+	// For a securities chain this is unacceptable. Restrict to an explicit
+	// allowlist of bank + staking + distribution + IBC transfer messages that
+	// a relayer/ICA legitimately needs. Custom token lifecycle messages are
+	// EXCLUDED — token issuance must come from a Cosmos signer holding the
+	// creator key, not from a foreign chain via ICA.
+	icaGenState := icagenesistypes.DefaultGenesis()
+	icaGenState.HostGenesisState.Params.AllowMessages = icaHostAllowMessages()
+	genesis[icatypes.ModuleName] = app.appCodec.MustMarshalJSON(icaGenState)
+
 	return genesis
 }
 
+// icaHostAllowMessages returns the ICA host message allowlist used in
+// DefaultGenesis. Extracted so app_ica_allowmessages_test.go can pin its
+// contents without booting the app.
+//
+// SA-AUDIT-2026-06-11 fix19 A16-APP-H1: ibc-go v10 host matches AllowMessages
+// by EXACT type URL — wrappers are not unwrapped. DO NOT ADD
+// /cosmos.authz.v1beta1.MsgExec, /cosmos.group.v1.MsgExec, or any
+// MsgSubmitProposal variant to this list (not even via gov param change
+// without reading this first): each of them embeds arbitrary inner messages
+// and would re-open the stoc.* token-lifecycle bypass that fix17
+// A15-BOUNDARY-H1 closed, letting a foreign chain mint/release securities
+// tokens through ICA. The companion test pins the exact 12-message list;
+// any change must update both and go through security review.
+//
+// SA-AUDIT-2026-06-11 fix19 A16-BOUNDARY-L3 — OPERATIONAL NOTE: this list
+// is applied at DefaultGenesis only. The RUNNING chain's ICA host params
+// live in state and can drift from this baseline via gov. An operator
+// rebuilding a genesis file for a new network from a running chain MUST
+// export the live ICA params (`stocd q interchain-accounts host params`)
+// rather than rely on this function — otherwise a gov-widened allowlist
+// silently reverts to the 12-message baseline on the new network.
+func icaHostAllowMessages() []string {
+	return []string{
+		"/cosmos.bank.v1beta1.MsgSend",
+		"/cosmos.bank.v1beta1.MsgMultiSend",
+		"/cosmos.staking.v1beta1.MsgDelegate",
+		"/cosmos.staking.v1beta1.MsgUndelegate",
+		"/cosmos.staking.v1beta1.MsgBeginRedelegate",
+		"/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation",
+		"/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward",
+		"/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission",
+		"/cosmos.distribution.v1beta1.MsgSetWithdrawAddress",
+		"/cosmos.gov.v1.MsgVote",
+		"/cosmos.gov.v1.MsgVoteWeighted",
+		"/ibc.applications.transfer.v1.MsgTransfer",
+	}
+}
+
 // BlockedAddresses returns all the app's blocked account addresses.
+//
+// SA-M5 audit-2026-05-29: replaced silent fallback to GetMaccPerms() with
+// explicit panic. blockAccAddrs is an explicit security-critical allowlist
+// (see app_config.go) — falling back to "block every module account" on
+// accidental empty list would silently flip semantics (govtypes is
+// intentionally NOT blocked so gov can receive deposit). Fail loudly
+// instead of guessing.
 func BlockedAddresses() map[string]bool {
-	result := make(map[string]bool)
-	if len(blockAccAddrs) > 0 {
-		for _, addr := range blockAccAddrs {
-			result[addr] = true
-		}
-	} else {
-		for addr := range GetMaccPerms() {
-			result[addr] = true
-		}
+	if len(blockAccAddrs) == 0 {
+		panic("BlockedAddresses: blockAccAddrs is empty — refusing to derive blocklist from module permissions (SA-M5: would silently block govtypes deposits and other intentionally-allowed module accounts)")
+	}
+	result := make(map[string]bool, len(blockAccAddrs))
+	for _, addr := range blockAccAddrs {
+		result[addr] = true
 	}
 	return result
 }
