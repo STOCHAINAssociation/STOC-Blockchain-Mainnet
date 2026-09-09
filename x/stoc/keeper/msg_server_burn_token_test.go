@@ -85,6 +85,20 @@ func (m *MockBankKeeper) IterateAccountBalances(ctx context.Context, addr sdk.Ac
 	}
 }
 
+// BlockedAddr stub for tests — no addresses are blocked. SA-H11/SA-L8 interface compliance.
+func (m *MockBankKeeper) BlockedAddr(addr sdk.AccAddress) bool { return false }
+
+// MockAccountKeeper implements types.AccountKeeper for tests. SA-L8 requires NewKeeper
+// to receive a non-nil AccountKeeper; returning nil from GetAccount preserves the
+// "account does not exist" path used by SimulateMsgs.
+type MockAccountKeeper struct{}
+
+func NewMockAccountKeeper() *MockAccountKeeper { return &MockAccountKeeper{} }
+
+func (m *MockAccountKeeper) GetAccount(ctx context.Context, addr sdk.AccAddress) sdk.AccountI {
+	return nil
+}
+
 func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.Context, *MockBankKeeper) {
 	storeKey := storetypes.NewKVStoreKey(types.StoreKey)
 	db := dbm.NewMemDB()
@@ -97,6 +111,7 @@ func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.C
 	authority := authtypes.NewModuleAddress(govtypes.ModuleName)
 
 	mockBank := NewMockBankKeeper()
+	mockAcc := NewMockAccountKeeper()
 
 	k := keeper.NewKeeper(
 		cdc,
@@ -104,7 +119,7 @@ func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.C
 		log.NewNopLogger(),
 		authority.String(),
 		mockBank,
-		nil,
+		mockAcc,
 	)
 
 	ctx := sdk.NewContext(stateStore, cmtproto.Header{}, false, log.NewNopLogger())
@@ -147,13 +162,13 @@ func TestBurnManagedToken(t *testing.T) {
 
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
 	creator := creatorAddr.String()
-	denom := "mytoken"
+	denom := "MYTOKEN_0"
 
 	// Setup managed token with all required fields to pass validation
 	token := types.Token{
 		Id:              denom,
 		Name:            "My Token",
-		Symbol:          "MYT",
+		Symbol:          "MYTOKEN",
 		Decimals:        6,
 		Logo:            "https://example.com/logo.png",
 		InitialSupply:   math.NewInt(1000),
@@ -193,7 +208,7 @@ func TestBurnToken_BurnAll(t *testing.T) {
 	token := types.Token{
 		Id:              denom,
 		Name:            "My Token",
-		Symbol:          "MYT",
+		Symbol:          "MYTOKEN",
 		Decimals:        6,
 		Logo:            "https://example.com/logo.png",
 		InitialSupply:   math.NewInt(1000),
@@ -274,7 +289,7 @@ func TestBurnToken_ExceedsTotalSupply(t *testing.T) {
 	token := types.Token{
 		Id:              denom,
 		Name:            "My Token",
-		Symbol:          "MYT",
+		Symbol:          "MYTOKEN",
 		Decimals:        6,
 		Logo:            "https://example.com/logo.png",
 		InitialSupply:   math.NewInt(1000),
@@ -311,7 +326,7 @@ func TestBurnToken_BurnAllZeroBalance(t *testing.T) {
 	token := types.Token{
 		Id:              denom,
 		Name:            "My Token",
-		Symbol:          "MYT",
+		Symbol:          "MYTOKEN",
 		Decimals:        6,
 		Logo:            "https://example.com/logo.png",
 		InitialSupply:   math.NewInt(1000),
@@ -337,7 +352,15 @@ func TestBurnToken_BurnAllZeroBalance(t *testing.T) {
 	require.Contains(t, err.Error(), "no tokens remaining")
 }
 
-func TestBurnToken_RemainingSupplyAdjusted(t *testing.T) {
+// TestBurnToken_RejectsDriftCreation verifies SA-H9-v2 audit-2026-05-30 policy:
+// MsgBurnToken does NOT auto-adjust RemainingSupply. If the existing reserve
+// (RemainingSupply) would exceed the post-burn TotalSupply, the burn is rejected
+// early with an actionable error pointing operators at the 2-step
+// MsgReleaseTokens → MsgBurnToken flow. Prior to SA-H9-v2 the burn silently
+// clamped RemainingSupply down, masking reserve drift; that auto-adjust was
+// removed because it broke regulator-required separation of balance vs reserve
+// actions for security tokens.
+func TestBurnToken_RejectsDriftCreation(t *testing.T) {
 	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
 
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
@@ -348,7 +371,7 @@ func TestBurnToken_RemainingSupplyAdjusted(t *testing.T) {
 	token := types.Token{
 		Id:              denom,
 		Name:            "My Token",
-		Symbol:          "MYT",
+		Symbol:          "MYTOKEN",
 		Decimals:        6,
 		Logo:            "https://example.com/logo.png",
 		InitialSupply:   math.NewInt(1000),
@@ -360,28 +383,24 @@ func TestBurnToken_RemainingSupplyAdjusted(t *testing.T) {
 	}
 	require.NoError(t, k.SetToken(ctx, token))
 
-	// User has 300, module has 800
+	// User has 300, module reserve has 800. Burning 300 from user would set
+	// TotalSupply = 700, but RemainingSupply (800) > 700 would create drift.
 	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(300)))
 	mockBank.Balances[moduleAddr.String()] = sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(800)))
 
-	// Burn 300 from user
-	// After burn: TotalSupply = 1000 - 300 = 700
-	// RemainingSupply was 800, which is > new TotalSupply 700
-	// excess = 800 - 700 = 100
-	// moduleBalance = 800 (mock BurnCoins is no-op, so module balance stays)
-	// actualBurnable = min(100, 800) = 100
-	// RemainingSupply = 800 - 100 = 700
-	resp, err := ms.BurnToken(ctx, &types.MsgBurnToken{
+	_, err := ms.BurnToken(ctx, &types.MsgBurnToken{
 		Creator: creator,
 		Amount:  math.NewInt(300),
 		Denom:   denom,
 		BurnAll: false,
 	})
-	require.NoError(t, err)
-	require.True(t, resp.Success)
+	require.Error(t, err, "SA-H9-v2: burn that would create RemainingSupply > TotalSupply drift must be rejected")
+	require.Contains(t, err.Error(), "drift", "error must point operator at the drift cause")
+	require.Contains(t, err.Error(), "MsgReleaseTokens", "error must hint at the 2-step Release+Burn flow")
 
-	updatedToken, found := k.GetToken(ctx, denom)
+	// Token state unchanged because bank ops are reverted via tx atomicity.
+	unchanged, found := k.GetToken(ctx, denom)
 	require.True(t, found)
-	require.Equal(t, math.NewInt(700), updatedToken.TotalSupply, "TotalSupply should be 700")
-	require.Equal(t, math.NewInt(700), updatedToken.RemainingSupply, "RemainingSupply should be adjusted to 700")
+	require.Equal(t, math.NewInt(1000), unchanged.TotalSupply, "TotalSupply must not change on rejected burn")
+	require.Equal(t, math.NewInt(800), unchanged.RemainingSupply, "RemainingSupply must not change on rejected burn")
 }

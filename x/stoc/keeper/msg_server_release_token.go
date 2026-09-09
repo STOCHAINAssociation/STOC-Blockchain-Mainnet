@@ -3,83 +3,198 @@ package keeper
 import (
 	"context"
 
+	"cosmossdk.io/math"
 	"stoc/x/stoc/types"
 
 	sdkerrors "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
+// ReleaseTokens drips part of the on-chain reserve (RemainingSupply) to one
+// or more recipients in a single atomic transaction.
+//
+// Business rules (locked 2026-06-03):
+//
+//   - Only the token creator can submit this message (ErrUnauthorized
+//     otherwise).
+//   - Release is a primary-issuance event analogous to the CreateToken
+//     initial distribution and is intentionally TAX-FREE regardless of
+//     recipient address. Subsequent secondary-market transfers via the bank
+//     module's MsgSend go through the bank tax wrapper and ARE taxed per
+//     token.Tax configuration.
+//   - The distributions list is fully validated before any bank mutation:
+//     the cumulative amount must not exceed RemainingSupply, no individual
+//     amount may be non-positive, no address may appear twice (caller MUST
+//     pre-aggregate), and the per-recipient minimum-mint check from
+//     CreateToken's LOW-3 fix is enforced here too (no zero-rounded
+//     entries, which the LegacyDec percent path could produce historically;
+//     for ReleaseRecipient the amount is already absolute so the rule
+//     reduces to "amount > 0").
+//   - Bank mutations happen in a single loop after the cumulative-supply
+//     check. If any individual SendCoinsFromModuleToAccount fails partway,
+//     Cosmos SDK tx atomicity (cacheTxContext) reverts the whole tx — same
+//     guarantee CreateToken's distributions rely on.
+//   - Token.RemainingSupply is decremented by the total cumulative amount
+//     once at the end. SetToken's ValidateState invariant
+//     (RemainingSupply >= 0 etc.) is checked there.
 func (k msgServer) ReleaseTokens(goCtx context.Context, msg *types.MsgReleaseTokens) (*types.MsgReleaseTokensResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Get token info — supports both minimalDenom ("SYMBOL_0") and symbol ("SYMBOL")
 	token, err := k.FindToken(ctx, msg.Symbol)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if caller is creator
-	if msg.Creator != token.Creator {
+	// SA-AUDIT-2026-06-06 MED-4 (deep re-audit M4): canonicalize msg.Creator
+	// before comparing against token.Creator. cosmos-sdk bech32 Normalize
+	// accepts ALL-UPPERCASE bech32 input, so a creator who signed CreateToken
+	// from an uppercasing wallet (or any pre-fix token that persists
+	// uppercase) can only match a same-case msg.Creator. Canonicalize both
+	// sides here so the compare is canonical-vs-canonical regardless of
+	// caller input case. CreateToken (msg_server_create_token.go) already
+	// canonicalizes at write time per the same MED-4 fix; this is the read-
+	// side counterpart that also covers any pre-fix uppercase-persisted
+	// tokens.
+	creatorAddr, parseErr := sdk.AccAddressFromBech32(msg.Creator)
+	if parseErr != nil {
+		return nil, sdkerrors.Wrapf(types.ErrInvalidCreatorAddress, "invalid creator address (%s)", parseErr)
+	}
+	if creatorAddr.String() != token.Creator {
 		return nil, sdkerrors.Wrap(types.ErrUnauthorized, "only token creator can release tokens")
 	}
 
-	// Defensive check: amount must be positive
-	if !msg.Amount.IsPositive() {
-		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "release amount must be positive")
+	// Sum cumulative amount and bail before any bank mutation.
+	totalAmount := math.ZeroInt()
+	for i, dist := range msg.Distributions {
+		// F1 audit-2026-07-27: authz MsgExec bypasses ValidateBasic; a nil
+		// dist.Amount would nil-deref on IsPositive(). Guard IsNil first.
+		if dist.Amount.IsNil() || !dist.Amount.IsPositive() {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+				"distributions[%d] (%s): release amount must be positive (got %s)",
+				i, dist.Address, dist.Amount.String())
+		}
+		totalAmount = totalAmount.Add(dist.Amount)
 	}
 
-	// Check if requested amount exceeds remaining supply
-	if msg.Amount.GT(token.RemainingSupply) {
+	// SA-AUDIT-2026-06-06 MED-1 (deep re-audit M1, audit batch B):
+	// audit hypothesis was "nil RemainingSupply persisted via
+	// genesis-import (Token.ValidateState tolerates nil per token.go:189-194)
+	// would panic the GT comparison below via big.Int.Cmp on a nil pointer".
+	// Empirical refutation (2026-06-06): cosmos-sdk math.Int marshals a nil
+	// Int as "0" and Unmarshal of "0" produces a non-nil Int(0). Therefore
+	// SetToken → store → GetToken normalizes nil RemainingSupply to Int(0)
+	// at write time, and the release handler reads token via FindToken →
+	// GetToken which always returns a non-nil RemainingSupply. The
+	// totalAmount.GT(token.RemainingSupply) path below is reached with a
+	// well-formed Int and produces a clean "exceeds remaining supply 0"
+	// error, no panic. No defensive IsNil() guard added here; the burn
+	// handler's symmetric SA-2026-06-04 LOW-1 guard at
+	// msg_server_burn_token.go:94-103 is itself dead code post-storage-
+	// normalization and is kept only for in-place consistency with
+	// prior audit acceptance.
+	if totalAmount.GT(token.RemainingSupply) {
 		return nil, sdkerrors.Wrapf(types.ErrInsufficientTokens,
-			"requested amount %s exceeds remaining supply %s",
-			msg.Amount, token.RemainingSupply)
+			"cumulative release amount %s exceeds remaining supply %s (split into multiple MsgReleaseTokens or reduce per-recipient amounts)",
+			totalAmount.String(), token.RemainingSupply.String())
 	}
 
-	// Pre-validate: ensure post-release state will pass SetToken validation BEFORE bank mutations.
+	// Pre-validate the post-release token state would still be invariant-clean.
 	preValidateToken := token
-	preValidateToken.RemainingSupply = token.RemainingSupply.Sub(msg.Amount)
+	preValidateToken.RemainingSupply = token.RemainingSupply.Sub(totalAmount)
 	if err := types.ValidateState(preValidateToken); err != nil {
 		return nil, sdkerrors.Wrap(err, "release would produce invalid token state")
 	}
 
-	// Transfer tokens from module account to recipient
-	recipient, err := sdk.AccAddressFromBech32(msg.Recipient)
-	if err != nil {
-		return nil, sdkerrors.Wrap(err, "invalid recipient address")
+	// Single-loop bank mutation. tx-atomicity protects partial failure: if any
+	// SendCoinsFromModuleToAccount errors, the whole tx reverts including any
+	// prior successful sends in this loop.
+	//
+	// SA-AUDIT-2026-06-08 fix15-3 (round 3 token-keeper-fresh-1 R3 finding):
+	// canonicalize dist.Address before SendCoinsFromModuleToAccount AND
+	// before the per-recipient event emission. CreateToken (write side)
+	// already canonicalizes per fix14 R2-LOW2; the release event stream
+	// was leaking the caller's raw bech32 case into indexers. Resolve to
+	// AccAddress once and use .String() for both the bank op and the
+	// event so the EventTypeReleaseTokens.AttributeKeyRecipient attribute
+	// always carries the canonical lowercase form, matching the
+	// MED-4 invariant for token.Creator and the R2-LOW2 invariant for
+	// token.Distributions[].Address.
+	for i, dist := range msg.Distributions {
+		recipientAddr, err := sdk.AccAddressFromBech32(dist.Address)
+		if err != nil {
+			return nil, sdkerrors.Wrapf(err, "distributions[%d]: invalid address %s", i, dist.Address)
+		}
+		canonicalRecipient := recipientAddr.String()
+		// SA-AUDIT-2026-06-11 fix19 A16-STO-M2: reject non-canonical (e.g.
+		// ALL-UPPERCASE) bech32 in the release manifest instead of silently
+		// canonicalizing. Events already emit the canonical form (fix15-3),
+		// but a forensic replay reading raw msg bytes would see dist.Address
+		// diverge from the emitted attribute — for an STO chain the on-chain
+		// tx bytes and the event stream must agree byte-for-byte. Mirrors
+		// the MsgCreateToken canonical-mismatch reject (fix16 A14-STOC-M1)
+		// so both issuance gates enforce the same rule.
+		if dist.Address != canonicalRecipient {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+				"distributions[%d]: address %q is not canonical bech32 (expected %s)",
+				i, dist.Address, canonicalRecipient)
+		}
+		// SA-AUDIT-2026-06-10 fix18 A15-STO-L1: reject module-account
+		// recipients before bank ops. `SendCoinsFromModuleToAccount` will
+		// revert if recipient is blocked, but mid-loop the error reads as
+		// a generic bank error ("address is blocked: stoc...") instead of
+		// pointing at the failing distribution index. Pre-check at the
+		// creator gate surfaces the rejection with a precise per-index
+		// message so the issuer can fix the release manifest without
+		// spelunking bank errors. Mirrors the SA-H11 + MsgCreateToken
+		// Tax.RecipientAddress pre-check pattern.
+		if k.bankKeeper.BlockedAddr(recipientAddr) {
+			return nil, sdkerrors.Wrapf(types.ErrInvalidAmount,
+				"distributions[%d]: recipient %s is a blocked module address; use a non-module account",
+				i, canonicalRecipient)
+		}
+		coin := sdk.NewCoin(token.MinimalDenom, dist.Amount)
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipientAddr, sdk.NewCoins(coin)); err != nil {
+			return nil, sdkerrors.Wrapf(err, "distributions[%d]: SendCoinsFromModuleToAccount failed for recipient %s", i, canonicalRecipient)
+		}
+
+		// Per-recipient event for indexer + audit trail. Same attribute names
+		// as the prior single-recipient form so existing consumers keep
+		// working when they index per-recipient flows. SA-AUDIT-2026-06-08
+		// fix15-3: AttributeKeyRecipient now emits canonicalRecipient
+		// (not raw dist.Address) to match the persisted-form invariant.
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				types.EventTypeReleaseTokens,
+				sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
+				sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
+				sdk.NewAttribute(types.AttributeKeyAmount, dist.Amount.String()),
+				sdk.NewAttribute(types.AttributeKeyRecipient, canonicalRecipient),
+				sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
+			),
+		)
 	}
 
-	coin := sdk.NewCoin(token.MinimalDenom, msg.Amount)
-	if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, sdk.NewCoins(coin)); err != nil {
-		return nil, err
-	}
-
-	// Persist state AFTER bank op succeeds.
+	// Persist state AFTER all bank ops succeed.
 	// AUDIT NOTE — NOT A CEI VIOLATION: See MintToken in token.go for full rationale.
-	// Cosmos SDK tx atomicity (cacheTxContext) reverts all bank ops if SetToken fails.
-	token.RemainingSupply = token.RemainingSupply.Sub(msg.Amount)
+	// Cosmos SDK tx atomicity reverts all bank ops if SetToken fails below.
+	token.RemainingSupply = token.RemainingSupply.Sub(totalAmount)
 	if err := k.SetToken(ctx, token); err != nil {
 		return nil, err
 	}
 
-	ctx.Logger().Info("Tokens released",
+	ctx.Logger().Info("Tokens released (multi-recipient)",
 		"symbol", token.Symbol,
 		"minimal_denom", token.MinimalDenom,
-		"amount", msg.Amount.String(),
-		"recipient", msg.Recipient,
+		"total_amount", totalAmount.String(),
+		"recipient_count", len(msg.Distributions),
 		"remaining_supply", token.RemainingSupply.String(),
 	)
 
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			types.EventTypeReleaseTokens,
-			sdk.NewAttribute(types.AttributeKeyTokenSymbol, token.Symbol),
-			sdk.NewAttribute(types.AttributeKeyMinimalDenom, token.MinimalDenom),
-			sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.String()),
-			sdk.NewAttribute(types.AttributeKeyRecipient, msg.Recipient),
-			sdk.NewAttribute(types.AttributeKeyRemainingSupply, token.RemainingSupply.String()),
-			sdk.NewAttribute(types.AttributeKeyTokenCreator, token.Creator),
-		),
-	)
-
-	return &types.MsgReleaseTokensResponse{}, nil
+	return &types.MsgReleaseTokensResponse{
+		Symbol:         token.Symbol,
+		TotalAmount:    totalAmount.String(),
+		RecipientCount: uint32(len(msg.Distributions)),
+		Success:        true,
+		Message:        "tokens released",
+	}, nil
 }

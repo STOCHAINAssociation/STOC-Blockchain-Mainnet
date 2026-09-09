@@ -11,10 +11,17 @@ import (
 	stockeeper "stoc/x/stoc/keeper"
 )
 
-// StocAnteOptions wraps EVM HandlerOptions with stoc-specific keepers
+// StocAnteOptions wraps EVM HandlerOptions with stoc-specific keepers and
+// optional EVM-mempool getter for the MaxPendingTxPerWalletDecorator.
+//
+// GetEVMMempool is intentionally a closure: the ExperimentalEVMMempool is
+// constructed AFTER SetAnteHandler in app.go, so we hand the ante chain a
+// late-binding getter instead of a direct reference.
 type StocAnteOptions struct {
 	ante.HandlerOptions
-	StocKeeper stockeeper.Keeper
+	StocKeeper            stockeeper.Keeper
+	GetEVMMempool         MempoolGetter
+	MaxPendingTxPerWallet int
 }
 
 // NewAnteHandler returns an ante handler responsible for attempting to route an

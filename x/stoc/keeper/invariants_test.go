@@ -74,8 +74,11 @@ func TestSupplyInvariant_SupplyMismatch(t *testing.T) {
 	invariant := keeper.SupplyInvariant(k)
 	msg, broken := invariant(ctx)
 
-	require.True(t, broken, "invariant should be broken due to supply mismatch: %s", msg)
-	require.Contains(t, msg, "bank supply")
+	// SA-H14 audit-2026-05-29: invariant returns broken=false even when drift
+	// is present so MsgVerifyInvariant cannot weaponize the check to halt the
+	// chain. Drift is still surfaced via msg for operator observability.
+	require.False(t, broken, "SA-H14: invariant must NOT report broken to caller (chain-halt resistance)")
+	require.Contains(t, msg, "bank supply", "drift detail must be retained in msg for observability")
 }
 
 func TestSupplyInvariant_ModuleBalanceMismatch(t *testing.T) {
@@ -108,8 +111,9 @@ func TestSupplyInvariant_ModuleBalanceMismatch(t *testing.T) {
 	invariant := keeper.SupplyInvariant(k)
 	msg, broken := invariant(ctx)
 
-	require.True(t, broken, "invariant should be broken due to module balance mismatch: %s", msg)
-	require.Contains(t, msg, "module balance")
+	// SA-H14 audit-2026-05-29: invariant returns broken=false; drift surfaced via msg.
+	require.False(t, broken, "SA-H14: invariant must NOT report broken to caller (chain-halt resistance)")
+	require.Contains(t, msg, "module balance", "drift detail must be retained in msg for observability")
 }
 
 func TestSupplyInvariant_MultipleMismatches(t *testing.T) {
@@ -143,7 +147,9 @@ func TestSupplyInvariant_MultipleMismatches(t *testing.T) {
 	invariant := keeper.SupplyInvariant(k)
 	msg, broken := invariant(ctx)
 
-	require.True(t, broken, "invariant should be broken: %s", msg)
+	// SA-H14 audit-2026-05-29: invariant returns broken=false; drift surfaced via msg.
+	require.False(t, broken, "SA-H14: invariant must NOT report broken to caller (chain-halt resistance)")
+	require.NotEmpty(t, msg, "drift detail must be retained in msg for observability")
 }
 
 func TestSupplyInvariant_NoTokens(t *testing.T) {

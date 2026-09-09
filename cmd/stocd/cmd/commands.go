@@ -17,7 +17,6 @@ import (
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authcmd "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/crisis"
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
 	cosmosevmcmd "github.com/cosmos/evm/client"
@@ -35,13 +34,14 @@ func initRootCmd(
 ) {
 	rootCmd.AddCommand(
 		genutilcli.InitCmd(basicManager, app.DefaultNodeHome),
-		NewInPlaceTestnetCmd(addModuleInitFlags),
-		NewTestnetMultiNodeCmd(basicManager, banktypes.GenesisBalancesIterator{}),
 		debug.Cmd(),
 		confixcmd.ConfigCommand(),
 		pruning.Cmd(newApp, app.DefaultNodeHome),
 		snapshot.Cmd(newApp),
 	)
+	// SA-C9 + SA-C10 audit-2026-05-29: dev-only commands gated behind build tag.
+	// Release builds (`-tags stocrelease`) get a no-op stub from commands_devcmds_release.go.
+	addDevOnlyCmds(rootCmd, basicManager, addModuleInitFlags)
 	cosmosevmserver.AddCommands(
 		rootCmd,
 		cosmosevmserver.NewDefaultStartOptions(func(l log.Logger, d dbm.DB, w io.Writer, ao servertypes.AppOptions) cosmosevmserver.Application {

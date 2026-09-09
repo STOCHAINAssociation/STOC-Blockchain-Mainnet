@@ -1,3 +1,12 @@
+//go:build !stocrelease
+// +build !stocrelease
+
+// SA-C9 audit-2026-05-29: in-place-testnet rewrites validator set + funds
+// arbitrary accounts (line 33 valVotingPower = 900T, ~9× total supply scale).
+// No HRP/chain-id validation. On a mainnet validator binary this command is
+// one fat-finger away from local state destruction. Build production releases
+// with `-tags stocrelease` to exclude this file entirely.
+
 package cmd
 
 import (
@@ -196,9 +205,15 @@ func initAppForTestnet(app *app.App, args valArgs) *app.App {
 
 	// Set validator signing info for our new validator.
 	newConsAddr := sdk.ConsAddress(args.newValAddr.Bytes())
+	// SA-2026-06-02 LOW-13: app.LastBlockHeight() returns 0 on a brand-new
+	// app; subtraction would underflow uint64 to MaxUint64. Clamp at 0.
+	startHeight := int64(0)
+	if h := app.LastBlockHeight(); h > 0 {
+		startHeight = h - 1
+	}
 	newValidatorSigningInfo := slashingtypes.ValidatorSigningInfo{
 		Address:     newConsAddr.String(),
-		StartHeight: app.LastBlockHeight() - 1,
+		StartHeight: startHeight,
 		Tombstoned:  false,
 	}
 	if err := app.SlashingKeeper.SetValidatorSigningInfo(ctx, newConsAddr, newValidatorSigningInfo); err != nil {
@@ -257,11 +272,34 @@ func getCommandArgs(appOpts servertypes.AppOptions) (valArgs, error) {
 	// validate  and set accounts to fund
 	accountsString := cast.ToString(appOpts.Get(flagAccountsToFund))
 
-	for _, account := range strings.Split(accountsString, ",") {
+	// SA-AUDIT-2026-06-11 fix19 A16-CROSS-L2: bound the list. Each entry
+	// triggers a MintCoins of 1000 STOC in initAppForTestnet — an unbounded
+	// comma list (e.g. a generated file pasted into the flag) would mint
+	// without limit. 100 covers any realistic local-testnet need. Dev-only
+	// command (build tag !stocrelease).
+	const maxAccountsToFund = 100
+	accountEntries := strings.Split(accountsString, ",")
+	if len(accountEntries) > maxAccountsToFund {
+		return args, fmt.Errorf("--%s lists %d accounts, max %d", flagAccountsToFund, len(accountEntries), maxAccountsToFund)
+	}
+
+	expectedPrefix := sdk.GetConfig().GetBech32AccountAddrPrefix()
+	for _, account := range accountEntries {
 		if account != "" {
+			// SA-2026-06-02 LOW-12: sdk.AccAddressFromBech32 does NOT validate
+			// HRP, so a `cosmos1...` address typed by mistake would be funded
+			// from a `stoc1...` chain. Reject mismatched prefixes explicitly.
+			if !strings.HasPrefix(account, expectedPrefix+"1") {
+				return args, fmt.Errorf("address %q does not match expected bech32 prefix %q", account, expectedPrefix)
+			}
 			addr, err := sdk.AccAddressFromBech32(account)
 			if err != nil {
 				return args, fmt.Errorf("invalid bech32 address format %w", err)
+			}
+			// Round-trip check: re-encode the bytes and compare; rejects any
+			// canonicalisation drift.
+			if sdk.AccAddress(addr).String() != account {
+				return args, fmt.Errorf("address %q failed bech32 round-trip canonical check", account)
 			}
 			args.accountsToFund = append(args.accountsToFund, addr)
 		}

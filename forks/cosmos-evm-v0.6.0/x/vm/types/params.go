@@ -1,0 +1,291 @@
+package types
+
+import (
+	"fmt"
+	"math/big"
+	"slices"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/cosmos/evm/utils"
+	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
+	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
+
+	errorsmod "cosmossdk.io/errors"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+)
+
+var (
+	// SA-AUDIT-2026-06-11 fix19 A16-CRYPTO-I2: STOC defaults hardcoded in
+	// the fork (upstream shipped uatom/aatom/atom). app.DefaultGenesis()
+	// already overrides these for genesis, but every OTHER consumer of the
+	// package defaults — future upgrade handlers calling
+	// evmtypes.DefaultParams(), test helpers, simulators — silently
+	// inherited the aatom landmine (the exact class of bug behind the
+	// v3-fix-evm-denom mainnet incident). Running chains read params from
+	// state, so this only affects fresh genesis + default-constructed
+	// params.
+	// DefaultEVMDenom is the default value for the evm denom
+	DefaultEVMDenom = "ustoc"
+	// DefaultEVMExtendedDenom is the default value for the evm extended denom
+	DefaultEVMExtendedDenom = "astoc"
+	// DefaultEVMDisplayDenom is the default value for the display denom in the bank metadata
+	DefaultEVMDisplayDenom = "stoc"
+	// DefaultEVMChainID is the default value for the evm chain ID
+	DefaultEVMChainID uint64 = 262144
+	// DefaultEVMDecimals is the default value for the evm denom decimal precision
+	DefaultEVMDecimals uint64 = 18
+	// DefaultStaticPrecompiles defines the default active precompiles.
+	DefaultStaticPrecompiles []string
+	// DefaultExtraEIPs defines the default extra EIPs to be included.
+	DefaultExtraEIPs []int64
+	// DefaultEVMChannels defines a list of IBC channels that connect to EVM chains like injective or cronos.
+	DefaultEVMChannels              []string
+	DefaultCreateAllowlistAddresses []string
+	DefaultCallAllowlistAddresses   []string
+	DefaultAccessControl            = AccessControl{
+		Create: AccessControlType{
+			AccessType:        AccessTypePermissionless,
+			AccessControlList: DefaultCreateAllowlistAddresses,
+		},
+		Call: AccessControlType{
+			AccessType:        AccessTypePermissionless,
+			AccessControlList: DefaultCallAllowlistAddresses,
+		},
+	}
+)
+
+const DefaultHistoryServeWindow = 8192 // same as EIP-2935
+
+// NewParams creates a new Params instance
+func NewParams(
+	extraEIPs []int64,
+	activeStaticPrecompiles,
+	evmChannels []string,
+	accessControl AccessControl,
+) Params {
+	// SA-AUDIT-2026-06-05-fix9 HIGH (re-audit regression): seed EvmDenom +
+	// ExtendedDenomOptions with the same sane defaults as DefaultParams so
+	// existing call sites (tests, programmatic init paths) continue to pass
+	// the new Validate() gates. Without these, every NewParams caller would
+	// need an explicit follow-up SetEvmDenom / SetExtendedDenomOptions just
+	// to satisfy validation — surface-breaking for downstream chains.
+	return Params{
+		EvmDenom:                DefaultEVMExtendedDenom,
+		ExtraEIPs:               extraEIPs,
+		ActiveStaticPrecompiles: activeStaticPrecompiles,
+		EVMChannels:             evmChannels,
+		AccessControl:           accessControl,
+		ExtendedDenomOptions:    &ExtendedDenomOptions{ExtendedDenom: DefaultEVMExtendedDenom},
+	}
+}
+
+// DefaultParams returns default evm parameters
+func DefaultParams() Params {
+	return Params{
+		EvmDenom:                DefaultEVMExtendedDenom,
+		ExtraEIPs:               DefaultExtraEIPs,
+		ActiveStaticPrecompiles: DefaultStaticPrecompiles,
+		EVMChannels:             DefaultEVMChannels,
+		AccessControl:           DefaultAccessControl,
+		HistoryServeWindow:      DefaultHistoryServeWindow,
+		ExtendedDenomOptions:    &ExtendedDenomOptions{ExtendedDenom: DefaultEVMExtendedDenom},
+	}
+}
+
+// validateChannels checks if channels ids are valid
+func validateChannels(i interface{}) error {
+	channels, ok := i.([]string)
+	if !ok {
+		return fmt.Errorf("invalid parameter type: %T", i)
+	}
+
+	for _, channel := range channels {
+		if err := host.ChannelIdentifierValidator(channel); err != nil {
+			return errorsmod.Wrap(
+				channeltypes.ErrInvalidChannelIdentifier, err.Error(),
+			)
+		}
+	}
+
+	return nil
+}
+
+// SA-H17 audit-2026-05-29: deny-list of ExtraEIPs that drastically reduce
+// SSTORE / opcode gas costs (state-bloat economic disaster if gov accidentally
+// or maliciously enables). Add to this list as new gas-reducer EIPs appear.
+// Operators wanting these EIPs must remove from deny-list via source patch
+// (not a runtime param), creating an effective "code timelock".
+var deniedExtraEIPs = map[int64]string{
+	// 0o002 is the STOChain-internal "SSTORE = 500 gas fixed" activator
+	// (forks/.../x/vm/eips/eips.go). Real EIP numbers don't conflict with
+	// this internal id-space. Block to prevent gov-prop from re-enabling
+	// the 44× SSTORE discount.
+	0o002: "EIP 0o002 (SSTORE fixed 500 gas) blocked by SA-H17 deny-list",
+}
+
+// Validate performs basic validation on evm parameters.
+func (p Params) Validate() error {
+	if err := validateEIPs(p.ExtraEIPs); err != nil {
+		return err
+	}
+
+	// SA-H17 audit-2026-05-29: reject deny-listed EIPs that would slash
+	// state-write costs and enable state-bloat archive-node-death attacks.
+	for _, eip := range p.ExtraEIPs {
+		if reason, denied := deniedExtraEIPs[eip]; denied {
+			return fmt.Errorf("%s", reason)
+		}
+	}
+
+	if err := ValidatePrecompiles(p.ActiveStaticPrecompiles); err != nil {
+		return err
+	}
+
+	if err := p.AccessControl.Validate(); err != nil {
+		return err
+	}
+
+	// SA-AUDIT-2026-06-05 H3/H4/H5: validate denom fields so a successful
+	// MsgUpdateParams cannot persist malformed values that later panic
+	// LoadEvmCoinInfo / InitGenesis. Without these gates a gov-prop could
+	// brick the chain by setting EvmDenom to an invalid bech32 sub-denom or
+	// by leaving ExtendedDenomOptions nil on a non-18-decimal chain.
+	if err := sdk.ValidateDenom(p.EvmDenom); err != nil {
+		return fmt.Errorf("invalid EvmDenom %q: %w", p.EvmDenom, err)
+	}
+	if p.ExtendedDenomOptions == nil {
+		return fmt.Errorf("ExtendedDenomOptions must be non-nil; set ExtendedDenom equal to EvmDenom for 18-decimal chains")
+	}
+	if err := sdk.ValidateDenom(p.ExtendedDenomOptions.ExtendedDenom); err != nil {
+		return fmt.Errorf("invalid ExtendedDenom %q: %w", p.ExtendedDenomOptions.ExtendedDenom, err)
+	}
+
+	return validateChannels(p.EVMChannels)
+}
+
+// EIPs returns the ExtraEIPS as a int slice
+func (p Params) EIPs() []int {
+	eips := make([]int, len(p.ExtraEIPs))
+	for i, eip := range p.ExtraEIPs {
+		eips[i] = int(eip)
+	}
+	return eips
+}
+
+// GetActiveStaticPrecompilesAddrs is a util function that the Active Precompiles
+// as a slice of addresses.
+func (p Params) GetActiveStaticPrecompilesAddrs() []common.Address {
+	precompiles := make([]common.Address, len(p.ActiveStaticPrecompiles))
+	for i, precompile := range p.ActiveStaticPrecompiles {
+		precompiles[i] = common.HexToAddress(precompile)
+	}
+	return precompiles
+}
+
+// IsEVMChannel returns true if the channel provided is in the list of
+// EVM channels
+func (p Params) IsEVMChannel(channel string) bool {
+	return slices.Contains(p.EVMChannels, channel)
+}
+
+func (ac AccessControl) Validate() error {
+	if err := ac.Create.Validate(); err != nil {
+		return err
+	}
+	return ac.Call.Validate()
+}
+
+func (act AccessControlType) Validate() error {
+	if err := validateAccessType(act.AccessType); err != nil {
+		return err
+	}
+	return validateAllowlistAddresses(act.AccessControlList)
+}
+
+func validateAccessType(i interface{}) error {
+	accessType, ok := i.(AccessType)
+	if !ok {
+		return fmt.Errorf("invalid access type type: %T", i)
+	}
+
+	switch accessType {
+	case AccessTypePermissionless, AccessTypeRestricted, AccessTypePermissioned:
+		return nil
+	default:
+		return fmt.Errorf("invalid access type: %s", accessType)
+	}
+}
+
+func validateAllowlistAddresses(i interface{}) error {
+	addresses, ok := i.([]string)
+	if !ok {
+		return fmt.Errorf("invalid whitelist addresses type: %T", i)
+	}
+
+	for _, address := range addresses {
+		if err := utils.ValidateAddress(address); err != nil {
+			return fmt.Errorf("invalid whitelist address: %s", address)
+		}
+	}
+	return nil
+}
+
+func validateEIPs(i interface{}) error {
+	eips, ok := i.([]int64)
+	if !ok {
+		return fmt.Errorf("invalid EIP slice type: %T", i)
+	}
+
+	uniqueEIPs := make(map[int64]struct{})
+
+	for _, eip := range eips {
+		if !vm.ValidEip(int(eip)) {
+			return fmt.Errorf("EIP %d is not activateable, valid EIPs are: %s", eip, vm.ActivateableEips())
+		}
+
+		if _, ok := uniqueEIPs[eip]; ok {
+			return fmt.Errorf("found duplicate EIP: %d", eip)
+		}
+		uniqueEIPs[eip] = struct{}{}
+
+	}
+
+	return nil
+}
+
+// ValidatePrecompiles checks if the precompile addresses are valid and unique.
+func ValidatePrecompiles(i interface{}) error {
+	precompiles, ok := i.([]string)
+	if !ok {
+		return fmt.Errorf("invalid precompile slice type: %T", i)
+	}
+
+	seenPrecompiles := make(map[string]struct{})
+	for _, precompile := range precompiles {
+		if _, ok := seenPrecompiles[precompile]; ok {
+			return fmt.Errorf("duplicate precompile %s", precompile)
+		}
+
+		if err := utils.ValidateAddress(precompile); err != nil {
+			return fmt.Errorf("invalid precompile %s", precompile)
+		}
+
+		seenPrecompiles[precompile] = struct{}{}
+	}
+
+	// NOTE: Check that the precompiles are sorted. This is required
+	// to ensure determinism
+	if !slices.IsSorted(precompiles) {
+		return fmt.Errorf("precompiles need to be sorted: %s", precompiles)
+	}
+
+	return nil
+}
+
+// IsLondon returns if london hardfork is enabled.
+func IsLondon(ethConfig *params.ChainConfig, height int64) bool {
+	return ethConfig.IsLondon(big.NewInt(height))
+}

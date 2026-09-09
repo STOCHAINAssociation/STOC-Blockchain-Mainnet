@@ -82,6 +82,14 @@ inferred.
 - **v5.0.0** — governance upgrade. Current consensus. Unlike `v2-evm` this is a param-only migration
   (EIP-1559 feemarket enable) with **no store migration**, so a wrong binary here is recoverable with
   `stocd rollback` like any ordinary mismatch.
+- **v5.0.1** — security + stability patch, **app-hash-identical to v5.0.0**. Deployed 2026-08-28 via a
+  zero-downtime rolling binary swap; no governance proposal — it changes no consensus behaviour, so it
+  owns no distinct replay range (a v5.0.0 node syncs the same blocks). Two fixes: (1) backport of the
+  upstream cosmos/evm **v0.6.3** security patch — **GHSA-367m-g444-9mg3 "non-atomic StateDB commit"**
+  (`StateDB.Commit()` atomicity + locked-balance snapshot + under/overflow panics in `x/vm/statedb`);
+  (2) nil base-fee guard in the London header (`CalcBaseFee` nil-deref, described above). Linux amd64
+  SHA256 `0ab5a710536562ce31ba4bc3773aa81e0ee15dcc9f94efde9bf3100a1a26d723`. Operators should run v5.0.1
+  for the security fix, though it is not required to stay in sync.
 
 ## Three things that will cost you a day if you miss them
 

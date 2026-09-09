@@ -34,6 +34,20 @@ func NewKeeper(
 	bankKeeper types.BankKeeper,
 	accountKeeper types.AccountKeeper,
 ) Keeper {
+	// SA-L8 audit-2026-05-29: fail loudly at boot when expected keepers are
+	// nil rather than panicking deep inside a message handler later. The
+	// previous nil-tolerant constructor would survive depinject misconfig and
+	// surface as a hard-to-diagnose nil deref the first time a token was
+	// created or burned.
+	if bankKeeper == nil {
+		panic("x/stoc: BankKeeper must not be nil")
+	}
+	if accountKeeper == nil {
+		panic("x/stoc: AccountKeeper must not be nil")
+	}
+	if storeService == nil {
+		panic("x/stoc: store.KVStoreService must not be nil")
+	}
 	if _, err := sdk.AccAddressFromBech32(authority); err != nil {
 		panic(fmt.Sprintf("invalid authority address: %s", authority))
 	}

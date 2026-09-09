@@ -38,8 +38,14 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 						{ProtoField: "symbol"},
 					},
 				},
-				// NOTE: BalancesWithMetadata is implemented in keeper but not yet in the
-				// generated api/ service descriptor. Run `make proto-gen` to add it to autocli.
+				{
+					RpcMethod: "BalancesWithMetadata",
+					Use:       "balances-with-metadata [address]",
+					Short:     "Query account balances enriched with token metadata (decimals, symbol, logo)",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "address"},
+					},
+				},
 				// this line is used by ignite scaffolding # autocli/query
 			},
 		},
