@@ -5,10 +5,38 @@ go 1.25.8
 replace (
 	// required by cosmos/evm v0.6.0
 	github.com/99designs/keyring => github.com/cosmos/keyring v1.2.0
-	// STOChain v8-eth-mempool (2026-05-16): fork of cosmos/evm v0.6.0 with three
-	// Ethereum-mempool-semantics fixes (Bug A per-tx balance, Bug B iterator
-	// PopCurrentAccount helper, Bug C eth_getTransactionCount pending nonce).
-	// See app/upgrades.go UpgradeNameEthMempool block for the full rationale.
+	// STOChain in-tree fork of cosmos/evm v0.6.0.
+	//
+	// Started 2026-05-16 as v8-eth-mempool with three Ethereum-mempool-semantics
+	// fixes (Bug A per-tx balance, Bug B iterator PopCurrentAccount helper,
+	// Bug C eth_getTransactionCount pending nonce) — see app/upgrades.go
+	// UpgradeNameEthMempool for that rationale. It has since grown well past
+	// those three.
+	//
+	// MEASURED 2026-08-26 (diff vs upstream v0.6.0, non-test .go only):
+	// 34 files differ — mempool 5, rpc/backend 7, ante/evm 3, x/erc20 6,
+	// x/feemarket 3, x/vm/keeper 2 (log-only, behavior identical),
+	// precompiles 4 (bech32/p256/distribution).
+	//
+	// DELIBERATELY UNTOUCHED — byte-identical to upstream v0.6.0, so upstream
+	// security reasoning about these paths applies to us verbatim:
+	//   precompiles/common/{precompile,balance_handler,utils}.go
+	//   x/vm/statedb/{statedb,state_object,journal}.go
+	//   precompiles/ics20/tx.go
+	//   precompiles/types/defaults.go
+	//   x/vm/keeper/static_precompiles.go
+	// Keep it that way. If a change here is unavoidable, re-run the diff and
+	// update this block — partner security assessments depend on it.
+	//
+	// SECURITY BACKPORT (v5.0.1): the upstream cosmos/evm v0.6.3 statedb fix for
+	// GHSA-367m-g444-9mg3 ("non-atomic StateDB commit"; range >=0.6.0 <0.6.3) is
+	// backported here — StateDB.Commit() atomicity + a locked-balance snapshot and
+	// under/overflow panics in x/vm/statedb. The affected paths (x/vm/statedb/*,
+	// x/vm/keeper/statedb.go, x/erc20 ibc middleware, precompiles/common,
+	// x/precisebank, x/feemarket abci) match upstream v0.6.3.
+	// v0.6.1/v0.6.2 FEATURE changes are still not carried — only the v0.6.3
+	// security hunks. Stateful precompiles remain disabled chain-wide
+	// (active_static_precompiles = []).
 	github.com/cosmos/evm => ./forks/cosmos-evm-v0.6.0
 	// replace with cosmos fork for EVM compatibility
 	github.com/ethereum/go-ethereum => github.com/cosmos/go-ethereum v1.16.2-cosmos-1

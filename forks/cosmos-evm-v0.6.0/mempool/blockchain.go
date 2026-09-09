@@ -110,12 +110,17 @@ func (b *Blockchain) CurrentBlock() *types.Header {
 	chainConfig := evmtypes.GetEthChainConfig()
 	if chainConfig.IsLondon(header.Number) {
 		baseFee := b.vmKeeper.GetBaseFee(ctx)
-		if baseFee != nil {
-			header.BaseFee = baseFee
-			b.logger.Debug("added base fee to header", "base_fee", baseFee.String())
-		} else {
-			b.logger.Debug("no base fee available for London fork")
+		if baseFee == nil {
+			// London is active but the feemarket base fee is 0/disabled (GetBaseFee
+			// collapses nil and zero to nil). Leaving header.BaseFee nil makes the
+			// go-ethereum mempool CalcBaseFee(parent) nil-deref in runReorg. Use an
+			// explicit zero so the London base-fee math is well-defined. Only reachable
+			// when feemarket min_gas_price==0 (e.g. devnet); mainnet floors base fee at
+			// min_gas_price>0 so this branch never triggers there.
+			baseFee = big.NewInt(0)
 		}
+		header.BaseFee = baseFee
+		b.logger.Debug("added base fee to header", "base_fee", baseFee.String())
 	} else {
 		b.logger.Debug("London fork not active for current block", "block_number", header.Number.String())
 	}
