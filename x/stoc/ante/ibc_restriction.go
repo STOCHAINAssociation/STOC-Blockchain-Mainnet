@@ -29,12 +29,13 @@ import (
 // every token created via x/stoc MsgCreateToken (e.g. "MYTOKEN_0").
 //
 // =============================================================================
-// FUTURE WORK — Foreign Asset Integration (e.g. USDC via Noble)
+// FUTURE WORK — Foreign Asset Integration (e.g. IBC stablecoins)
 // =============================================================================
 // The current decorator only blocks outgoing transfers of x/stoc-created tokens.
-// Inbound foreign assets (USDC from Noble, USDT from Kava, etc.) are minted by
-// the ibctransfer module as "ibc/<HASH>" denoms and the chain can then forward
-// or return them via standard IBC paths. No changes are required at the ante
+// Inbound foreign assets (e.g. USDC, USDT) are minted by the ibctransfer module
+// as "ibc/<HASH>" denoms and holders can send them out again or return them
+// via standard IBC transfers (no automatic multi-hop forwarding: packet-forward
+// middleware is not wired, see app/ibc.go). No changes are required at the ante
 // layer to support new inbound foreign assets — the existing fall-through path
 // permits them automatically.
 //
@@ -45,12 +46,19 @@ import (
 //      the foreign denom — by default bank allows all denoms; if an explicit
 //      block list is added in the future, foreign denoms must be excluded.
 //   3. x/erc20 token-pair registration (if EVM exposure of the foreign asset
-//      is desired) is performed via governance proposal, mapping the IBC denom
-//      to an ERC-20 contract address.
+//      is desired). NOTE: no entry point for this exists in the current build
+//      — MsgRegisterERC20 only accepts ERC20 contract addresses, and automatic
+//      registration on receive is disabled (SA-M9). See the Case 1 comment in
+//      forks/cosmos-evm-v0.6.0/x/erc20/keeper/ibc_callbacks.go. Until that is
+//      added, foreign IBC denoms are bank-only (Cosmos txs), not visible to
+//      EVM contracts.
 //   4. The custom-token block list above (x/stoc keeper lookup) remains
 //      authoritative for chain-native custom tokens. Foreign assets must NOT
 //      be registered through x/stoc MsgCreateToken — they are already provided
 //      as IBC-wrapped denoms by their origin chain.
+//
+// Foreign IBC denoms are not in the x/stoc registry, so the recipient-side
+// tax (tax_post.go) never applies to them.
 //
 // Summary of denom flows:
 //   Native STOC denom out ........ allowed (used as fee / cross-chain settlement)

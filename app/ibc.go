@@ -116,6 +116,13 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 	transferStack = erc20.NewIBCMiddleware(&app.Erc20Keeper, transferStack)
 
 	// create static IBC router, add transfer route, then set it on the keeper
+	//
+	// Scope: IBC classic (channel/port based) only. No IBC v2 (client-ID
+	// based) router is set, and the only light clients registered below are
+	// 07-tendermint and 06-solomachine (no 08-wasm). The transfer stack has no
+	// packet-forward or ibc-hooks middleware, so this chain can be a transfer
+	// source/destination but not a forwarding hop. Counterparties must connect
+	// over a classic ICS-20 channel.
 	ibcRouter := porttypes.NewRouter().
 		AddRoute(ibctransfertypes.ModuleName, transferStack).
 		AddRoute(icacontrollertypes.SubModuleName, icaControllerStack).
