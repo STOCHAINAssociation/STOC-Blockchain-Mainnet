@@ -103,10 +103,24 @@ func (k Keeper) OnRecvPacket(
 		// counterparty chain or relayer can spray arbitrary synthesized
 		// `ibc/<hash>` denoms and force RegisterERC20Extension to write a new
 		// TokenPair entry per packet at no fee cost — unbounded state growth /
-		// IAVL bloat. Instead: accept the coin as a native Cosmos bank balance
-		// and require explicit governance (`MsgRegisterERC20`) to enable the
-		// ERC20 representation for any new IBC denom. Recipients can later
-		// convert via `MsgConvertCoin` once the pair is registered.
+		// IAVL bloat. Instead: accept the coin as a native Cosmos bank balance.
+		//
+		// ERC20 exposure of an IBC denom is therefore NOT reachable in this
+		// build:
+		//   - `MsgRegisterERC20` accepts only hex ERC20 contract addresses
+		//     (native-ERC20 -> coin direction); it cannot register an `ibc/`
+		//     denom.
+		//   - `RegisterERC20Extension(denom)` (dynamic_precompiles.go) is the
+		//     only keeper path that creates a native-coin TokenPair, and it has
+		//     no Msg / gov / upgrade caller in this build.
+		//   - `MsgConvertCoin` on a native-coin pair returns
+		//     ErrNativeConversionDisabled; once such a pair exists the ERC20
+		//     precompile reads the bank balance directly (no conversion step).
+		// Enabling it requires a new authority-gated entry point (or an upgrade
+		// handler) that calls RegisterERC20Extension for an explicitly
+		// allow-listed denom — a binary change, not a param change. The erc20
+		// `permissionless_registration` param does not help here: it only
+		// relaxes the signer check on MsgRegisterERC20.
 		ctx.EventManager().EmitEvents(
 			sdk.Events{
 				sdk.NewEvent(
