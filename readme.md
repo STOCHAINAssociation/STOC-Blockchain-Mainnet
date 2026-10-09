@@ -139,6 +139,10 @@ make proto-gen      # Regenerate protobuf code
 
 - **GitHub**: https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet
 
+## Technical Support
+
+For technical questions about running a node or building from source, contact dev.minhanhcorp@gmail.com.
+
 ## License
 
 See [LICENSE](./LICENSE) for details.
