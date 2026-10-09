@@ -14,8 +14,8 @@ import (
 )
 
 // EvmBankKeeper wraps the BankKeeper to provide EVM-compatible denomination conversion
-// between ustoc (6 decimals) and astoc (18 decimals) for mainnet
-// or utstoc (6 decimals) and atstoc (18 decimals) for testnet
+// between ustoc (6 decimals) and astoc (18 decimals), or between utstoc and
+// atstoc when the bond denom is utstoc.
 type EvmBankKeeper struct {
 	bankKeeper  types.BankKeeper
 	evmDenom    string // cached at construction, avoids runtime panic from GetEvmDenom()
@@ -142,6 +142,28 @@ func (k EvmBankKeeper) SpendableCoins(ctx context.Context, addr sdk.AccAddress) 
 		return sdk.NewCoins(sdk.NewCoin(k.getEvmDenom(), evmAmount))
 	}
 	return sdk.NewCoins()
+}
+
+// LockedCoins returns the account's locked (e.g. vesting) balance expressed in
+// the EVM's 18-decimal scale, keyed under the EVM coin denom.
+//
+// The EVM statedb snapshots this value at account load and subtracts it from
+// the (also 18-dec) spendable balance to recover the full bank balance without
+// underflow on vesting accounts. The forked cosmos/evm statedb reads it via
+// LockedCoins(ctx, addr).AmountOf(types.GetEVMCoinDenom()), where GetEVMCoinDenom()
+// is the 6-dec cosmos bond denom (ustoc) on this chain — so the locked amount MUST
+// be keyed under the cosmos denom while scaled to 18 decimals to match the balance,
+// exactly mirroring how SpendableCoin/GetBalance convert ustoc -> astoc.
+// Custom x/stoc tokens are Cosmos-only and invisible to the EVM, so only the native
+// denom's locked portion is reported.
+func (k EvmBankKeeper) LockedCoins(ctx context.Context, addr sdk.AccAddress) sdk.Coins {
+	cosmosDenom := k.getCosmosDenom()
+	lockedCosmos := k.bankKeeper.LockedCoins(ctx, addr).AmountOf(cosmosDenom)
+	if !lockedCosmos.IsPositive() {
+		return sdk.NewCoins()
+	}
+	evmAmount := lockedCosmos.Mul(types.ConversionMultiplier)
+	return sdk.NewCoins(sdk.NewCoin(cosmosDenom, evmAmount))
 }
 
 // BlockedAddr checks if a given address is blocked from receiving funds.

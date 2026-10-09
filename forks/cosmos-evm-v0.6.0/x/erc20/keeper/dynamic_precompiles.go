@@ -16,6 +16,12 @@ import (
 // EVM extension as an active dynamic precompile.
 //
 // CONTRACT: This must ONLY be called if there is no existing token pair for the given denom.
+//
+// NOTE: in this fork the automatic call from OnRecvPacket was removed (see
+// ibc_callbacks.go), so this function has no production caller. Any new
+// caller must be authority-gated and restricted to an explicit denom
+// allow-list; exposing it permissionlessly re-opens the IBC-denom
+// state-bloat vector.
 func (k Keeper) RegisterERC20Extension(ctx sdk.Context, denom string) (*types.TokenPair, error) {
 	pair, err := k.CreateNewTokenPair(ctx, denom)
 	if err != nil {
@@ -45,21 +51,14 @@ func (k Keeper) RegisterERC20CodeHash(ctx sdk.Context, erc20Addr common.Address)
 		k.evmKeeper.SetCode(ctx, codeHash, bytecode)
 	}
 
-	var (
-		nonce   uint64
-		balance = common.U2560
-	)
-	// keep balance and nonce if account exists
-	if acc := k.evmKeeper.GetAccount(ctx, erc20Addr); acc != nil {
-		nonce = acc.Nonce
-		balance = acc.Balance
+	// reuse account with modified code hash if it already exists
+	acc := k.evmKeeper.GetAccount(ctx, erc20Addr)
+	if acc == nil {
+		acc = statedb.NewEmptyAccount()
 	}
+	acc.CodeHash = codeHash
 
-	return k.evmKeeper.SetAccount(ctx, erc20Addr, statedb.Account{
-		CodeHash: codeHash,
-		Nonce:    nonce,
-		Balance:  balance,
-	})
+	return k.evmKeeper.SetAccount(ctx, erc20Addr, *acc)
 }
 
 // UnRegisterERC20CodeHash sets the codehash for the account to an empty one

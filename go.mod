@@ -5,10 +5,34 @@ go 1.25.8
 replace (
 	// required by cosmos/evm v0.6.0
 	github.com/99designs/keyring => github.com/cosmos/keyring v1.2.0
-	// In-tree fork of cosmos/evm v0.6.0 with Ethereum mempool fixes: per-tx
+	// In-tree fork of cosmos/evm v0.6.0.
+	//
+	// Changed against upstream v0.6.0 (non-test .go files): mempool, rpc/backend,
+	// ante/evm, x/erc20, x/feemarket, x/vm/keeper (logging only) and precompiles
+	// (bech32, p256, distribution). The Ethereum mempool changes cover per-tx
 	// balance checks, the iterator PopCurrentAccount helper and the pending nonce
-	// returned by eth_getTransactionCount. See app/upgrades.go
+	// returned by eth_getTransactionCount; see app/upgrades.go
 	// UpgradeNameEthMempool.
+	//
+	// Kept identical to upstream (v0.6.0 plus the v0.6.3 security hunks below),
+	// so upstream security reasoning about these paths applies unchanged:
+	//   precompiles/common/{precompile,balance_handler,utils}.go
+	//   x/vm/statedb/{statedb,state_object,journal}.go
+	//   precompiles/ics20/tx.go
+	//   precompiles/types/defaults.go
+	//   x/vm/keeper/static_precompiles.go
+	// If a change here is unavoidable, re-run the diff against upstream and
+	// update this block.
+	//
+	// SECURITY BACKPORT (v5.0.1): the upstream cosmos/evm v0.6.3 statedb fix for
+	// GHSA-367m-g444-9mg3 ("non-atomic StateDB commit"; range >=0.6.0 <0.6.3) is
+	// backported here — StateDB.Commit() atomicity + a locked-balance snapshot and
+	// under/overflow panics in x/vm/statedb. The affected paths (x/vm/statedb/*,
+	// x/vm/keeper/statedb.go, x/erc20 ibc middleware, precompiles/common,
+	// x/precisebank, x/feemarket abci) match upstream v0.6.3.
+	// v0.6.1/v0.6.2 FEATURE changes are still not carried — only the v0.6.3
+	// security hunks. Stateful precompiles remain disabled chain-wide
+	// (active_static_precompiles = []).
 	github.com/cosmos/evm => ./forks/cosmos-evm-v0.6.0
 	// replace with cosmos fork for EVM compatibility
 	github.com/ethereum/go-ethereum => github.com/cosmos/go-ethereum v1.16.2-cosmos-1
