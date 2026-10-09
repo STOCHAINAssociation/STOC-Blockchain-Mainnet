@@ -2,13 +2,14 @@
 
 Which source produced which range of blocks, from genesis to the current head.
 
-Mainnet has run **seven** binaries since it launched on 2025-04-24. Only **three** of those changes
-went through governance; the other four were swapped in without a proposal, so nothing on chain records
-them. Anyone replaying the chain from block 1 needs all of them, in order, or their app hash diverges and
-the node stops.
+Mainnet has run **eight** binaries since it launched on 2025-04-24. Only **three** of those changes
+went through governance; the other five were swapped in without a proposal, so nothing on chain records
+them. Anyone replaying the chain from block 1 needs every one up to `v5.0.0`, in order, or their app hash
+diverges and the node stops.
 
-Replaying takes **eight** steps rather than seven, because no single source reproduces the `v2-evm`
-range on its own. See the `v2-evm` note below — two sources in sequence reproduce the same state.
+Replaying up to `v5.0.0` takes **eight** steps for seven binaries, because no single source reproduces
+the `v2-evm` range on its own. See the `v2-evm` note below — two sources in sequence reproduce the same
+state. `v5.0.1` adds no step: it produces the same app hashes as `v5.0.0`.
 
 ## Version scheme
 
@@ -31,13 +32,16 @@ comparing app hashes, not from any on-chain record.
 | `v3` | 4,705,316 | 4,794,076 | [`v3`](../../tree/phase/v3) | `go1.24.3` | ✔ prop #4 | replay-verified |
 | `v3.1` | 4,794,077 | 6,408,099 | [`v3.1`](../../tree/phase/v3.1) | `go1.24.3` | — | replay-verified |
 | `v5.0.0` | 6,408,100 | head | [`v5.0.0`](../../tree/phase/v5.0.0) | `go1.25.8` | ✔ prop #5 | replay-verified |
+| `v5.0.1` | rolling swap from 2026-08-28 | head | [`v5.0.1`](../../tree/main) | `go1.25.8` | — | running on mainnet, app-hash-identical to `v5.0.0` |
 
-`v5.0.1` (tag `v5.0.1`, the `main` branch) deliberately has no row. It is app-hash-identical to
-`v5.0.0` and owns no replay range — a `v5.0.0` binary re-executes the same blocks to the same hashes.
-Run `v5.0.1` anyway: it carries a security fix. See *What each version changes* below.
+`v5.0.1` (tag `v5.0.1`, the `main` branch) is the binary mainnet runs today. Nodes switched to it one
+at a time from 2026-08-28, with no proposal and no halt, so it has no single start height. It is
+app-hash-identical to `v5.0.0` and owns no separate replay range — a `v5.0.0` binary re-executes the same
+blocks to the same hashes. Run `v5.0.1`: it carries a security fix. See *What each version changes* below.
 
-Every source in the table is a tag with a matching branch, `phase/<tag>`; `main` is `v5.0.1`. A source is only tagged
-once a node has re-executed its range from block 1 and matched mainnet.
+Every source up to `v5.0.0` is a tag with a matching branch, `phase/<tag>`, and is only tagged once a node
+has re-executed its range from block 1 and matched mainnet. `v5.0.1` is tag `v5.0.1` on `main`, verified
+by mainnet nodes running it and staying in sync.
 
 Every boundary above was established by re-executing the block and comparing the resulting app hash
 against mainnet. Every height listed is exact.
