@@ -13,9 +13,10 @@ import (
 	"stoc/x/evmutil/types"
 )
 
-// Regression coverage for the evm_dust_dropped event: convertCoinsForOutflow
-// silently drops dust legs that round to zero ustoc and layers an
-// observability event on top so off-chain indexers and EVM contracts with
+// SA-AUDIT-2026-06-06 MED-2 regression coverage: convertCoinsForOutflow
+// silently drops dust legs that round to zero ustoc (SA-2026-06-02 MED-3
+// business rule kept intact). The MED-2 fix layers an observability event
+// on top of the silent drop so off-chain indexers and EVM contracts with
 // independent ledgers can reconcile dropped dust.
 
 // dustTestCtx returns an sdk.Context with a fresh EventManager so tests can

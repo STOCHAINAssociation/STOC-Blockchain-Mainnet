@@ -9,12 +9,14 @@ import (
 	sdkerrors "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
 func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken) (*types.MsgCreateTokenResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	// SA-AUDIT-2026-06-06 MED-4 (deep re-audit M4, audit batch B):
 	// cosmos-sdk bech32 Normalize (btcutil/bech32 Decode) accepts
 	// ALL-UPPERCASE bech32 addresses — only mixed case is rejected. Storing
 	// msg.Creator raw means an uppercase-submitted CreateToken persists an
@@ -39,27 +41,34 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		"creator", canonicalCreator)
 	// Create a token object
 
-	// The same uppercase-Normalize trick applies to two adjacent bech32
-	// fields besides token.Creator:
-	//   (a) token.Distributions[i].Address — if persisted with the caller's
-	//       literal case, the same wallet could appear under two entries
-	//       that both canonicalize to the same AccAddress. Not a theft
-	//       vector (the handler resolves both to the same canonical
-	//       AccAddress and sends the combined balance there), but the
-	//       stored Distributions slice would carry a
-	//       duplicate-canonical-address footprint that downstream indexers
-	//       / explorers render as two separate holders.
-	//   (b) token.Tax.RecipientAddress — the tax PostHandler bech32-validates
-	//       the field on every send and canonicalizes at compare time, so
-	//       the runtime is safe, but a persisted RAW form would leak the
-	//       input case to indexers + event attributes and be inconsistent
-	//       with the canonicalized token.Creator.
+	// SA-AUDIT-2026-06-07 LOW-2 (round 2 re-audit R2-LOW2): the fix13 MED-4 fix
+	// canonicalized token.Creator but missed two adjacent bech32 fields the
+	// same uppercase-Normalize trick can brick / dedup-bypass:
+	//   (a) token.Distributions[i].Address — was persisted with caller's
+	//       literal case. ValidateBasic's seenAddrs string-compare dedup
+	//       (types/msg_create_token.go:102-110) treats "stoc1abc" and
+	//       "STOC1ABC" as distinct keys, so a creator can split the same
+	//       wallet across two entries that both canonicalize to the same
+	//       AccAddress. Persistence/UX defect today, not a theft vector
+	//       (handler resolves both to the same canonical AccAddress and
+	//       sends the combined balance there), but the stored
+	//       Distributions slice ends up with a duplicate-canonical-address
+	//       footprint that downstream indexers / explorers render as two
+	//       separate holders.
+	//   (b) token.Tax.RecipientAddress — was persisted from msg.Tax raw.
+	//       Subsequent tax PostHandler bech32-validates the field on every
+	//       send (tax_post.go:204) and canonicalizes at compare time
+	//       (tax_post.go:208), so the live runtime is already safe per
+	//       fix11 M1. But the persisted RAW form leaks the input case to
+	//       indexers + event attributes and is inconsistent with the
+	//       canonicalized token.Creator stored two lines below.
 	//
 	// Canonicalize both on the way in so token.Distributions and
-	// token.Tax.RecipientAddress mirror the invariant for token.Creator:
-	// every bech32 stored under this handler is the AccAddress.String()
-	// canonical lowercase form, regardless of caller input case.
-	// Pre-compute skipDistribution intent here so
+	// token.Tax.RecipientAddress mirror the MED-4 invariant for
+	// token.Creator: every bech32 stored under this handler is the
+	// AccAddress.String() canonical lowercase form, regardless of caller
+	// input case.
+	// SA-AUDIT-2026-06-08 fix15-5: pre-compute skipDistribution intent here so
 	// the persisted token.Distributions matches actual on-chain behaviour.
 	// For unlimited tokens with InitialSupply=0 there is nothing to mint, so
 	// we must NOT inject the default [{canonicalCreator, 100}] entry — that
@@ -68,11 +77,11 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// in that case. The contradictory pair (Unlimited+InitialSupply=0 AND
 	// non-empty msg.Distributions) is rejected by the explicit check
 	// further down before the mint loop runs.
-	// authz MsgExec dispatches inner msgs without running ValidateBasic, so a
-	// nil InitialSupply (proto field omitted on the wire) can reach here and
-	// nil-deref on IsZero(). Reject explicitly, mirroring the ValidateBasic
-	// IsNil guard the authz path bypasses. (A panic would be recovered by
-	// runTx, so this hardens robustness, not liveness.)
+	// F1 audit-2026-07-27: authz MsgExec dispatches inner msgs without running
+	// ValidateBasic, so a nil InitialSupply (proto field omitted on the wire)
+	// can reach here and nil-deref on IsZero(). Reject explicitly, mirroring the
+	// ValidateBasic IsNil guard the authz path bypasses. (Recovered by runTx
+	// today, so this hardens robustness, not liveness.)
 	if msg.InitialSupply.IsNil() {
 		return nil, sdkerrors.Wrap(types.ErrInvalidAmount, "initial supply cannot be nil")
 	}
@@ -141,7 +150,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		Logo:          msg.Logo,
 		Distributions: distributions,
 		Tax:           taxToUse,
-		Creator:       canonicalCreator, // store canonical lowercase bech32
+		Creator:       canonicalCreator, // SA-AUDIT-2026-06-06 MED-4: store canonical lowercase bech32
 		Unlimited:     msg.Unlimited,
 		MinimalDenom:  minimalDenom,
 	}
@@ -152,32 +161,33 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		return nil, sdkerrors.Wrap(err, "invalid token")
 	}
 
-	// Reject Tax.RecipientAddress that is bank-blocked.
-	// Bank-blocked recipient (module account, etc.) makes every taxable transfer
-	// fail at the PostHandler's SendCoins call → token is soft-rugged: all
-	// holders permanently unable to transfer it. Creator cannot self-remediate
-	// because Tax fields require gov via MsgUpdateParams.
-	if token.Tax.RecipientAddress != "" {
-		taxRecipient, err := sdk.AccAddressFromBech32(token.Tax.RecipientAddress)
-		if err == nil && k.bankKeeper.BlockedAddr(taxRecipient) {
-			return nil, sdkerrors.Wrapf(types.ErrInvalidTokenAmount,
-				"tax recipient %s is a blocked address; choose a non-module/non-precompile address",
-				token.Tax.RecipientAddress)
+	// SA-H11 audit-2026-05-29 + v5.0.3 audit round 1: the tax recipient must
+	// be able to receive the tax on every taxable transfer, because the tax
+	// PostHandler now FAILS the transfer when the tax leg cannot be paid
+	// (tax_post.go). A recipient that cannot receive custom tokens would make
+	// the token untransferable, so validate it whenever tax is enabled or a
+	// recipient is given. See validateTaxRecipient.
+	if token.Tax.RecipientAddress != "" || (!token.Tax.Percent.IsNil() && token.Tax.Percent.IsPositive()) {
+		if err := k.validateTaxRecipient(ctx, token.Tax.RecipientAddress); err != nil {
+			return nil, err
 		}
 	}
 
+	// SA-H13 REVERTED rc2g (user policy 2026-05-30):
 	// Name / Symbol / Display CAN collide on-chain. Multiple creators with same
-	// Symbol "FOO" → each gets unique MinimalDenom via global counter
-	// ("FOO_3", "FOO_47", etc).
+	// Symbol "USDC" → each gets unique MinimalDenom via global counter
+	// ("USDC_3", "USDC_47", etc).
 	//
-	// Trust verification (verified / unverified badges) is an off-chain
-	// indexer concern, like a block explorer's verified-contract registry.
-	// The on-chain layer stays permissionless.
+	// BUSINESS RULE — Trust verification lives at BE indexer layer
+	// (`stochain-explorer/stoc-backend-sync-chain`), like Etherscan verified-
+	// contract pattern. BE maintains `token_verification` registry; explorer +
+	// wallet UI consult BE API to render "✓ Verified" / "⚠️ Unverified" /
+	// "🚫 Scam" badges per token. On-chain layer stays permissionless.
 	//
-	// MinimalDenom uniqueness is preserved via the counter.
-	// Native-denom symbol collision is ALSO allowed:
+	// MinimalDenom uniqueness preserved via counter (see line 41 + 178 below).
+	// Native-denom symbol collision ALSO allowed (round-22 2026-07-15, SA-H8 removed):
 	// Symbol "ustoc"/"stoc" still mints a unique "ustoc_1" denom — no denom collision.
-	// The tax recipient blocklist above still blocks soft-rug.
+	// Tax recipient blocklist (SA-H11) still blocks soft-rug.
 
 	// Validate generated denom against SDK rules
 	if err := sdk.ValidateDenom(minimalDenom); err != nil {
@@ -190,10 +200,17 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		return nil, sdkerrors.Wrapf(types.ErrTokenExists, "token with symbol %s already exists", token.MinimalDenom)
 	}
 
-	// Mint initial supply and distribute according to distribution list.
-	// msg.Creator was already parsed at the top of this handler into
-	// creatorAddr (canonical string in canonicalCreator); reuse it instead
-	// of re-parsing.
+	// Mint initial supply and distribute according to distribution list
+	// SA-AUDIT-2026-06-08 fix15-6 (round 3 evm-cosmos-fresh-4 +
+	// token-keeper-fresh-7 R3 findings): drop the redundant
+	// sdk.AccAddressFromBech32(msg.Creator) parse here. msg.Creator was
+	// already parsed at the top of this handler into creatorAddr (line
+	// ~31) and the canonical string is available as canonicalCreator. The
+	// pre-fix15-6 code re-parsed into a shadowed local `creator` and
+	// `err` (the second parse can only succeed because the first parse
+	// succeeded), then used `creator` once in a debug-style logger call
+	// far below. Use creatorAddr directly so the second parse + the
+	// shadow of `err` are gone.
 	creator := creatorAddr
 
 	// InitialSupply and TotalSupply are in raw minimal units (decimals field is metadata only)
@@ -208,7 +225,7 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	token.RemainingSupply = remainingSupply
 
 	// NOTE: SetToken + SetTokenCounter are called AFTER all minting succeeds (see below).
-	// NOTE — NOT A CEI VIOLATION:
+	// AUDIT NOTE — NOT A CEI VIOLATION (reviewed April 2026, PR #80):
 	// In Cosmos SDK, the entire msg handler runs inside BaseApp.cacheTxContext.
 	// If any MintCoins/SendCoins call fails mid-loop, the handler returns error,
 	// BaseApp discards the cache, and ALL bank mutations revert atomically.
@@ -216,14 +233,15 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// See MintToken in token.go for detailed rationale on why Solidity CEI patterns
 	// do not apply to Cosmos SDK (no re-entrancy, no external calls).
 
-	// Unlimited tokens whose creator picks the canonical "InitialSupply=0,
-	// TotalSupply=0, Unlimited=true, mint later via MsgMintTokens" pattern
-	// would otherwise fail the distribution loop below: the default
-	// [{creator, 100%}] entry computes amount=0 and hits the zero-rounded
-	// reject with a misleading
+	// SA-AUDIT-2026-06-07 LOW-3 (round 2 re-audit R2-LOW3): unlimited tokens
+	// whose creator picks the canonical "InitialSupply=0, TotalSupply=0,
+	// Unlimited=true, mint later via MsgMintTokens" pattern previously
+	// failed the distribution loop below: the default
+	// [{creator, 100%}] entry computed amount=0 and hit the SA-2026-06-02
+	// LOW-3 zero-rounded reject with a misleading
 	// "increase InitialSupply or merge low-percent recipients" error.
-	// ValidateBasic (types/msg_create_token.go) explicitly allows this
-	// input shape, so the handler should honor the contract.
+	// ValidateBasic (types/msg_create_token.go:73-78, 91-94) explicitly
+	// allows this input shape, so the handler should honor the contract.
 	// Skip the distribution loop entirely when there is nothing to
 	// distribute. token.RemainingSupply was already set to ZeroInt() above
 	// (TotalSupply.GT(InitialSupply) is false when both are zero), so
@@ -231,14 +249,19 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 	// reserve, which MsgMintTokens can then grow on demand.
 	skipDistribution := token.Unlimited && initialSupply.IsZero()
 
-	// When the caller submits a NON-EMPTY Distributions slice but their
+	// SA-AUDIT-2026-06-08 fix15-5 (round 3 fix14-regression-2 +
+	// tax-postdecorator-fresh-2 + token-keeper-fresh-2 R3 findings): when
+	// the caller submitted a NON-EMPTY Distributions slice but their
 	// (Unlimited, InitialSupply) pair also satisfies skipDistribution, the
-	// skip path would silently drop the user-provided distribution list
-	// because the loop body short-circuits on `if skipDistribution
-	// { break }`. No bank.MintCoins or SendCoinsFromModuleToAccount would
-	// fire, so on-chain balances would diverge from the requested
-	// distribution (e.g. "holder A: 60%, holder B: 40%" while
-	// bank.GetBalance(holder A) returns zero).
+	// fix14 R2-LOW3 path silently dropped the user-provided distribution
+	// list because the loop body short-circuits on `if skipDistribution
+	// { break }`. The persisted Token.Distributions still carried the
+	// distribution entries (we copy from msg.Distributions earlier in
+	// this handler) but no actual bank.MintCoins or
+	// SendCoinsFromModuleToAccount fired, so on-chain balances diverged
+	// from the documented Distributions metadata. Indexers reading
+	// Token.Distributions saw "founder A: 60%, founder B: 40%" while
+	// bank.GetBalance(founder A) returned zero.
 	//
 	// Reject loudly so the issuer notices the contradiction. Either:
 	//   - the issuer wants InitialSupply=0 with no upfront distribution
@@ -288,9 +311,10 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 				i, dist.Address, amount.String())
 		}
 		if amount.IsZero() {
-			// Silently `continue`-ing on zero-rounded entries WITHOUT
-			// incrementing totalMinted would let the last-entry remainder
-			// branch above push ALL unallocated supply to the last
+			// SA-2026-06-02 LOW-3 (senior-skeptic audit): the prior version
+			// silently `continue`-d on zero-rounded entries WITHOUT
+			// incrementing totalMinted, so the last-entry remainder branch
+			// at line 150 would push ALL unallocated supply to the last
 			// recipient — silently concentrating the entire initial supply
 			// in one address even though the creator listed many. For a
 			// security-token primary distribution this is a material
@@ -400,4 +424,63 @@ func (k msgServer) CreateToken(goCtx context.Context, msg *types.MsgCreateToken)
 		Message: token.MinimalDenom,
 	}, nil
 
+}
+
+// validateTaxRecipient checks that a token tax recipient is a plain user
+// wallet that already exists:
+//
+//   - valid bech32 address, not bank-blocked (SA-H11: module accounts,
+//     precompiles)
+//   - the account already exists. A fresh address could be turned into a
+//     vesting / permanently locked account by anyone (MsgCreate*VestingAccount
+//     only works on non-existent addresses), which can never receive custom
+//     tokens — that would freeze every transfer of the token.
+//   - the account is a plain *authtypes.BaseAccount (not a module, vesting or
+//     interchain account) without an ADR-028 module credential (group
+//     policies and other module-derived accounts)
+//   - not a recorded ICS-20 transfer escrow address (custom tokens can never
+//     enter an escrow, so the tax leg would always fail)
+//   - the app-level check (module account addresses, EVM precompiles, group
+//     policies, EVM contracts), when installed
+//
+// Trust assumption: only addresses that already exist can be checked. An
+// address that becomes non-receiving LATER — the escrow of a transfer
+// channel not opened yet (escrows are deterministic), or a contract address
+// the creator will deploy to later (CREATE/CREATE2 addresses are predictable)
+// — cannot be fully ruled out here. Choosing a tax recipient that later
+// freezes the token's taxed transfers is a creator decision; such tokens are
+// only harmful to their own holders.
+func (k Keeper) validateTaxRecipient(ctx sdk.Context, recipient string) error {
+	addr, err := sdk.AccAddressFromBech32(recipient)
+	if err != nil {
+		return sdkerrors.Wrapf(types.ErrInvalidTaxRecipient, "invalid tax recipient address %q: %s", recipient, err)
+	}
+	if k.bankKeeper.BlockedAddr(addr) {
+		return sdkerrors.Wrapf(types.ErrInvalidTaxRecipient,
+			"tax recipient %s is a blocked address; choose a non-module/non-precompile address", recipient)
+	}
+	if k.IsIBCEscrow(ctx, addr) {
+		return sdkerrors.Wrapf(types.ErrInvalidTaxRecipient,
+			"tax recipient %s is an IBC transfer escrow address", recipient)
+	}
+	acc := k.accountKeeper.GetAccount(ctx, addr)
+	if acc == nil {
+		return sdkerrors.Wrapf(types.ErrInvalidTaxRecipient,
+			"tax recipient %s does not exist on chain; it must be an existing user wallet (fund it first)", recipient)
+	}
+	base, ok := acc.(*authtypes.BaseAccount)
+	if !ok {
+		return sdkerrors.Wrapf(types.ErrInvalidTaxRecipient,
+			"tax recipient %s must be a plain user wallet, got %T", recipient, acc)
+	}
+	if _, isModuleCred := base.GetPubKey().(*authtypes.ModuleCredential); isModuleCred {
+		return sdkerrors.Wrapf(types.ErrInvalidTaxRecipient,
+			"tax recipient %s is a module-derived account (e.g. a group policy)", recipient)
+	}
+	if check := k.hooks.taxRecipientCheck; check != nil {
+		if err := check(ctx, addr); err != nil {
+			return sdkerrors.Wrapf(types.ErrInvalidTaxRecipient, "tax recipient %s: %s", recipient, err)
+		}
+	}
+	return nil
 }

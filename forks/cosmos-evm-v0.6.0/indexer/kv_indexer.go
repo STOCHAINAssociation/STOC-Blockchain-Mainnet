@@ -50,22 +50,60 @@ func NewKVIndexer(db dbm.DB, logger log.Logger, clientCtx client.Context) *KVInd
 // - Iterates over all the messages of the Tx
 // - Builds and stores a indexer.TxResult based on parsed events for every message
 func (kv *KVIndexer) IndexBlock(block *cmttypes.Block, txResults []*abci.ExecTxResult) error {
-	height := block.Height
-
 	batch := kv.db.NewBatch()
 	defer batch.Close()
+
+	for _, e := range blockTxResults(kv.clientCtx.TxConfig.TxDecoder(), kv.logger, block, txResults) {
+		if err := saveTxResult(kv.clientCtx.Codec, batch, e.hash, &e.result); err != nil {
+			return errorsmod.Wrapf(err, "IndexBlock %d", block.Height)
+		}
+	}
+	if err := batch.Write(); err != nil {
+		return errorsmod.Wrapf(err, "IndexBlock %d, write batch", block.Height)
+	}
+	return nil
+}
+
+// TxResultsFromBlock derives the eth tx results of a block straight from its
+// CometBFT tx results, exactly as IndexBlock stores them.
+//
+// STOChain fix: the JSON-RPC backend uses it when the indexer has not caught up
+// with a just-committed block yet; without it eth_getBlockByNumber("latest")
+// failed with "tx not found" for the newest block under load.
+func TxResultsFromBlock(txDecoder sdk.TxDecoder, logger log.Logger, block *cmttypes.Block, txResults []*abci.ExecTxResult) map[common.Hash]servertypes.TxResult {
+	entries := blockTxResults(txDecoder, logger, block, txResults)
+	out := make(map[common.Hash]servertypes.TxResult, len(entries))
+	for _, e := range entries {
+		out[e.hash] = e.result
+	}
+	return out
+}
+
+type blockTxResult struct {
+	hash   common.Hash
+	result servertypes.TxResult
+}
+
+// blockTxResults parses the eth txs of a block in block order (the IndexBlock
+// logic, shared with TxResultsFromBlock so both always agree).
+func blockTxResults(txDecoder sdk.TxDecoder, logger log.Logger, block *cmttypes.Block, txResults []*abci.ExecTxResult) []blockTxResult {
+	height := block.Height
+	var out []blockTxResult
 
 	// record index of valid eth tx during the iteration
 	var ethTxIndex int32
 	for txIndex, tx := range block.Txs {
+		if txIndex >= len(txResults) {
+			break
+		}
 		result := txResults[txIndex]
 		if !rpctypes.TxSucessOrExpectedFailure(result) {
 			continue
 		}
 
-		tx, err := kv.clientCtx.TxConfig.TxDecoder()(tx)
+		tx, err := txDecoder(tx)
 		if err != nil {
-			kv.logger.Error("Fail to decode tx", "err", err, "block", height, "txIndex", txIndex)
+			logger.Error("Fail to decode tx", "err", err, "block", height, "txIndex", txIndex)
 			continue
 		}
 
@@ -75,7 +113,7 @@ func (kv *KVIndexer) IndexBlock(block *cmttypes.Block, txResults []*abci.ExecTxR
 
 		txs, err := rpctypes.ParseTxResult(result, tx)
 		if err != nil {
-			kv.logger.Error("Fail to parse event", "err", err, "block", height, "txIndex", txIndex)
+			logger.Error("Fail to parse event", "err", err, "block", height, "txIndex", txIndex)
 			continue
 		}
 
@@ -98,11 +136,11 @@ func (kv *KVIndexer) IndexBlock(block *cmttypes.Block, txResults []*abci.ExecTxR
 			} else {
 				parsedTx := txs.GetTxByMsgIndex(msgIndex)
 				if parsedTx == nil {
-					kv.logger.Error("msg index not found in events", "msgIndex", msgIndex)
+					logger.Error("msg index not found in events", "msgIndex", msgIndex)
 					continue
 				}
 				if parsedTx.EthTxIndex >= 0 && parsedTx.EthTxIndex != ethTxIndex {
-					kv.logger.Error("eth tx index don't match", "expect", ethTxIndex, "found", parsedTx.EthTxIndex)
+					logger.Error("eth tx index don't match", "expect", ethTxIndex, "found", parsedTx.EthTxIndex)
 				}
 				txResult.GasUsed = parsedTx.GasUsed
 				txResult.Failed = parsedTx.Failed
@@ -112,15 +150,10 @@ func (kv *KVIndexer) IndexBlock(block *cmttypes.Block, txResults []*abci.ExecTxR
 			txResult.CumulativeGasUsed = cumulativeGasUsed
 			ethTxIndex++
 
-			if err := saveTxResult(kv.clientCtx.Codec, batch, txHash, &txResult); err != nil {
-				return errorsmod.Wrapf(err, "IndexBlock %d", height)
-			}
+			out = append(out, blockTxResult{hash: txHash, result: txResult})
 		}
 	}
-	if err := batch.Write(); err != nil {
-		return errorsmod.Wrapf(err, "IndexBlock %d, write batch", block.Height)
-	}
-	return nil
+	return out
 }
 
 // LastIndexedBlock returns the latest indexed block number, returns -1 if db is empty

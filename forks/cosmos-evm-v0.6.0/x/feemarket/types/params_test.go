@@ -86,10 +86,10 @@ func (suite *ParamsTestSuite) TestParamsValidate() {
 	}
 }
 
-// TestParamsValidateFEE1 pins the base-fee guards: when base fee is enabled
-// (NoBaseFee=false), a zero or nil BaseFee must be rejected (it would remove
-// the cosmos-tx fee floor / nil-panic); a NoBaseFee=true, BaseFee=0 config
-// and a BaseFee=0.001 config must still pass.
+// TestParamsValidateFEE1 pins the FEE1 audit-2026-07-27/28 guards: when base fee
+// is enabled (NoBaseFee=false), a zero or nil BaseFee must be rejected (it would
+// remove the cosmos-tx fee floor / nil-panic); the v2/v3-era (NoBaseFee=true,
+// BaseFee=0) and v5 (BaseFee=0.001) configs must still pass.
 func (suite *ParamsTestSuite) TestParamsValidateFEE1() {
 	mgm := math.LegacyNewDecWithPrec(5, 1) // 0.5 valid min-gas-multiplier
 	p := math.LegacyNewDecWithPrec(1, 3)   // 0.001

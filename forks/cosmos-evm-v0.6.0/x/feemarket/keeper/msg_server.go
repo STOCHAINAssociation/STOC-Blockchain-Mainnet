@@ -20,7 +20,7 @@ func (k *Keeper) UpdateParams(goCtx context.Context, req *types.MsgUpdateParams)
 		return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", k.authority.String(), req.Authority)
 	}
 
-	// SetParams does NOT validate, and in SDK v0.53 the
+	// FEE1 audit-2026-07-27: SetParams does NOT validate, and in SDK v0.53 the
 	// gov execution path does NOT invoke MsgUpdateParams.ValidateBasic (which is
 	// where Params.Validate() lives). So a passed gov param-change proposal could
 	// set params that bypass every feemarket guard — e.g. BaseFeeChangeDenominator=0

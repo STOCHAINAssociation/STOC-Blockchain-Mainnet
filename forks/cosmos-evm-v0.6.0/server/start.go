@@ -446,6 +446,18 @@ func startInProcess(svrCtx *server.Context, clientCtx client.Context, opts Start
 
 		if m, ok := evmApp.GetMempool().(*evmmempool.ExperimentalEVMMempool); ok && m != nil {
 			m.SetEventBus(bftNode.EventBus())
+			// STOChain fix: stamp/verify the mempool journal with the chain
+			// identity. Set before SetClientCtx, which starts the replay.
+			if gen := bftNode.GenesisDoc(); gen != nil {
+				m.SetChainIdentity(gen.ChainID, gen.InitialHeight, gen.GenesisTime)
+			}
+			// Give the mempool a client context with a live RPC client so
+			// txs promoted from queued to pending are re-broadcast into the
+			// CometBFT mempool and gossiped. The app-level clientCtx captured
+			// at construction has no client (upstream cosmos/evm #890). Set
+			// it unconditionally: validators often run with API/gRPC/JSON-RPC
+			// disabled and still need the re-broadcast.
+			m.SetClientCtx(clientCtx.WithClient(local.New(bftNode)))
 		}
 		defer func() {
 			if bftNode.IsRunning() {

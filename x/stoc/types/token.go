@@ -70,10 +70,10 @@ func BlockedTaxRecipientModule(addr sdk.AccAddress) string {
 //
 // Case-sensitive is correct here: bank denoms are byte-exact in Cosmos SDK.
 // NOTE: do NOT call this on a user-supplied token.Symbol. Native-denom symbol
-// collision at CreateToken is INTENTIONALLY ALLOWED — the minted denom is
-// SYMBOL_<counter>, never a bare native denom, so there is no denom/fund
-// collision; ticker collision is an off-chain trust concern (indexer
-// verified badges).
+// collision at CreateToken is INTENTIONALLY ALLOWED (audit round-22 2026-07-15,
+// supersedes SA-H8) — the minted denom is SYMBOL_<counter>, never a bare native
+// denom, so there is no denom/fund collision; ticker collision is an off-chain
+// trust concern (BE indexer verified-badge, SA-H13 + industry norm).
 func IsNativeDenom(denom string) bool {
 	cosmosDenom := sdk.DefaultBondDenom
 	if denom == cosmosDenom {
@@ -105,12 +105,12 @@ const MaxTokenIDLength = 64
 // Unlike Validate(), this skips creation-time invariants (e.g., TotalSupply >= InitialSupply)
 // that may not hold after legitimate operations like burns.
 //
-// This function is the security boundary
+// SA-M13/M14/M15/M16 audit-2026-05-29: this function is the security boundary
 // for genesis import + any direct SetToken caller that bypasses MsgCreateToken
 // validation. All field-level invariants enforced by ValidateBasic must also
 // appear here so a malicious genesis cannot inject malformed tokens.
 //
-// INTENTIONAL DIVERGENCE from
+// SA-AUDIT-2026-06-11 fix19 A16-STO-I2 — INTENTIONAL DIVERGENCE from
 // Validate(): the "dead token" shape (Unlimited=false, InitialSupply=0,
 // TotalSupply>0) is REJECTED by Validate() at creation time but ACCEPTED
 // here. Burn/mint sequences on a limited token can legitimately walk state
@@ -118,9 +118,9 @@ const MaxTokenIDLength = 64
 // re-import ANY state a legal operation sequence can reach. Do NOT "align"
 // the two functions — that would brick genesis export/import for chains
 // whose history contains such tokens. The supply-vs-bank cross-check for
-// genesis lives in x/stoc/module/genesis.go, not here.
+// genesis lives in x/stoc/module/genesis.go (A16-STO-L4), not here.
 func ValidateState(token Token) error {
-	// Cap token ID length at the state-import boundary. Proto schema
+	// SA-M15: cap token ID length at the state-import boundary. Proto schema
 	// declares ID as unbounded `string`; ValidateBasic does not see genesis.
 	if len(token.Id) > MaxTokenIDLength {
 		return fmt.Errorf("token id too long (%d > max %d)", len(token.Id), MaxTokenIDLength)
@@ -131,7 +131,7 @@ func ValidateState(token Token) error {
 	if len(token.Name) > 64 {
 		return fmt.Errorf("token name too long (max 64 characters)")
 	}
-	// Control-character rejection (see Validate below).
+	// SA-AUDIT-2026-06-10 fix16 A14-STOC-L1: control-character rejection (see Validate above).
 	for _, r := range token.Name {
 		if r < 32 || r == 127 {
 			return fmt.Errorf("token name contains invalid control characters")
@@ -143,7 +143,7 @@ func ValidateState(token Token) error {
 	if !TokenSymbolRegex.MatchString(token.Symbol) {
 		return fmt.Errorf("token symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
-	// Native-denom symbol collision intentionally allowed:
+	// Native-denom symbol collision intentionally allowed (round-22, supersedes SA-H8/H2):
 	// minimalDenom is SYMBOL_<counter>, never a bare native denom — no denom collision.
 	if token.Decimals > 18 {
 		return fmt.Errorf("decimals must be between 0 and 18")
@@ -173,7 +173,7 @@ func ValidateState(token Token) error {
 	if token.MinimalDenom == "" {
 		return fmt.Errorf("minimal denom cannot be empty")
 	}
-	// Enforce MinimalDenom format invariant
+	// SA-H12 audit-2026-05-29: enforce MinimalDenom format invariant
 	// `SYMBOL_<counter>` to prevent genesis-injected tokens from hijacking
 	// FindToken-by-symbol resolution. Format = `<Symbol>_<uint64>`.
 	{
@@ -193,20 +193,22 @@ func ValidateState(token Token) error {
 		if strings.TrimSpace(token.MinimalDenom) != token.MinimalDenom {
 			return fmt.Errorf("minimal denom %q contains whitespace", token.MinimalDenom)
 		}
-		// Reject non-canonical counter encodings so `FOO_1` and `FOO_01`
-		// cannot coexist as two distinct genesis tokens that explorers +
-		// indexers would render identically. Accepting any digit string for
-		// the suffix would make the prefix invariant insufficient: a
-		// genesis-injected `FOO_0001` whose Tax.RecipientAddress points at
-		// the attacker would visually clone the legitimate `FOO_1` in
-		// dashboards and wallet token lists, enabling phishing.
+		// SA-2026-06-02 MED-1 (senior-skeptic audit): reject non-canonical
+		// counter encodings so `FOO_1` and `FOO_01` cannot coexist as two
+		// distinct genesis tokens that explorers + indexers would render
+		// identically. The previous regex accepted any digit string for
+		// the suffix, which made the SA-H12 prefix invariant insufficient:
+		// a genesis-injected `FOO_0001` whose Tax.RecipientAddress points
+		// at the attacker would visually clone the legitimate `FOO_1`
+		// inside KYC dashboards and Keplr token lists, enabling phishing
+		// inside the legitimate STO chain.
 		if parsed, parseErr := strconv.ParseUint(suffix, 10, 64); parseErr != nil {
 			return fmt.Errorf("minimal denom %q counter suffix %q failed to parse: %s", token.MinimalDenom, suffix, parseErr)
 		} else if strconv.FormatUint(parsed, 10) != suffix {
 			return fmt.Errorf("minimal denom %q counter suffix %q is not in canonical form (no leading zeros allowed; expected %q)", token.MinimalDenom, suffix, strconv.FormatUint(parsed, 10))
 		}
 	}
-	// Enforce token.Id == MinimalDenom so genesis-imported
+	// SA-2026-06-02 LOW-2: enforce token.Id == MinimalDenom so genesis-imported
 	// tokens cannot encode a different ID than their MinimalDenom (which is the
 	// effective primary key in the keeper store). Reject malformed input rather
 	// than silently rewriting it inside SetToken.
@@ -222,7 +224,7 @@ func ValidateState(token Token) error {
 	if err != nil {
 		return fmt.Errorf("invalid creator address in state: %s", err)
 	}
-	// Require canonical lowercase bech32
+	// SA-AUDIT-2026-06-10 fix16 A14-STOC-M1: require canonical lowercase bech32
 	// for storage. cosmos-sdk's bech32 codec accepts uppercase round-trips, so a
 	// genesis Token with all-uppercase Creator parses fine and persists, but
 	// ReleaseTokens / MintToken compare creatorAddr.String() (canonical
@@ -236,10 +238,10 @@ func ValidateState(token Token) error {
 		if token.Tax.Percent.IsNegative() || token.Tax.Percent.GT(MaxTaxPercent) {
 			return fmt.Errorf("tax percentage must be between 0 and %s (50%%)", MaxTaxPercent.String())
 		}
-		// Validate RecipientAddress format whenever it is set, regardless of
-		// whether Percent>0. A token with Percent=0 + malformed
-		// RecipientAddress could otherwise slip through ValidateState only to
-		// crash tax_post.go on the same field
+		// SA-2026-06-04 LOW-2 (comprehensive audit): validate RecipientAddress
+		// format whenever it is set, regardless of whether Percent>0. A token
+		// with Percent=0 + malformed RecipientAddress would previously slip
+		// through ValidateState only to crash tax_post.go on the same field
 		// the moment a future governance proposal raises Percent above zero.
 		// Fail closed at the boundary instead of carrying a latent landmine.
 		if token.Tax.RecipientAddress != "" {
@@ -247,7 +249,7 @@ func ValidateState(token Token) error {
 			if err != nil {
 				return fmt.Errorf("invalid tax recipient address in state: %s", err)
 			}
-			// Canonical-form enforcement (see Creator above).
+			// A14-STOC-M1: canonical-form enforcement (see Creator above).
 			if taxAddr.String() != token.Tax.RecipientAddress {
 				return fmt.Errorf("tax recipient must be canonical lowercase bech32 (got %q, canonical %q)", token.Tax.RecipientAddress, taxAddr.String())
 			}
@@ -262,19 +264,20 @@ func ValidateState(token Token) error {
 			return fmt.Errorf("tax enabled but recipient address missing")
 		}
 	}
-	// Enforce Distributions list cap + per-entry validity at the
+	// SA-M14/M16: enforce Distributions list cap + per-entry validity at the
 	// state-import boundary. Genesis can otherwise inject a token with an
 	// arbitrarily long distribution list (unbounded uint32 percent values,
 	// invalid addresses) since the proto schema places no constraint here.
 	if len(token.Distributions) > MaxDistributions {
 		return fmt.Errorf("too many distributions in state (%d > max %d)", len(token.Distributions), MaxDistributions)
 	}
-	// Mirror the Validate() invariant totalPercent == 100 here so genesis
-	// import + any direct SetToken caller cannot persist a Distributions list
-	// that the original MsgCreateToken validation would reject. Without it a
-	// malformed genesis could install (e.g.) two recipients summing to 70%,
-	// which downstream code assumes is impossible (creator silently keeps
-	// the 30% remainder, breaking the issuer-attested split).
+	// SA-2026-06-04 MED-1 (comprehensive audit): mirror Validate() invariant
+	// totalPercent == 100 here so genesis import + any direct SetToken caller
+	// cannot persist a Distributions list that the original MsgCreateToken
+	// validation would reject. The audit found this gap in ValidateState
+	// allowed a malformed genesis to install (e.g.) two recipients summing
+	// to 70%, which downstream code assumes is impossible (creator silently
+	// keeps the 30% remainder, breaking the issuer-attested split).
 	if len(token.Distributions) > 0 {
 		totalPercent := uint32(0)
 		for i, dist := range token.Distributions {
@@ -282,7 +285,7 @@ func ValidateState(token Token) error {
 			if err != nil {
 				return fmt.Errorf("invalid address in distribution[%d]: %s", i, err)
 			}
-			// Canonical-form enforcement.
+			// A14-STOC-M1: canonical-form enforcement.
 			if distAddr.String() != dist.Address {
 				return fmt.Errorf("distribution[%d] address must be canonical lowercase bech32 (got %q, canonical %q)", i, dist.Address, distAddr.String())
 			}
@@ -307,7 +310,7 @@ func Validate(token Token) error {
 	if token.Name == "" {
 		return fmt.Errorf("token name cannot be empty")
 	}
-	// Control-character rejection mirrors
+	// SA-AUDIT-2026-06-10 fix16 A14-STOC-L1: control-character rejection mirrors
 	// MsgCreateToken.ValidateBasic. cosmos-sdk authz.DispatchActions bypasses
 	// ValidateBasic, so without this guard a MsgCreateToken wrapped in
 	// authz.MsgExec can persist a Name with NUL/BEL/etc — XSS/display landmine
@@ -324,7 +327,7 @@ func Validate(token Token) error {
 	if !TokenSymbolRegex.MatchString(token.Symbol) {
 		return fmt.Errorf("token symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
-	// Native-denom symbol collision intentionally allowed:
+	// Native-denom symbol collision intentionally allowed (round-22, supersedes SA-H8/H2):
 	// minimalDenom is SYMBOL_<counter>, never a bare native denom — no denom collision.
 
 	if token.Decimals > 18 {

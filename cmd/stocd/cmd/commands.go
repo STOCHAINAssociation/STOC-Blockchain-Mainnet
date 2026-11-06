@@ -39,8 +39,8 @@ func initRootCmd(
 		pruning.Cmd(newApp, app.DefaultNodeHome),
 		snapshot.Cmd(newApp),
 	)
-	// Dev-only commands are gated behind a build tag. Release builds
-	// (`-tags stocrelease`) get a no-op stub from commands_devcmds_release.go.
+	// SA-C9 + SA-C10 audit-2026-05-29: dev-only commands gated behind build tag.
+	// Release builds (`-tags stocrelease`) get a no-op stub from commands_devcmds_release.go.
 	addDevOnlyCmds(rootCmd, basicManager, addModuleInitFlags)
 	cosmosevmserver.AddCommands(
 		rootCmd,

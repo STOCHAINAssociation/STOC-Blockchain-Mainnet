@@ -154,15 +154,15 @@ func (b *Backend) SendRawTransaction(data hexutil.Bytes) (common.Hash, error) {
 		err = errorsmod.ABCIError(rsp.Codespace, rsp.Code, rsp.RawLog)
 	}
 	if err != nil {
-		// Only treat as queued/already-in-flight when the error genuinely
-		// originates from a non-zero ABCI response code AND the mempool sentinel
-		// string is present. Plain transport errors (rsp == nil) must NOT be
-		// silently converted to success — otherwise a network/validator outage
-		// that happens to surface a message containing the sentinel substring
-		// would falsely tell clients the tx was queued.
-		// TODO: register mempool.ErrNonceGap/ErrNonceLow as errorsmod.Register'd
-		// sentinels with a dedicated codespace so we can match on rsp.Codespace +
-		// rsp.Code instead of a fragile substring.
+		// SA-M10 audit-2026-05-29: only treat as queued/already-in-flight when
+		// the error genuinely originates from a non-zero ABCI response code AND
+		// the mempool sentinel string is present. Plain transport errors (rsp
+		// == nil) must NOT be silently converted to success — otherwise a
+		// network/validator outage that happens to surface a message containing
+		// the sentinel substring would falsely tell clients the tx was queued.
+		// TODO(post-mainnet): register mempool.ErrNonceGap/ErrNonceLow as
+		// errorsmod.Register'd sentinels with a dedicated codespace so we can
+		// match on rsp.Codespace + rsp.Code instead of fragile substring.
 		fromABCIRsp := rsp != nil && rsp.Code != 0
 		if fromABCIRsp && b.Mempool != nil && strings.Contains(err.Error(), mempool.ErrNonceGap.Error()) {
 			// Transaction was successfully queued due to nonce gap, return success to client.
@@ -171,19 +171,21 @@ func (b *Backend) SendRawTransaction(data hexutil.Bytes) (common.Hash, error) {
 			return txHash, nil
 		}
 		if fromABCIRsp && b.Mempool != nil && strings.Contains(err.Error(), mempool.ErrNonceLow.Error()) {
-			// Preserve the original ErrNonceLow before any variable shadowing below.
-			// `:=` declarations that introduce at least one new name create a fresh
-			// `err` binding in this scope, and a successful pendingNonceWithPool
-			// leaves err==nil. Returning that nil at the duplicate-tx branch would
-			// silently signal success to the caller.
+			// SA-AUDIT-2026-06-05-fix9 CRIT: preserve the original ErrNonceLow
+			// before any variable shadowing below. The two `from, err :=` and
+			// `nonce, err :=` shorthand declarations create new `err` bindings
+			// in this scope (Go quirk: the := on at-least-one-new-name creates
+			// a fresh local), and a successful pendingNonceWithPool leaves err==nil.
+			// Returning that nil at the duplicate-tx branch silently signals
+			// success to the caller — the very bug HIGH-3 was meant to close.
 			origNonceLowErr := err
 			from, senderErr := ethSigner.Sender(tx)
 			if senderErr != nil {
 				return common.Hash{}, fmt.Errorf("failed to get sender address: %w", senderErr)
 			}
-			// Route through pendingNonceWithPool to honor the pool-aware nonce
-			// contract. Using the committed nonce would let duplicates of in-pool txs
-			// return "accepted" while legacypool kept the original.
+			// SA-AUDIT-2026-06-05 H2: route through pendingNonceWithPool to honor
+			// HIGH-3 pool-aware nonce contract. Committed nonce allowed duplicates
+			// of in-pool txs to return "accepted" while legacypool kept the original.
 			poolNonce, poolErr := b.pendingNonceWithPool(from, true, b.ClientCtx.Height)
 			if poolErr != nil {
 				return common.Hash{}, fmt.Errorf("failed to get sender's pool-aware nonce: %w", poolErr)
@@ -192,7 +194,7 @@ func (b *Backend) SendRawTransaction(data hexutil.Bytes) (common.Hash, error) {
 			// pendingNonceWithPool returns the next-needed nonce (one past the
 			// highest pending tx). tx.Nonce() < poolNonce → duplicate / replay;
 			// tx.Nonce() == poolNonce → legitimate next tx; > poolNonce → future.
-			// ('<=' would wrongly reject the legitimate next-tx case.)
+			// (Re-audit fix9 FP-revert: '<=' rejects the legitimate next-tx case.)
 			if tx.Nonce() < poolNonce {
 				return common.Hash{}, origNonceLowErr
 			}
@@ -275,11 +277,12 @@ func (b *Backend) SetTxDefaults(args evmtypes.TransactionArgs) (evmtypes.Transac
 		args.Value = new(hexutil.Big)
 	}
 	if args.Nonce == nil {
-		// Route through pendingNonceWithPool so eth_sendTransaction /
-		// eth_estimateGas account for EVM txpool-resident nonces; the raw
-		// getAccountNonce misses them and produces "nonce too low" rejections on
-		// fire-and-forget batched sends. Ignore error to preserve the upstream
-		// "account doesn't exist yet → nonce 0" behaviour.
+		// SA-2026-06-02 HIGH-3: route through pendingNonceWithPool so the
+		// SA-H25 fix lands here too. eth_sendTransaction / eth_estimateGas
+		// previously called the raw upstream getAccountNonce and missed
+		// EVM txpool-resident nonces, producing "nonce too low" rejections
+		// on fire-and-forget batched sends. ignore error to preserve the
+		// upstream "account doesn't exist yet → nonce 0" behaviour.
 		nonce, _ := b.pendingNonceWithPool(*args.From, true, 0) // #nosec G703s
 		args.Nonce = (*hexutil.Uint64)(&nonce)
 	}

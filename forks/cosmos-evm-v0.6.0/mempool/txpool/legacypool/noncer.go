@@ -48,7 +48,9 @@ func (txn *noncer) get(addr common.Address) uint64 {
 	txn.lock.Lock()
 	defer txn.lock.Unlock()
 
-	if _, ok := txn.nonces[addr]; !ok {
+	// STOChain fix: no fallback state until the pool's first reset onto a
+	// real block (restart); answer from the virtual nonces only.
+	if _, ok := txn.nonces[addr]; !ok && txn.fallback != nil {
 		if nonce := txn.fallback.GetNonce(addr); nonce != 0 {
 			txn.nonces[addr] = nonce
 		}
@@ -71,7 +73,7 @@ func (txn *noncer) setIfLower(addr common.Address, nonce uint64) {
 	txn.lock.Lock()
 	defer txn.lock.Unlock()
 
-	if _, ok := txn.nonces[addr]; !ok {
+	if _, ok := txn.nonces[addr]; !ok && txn.fallback != nil {
 		if nonce := txn.fallback.GetNonce(addr); nonce != 0 {
 			txn.nonces[addr] = nonce
 		}

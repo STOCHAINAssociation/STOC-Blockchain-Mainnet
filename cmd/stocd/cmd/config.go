@@ -27,11 +27,11 @@ func initAppConfig() (string, interface{}) {
 
 	srvCfg := evmserverconfig.DefaultConfig()
 
-	// JSON-RPC and REST API default to disabled (upstream cosmos/evm behavior).
-	// Operators serving EVM dapps must explicitly opt in via app.toml. When
-	// enabled, the JSON-RPC listener binds to localhost only, so a fresh
-	// `stocd init` never exposes port 8545 (or the personal_* namespace)
-	// publicly, e.g. through container port publishing.
+	// SA-C11 audit-2026-05-29: JSON-RPC + REST API default to false (upstream cosmos/evm
+	// behavior). Operators wishing to serve EVM dapps must explicitly opt in via app.toml.
+	// Previous default-on behavior would auto-open port 8545/1317 on every fresh `stocd init`
+	// → Docker port-publish accidents and personal_* namespace abuse have drained
+	// other chains. Keep listeners localhost-only when enabled.
 	srvCfg.JSONRPC.Address = "127.0.0.1:8545"
 
 	customAppConfig := CustomAppConfig{

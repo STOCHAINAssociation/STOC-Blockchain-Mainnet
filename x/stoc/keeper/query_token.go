@@ -120,7 +120,7 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 	// Iterate balances with early termination to avoid loading all denoms into memory.
 	// This prevents memory DoS via addresses with thousands of airdropped denoms.
 	//
-	// Explicitly signal truncation. Track whether the
+	// SA-L4 audit-2026-05-29: explicitly signal truncation. Track whether the
 	// iterator stopped because of the cap so the response carries a
 	// machine-readable marker (PageResponse.NextKey) instead of relying on
 	// clients to compare len(Balances) to a hard-coded 200.
@@ -145,7 +145,7 @@ func (k Keeper) BalancesWithMetadata(goCtx context.Context, req *types.QueryBala
 
 	// Pagination response — BalancesWithMetadata does not support cursor-based
 	// pagination because it aggregates bank balances with stoc metadata. Total
-	// reflects returned count. When truncated, NextKey is set to the
+	// reflects returned count. SA-L4: when truncated, NextKey is set to the
 	// sentinel "truncated:<cap>" so clients can detect the partial result
 	// without depending on an implicit length comparison.
 	pageRes := &query.PageResponse{

@@ -19,7 +19,7 @@ import (
 	stocante "stoc/app/ante"
 )
 
-// Regression coverage: per-wallet EVM mempool quota
+// SA-AUDIT-2026-06-06 HIGH-1 regression coverage: per-wallet EVM mempool quota
 // must be bound to the SIGNATURE-verified sender, not the unverified
 // MsgEthereumTx.From wire field. Without the inline VerifySender, an attacker
 // can rotate a fake From per tx so each tx's quota slot is counted against a
@@ -44,8 +44,10 @@ type mockTxAnte struct {
 func (t mockTxAnte) GetMsgs() []sdk.Msg                    { return t.msgs }
 func (t mockTxAnte) GetMsgsV2() ([]protov2.Message, error) { return nil, nil }
 
-// noopAnteHandlerAnte is a terminal AnteHandler that returns success. Named
-// distinctly from noopAnteHandler in x/stoc/ante to avoid confusion.
+// noopAnteHandlerAnte is a terminal AnteHandler that returns success. Named to
+// avoid collision with the existing noopAnteHandler in the package_test scope
+// when this file ships into x/stoc/ante/ — but here we're in app/ante so the
+// scope is independent.
 func noopAnteHandlerAnte(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
 	return ctx, nil
 }
@@ -138,7 +140,7 @@ func TestMaxPendingTx_MultiMsgSkipped(t *testing.T) {
 }
 
 func TestMaxPendingTx_LegitSignedTxAllowed(t *testing.T) {
-	// A legit, untampered signed tx must pass the
+	// SA-AUDIT-2026-06-06 HIGH-1: a legit, untampered signed tx must pass the
 	// quota decorator when no mempool getter is wired. Validates the verify
 	// path does not over-reject.
 	initChainConfig(t)
@@ -154,7 +156,7 @@ func TestMaxPendingTx_LegitSignedTxAllowed(t *testing.T) {
 }
 
 func TestMaxPendingTx_SpoofedFromRejected(t *testing.T) {
-	// Main regression: attacker rotates msg.From to
+	// SA-AUDIT-2026-06-06 HIGH-1 MAIN regression: attacker rotates msg.From to
 	// an address that did NOT sign the tx. Decorator must reject at step 0
 	// (before mempool quota work) instead of counting the spoofed From toward
 	// a fresh quota slot.

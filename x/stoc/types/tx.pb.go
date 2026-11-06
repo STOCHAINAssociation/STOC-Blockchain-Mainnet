@@ -195,7 +195,7 @@ func (m *MsgCreateToken) GetUnlimited() bool {
 // MsgReleaseTokens drips a portion of the on-chain reserve (RemainingSupply)
 // to one or more recipients in a single atomic transaction.
 //
-// Release is a primary-issuance event (like the initial
+// Locked 2026-06-03: release is a primary-issuance event (like the initial
 // CreateToken distribution) and is intentionally TAX-FREE regardless of
 // recipient. Only the creator can submit this message; all recipients are
 // trusted because the creator is the sole issuer with reserve withdrawal

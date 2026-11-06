@@ -29,9 +29,9 @@ const DefaultMaxPendingTxPerWallet = 50
 type MempoolGetter func() *evmmempool.ExperimentalEVMMempool
 
 // MaxPendingTxPerWalletDecorator rejects EVM transactions when the sender has
-// already accumulated `max` pending entries in the EVM txpool. It acts as a
-// per-wallet rate limit: stop a single wallet from filling the experimental
-// EVM mempool head and starving other users.
+// already accumulated `max` pending entries in the EVM txpool. This is the
+// "rate limit ante" / Option D in step-13: stop a single wallet from filling
+// the experimental EVM mempool head and starving other users.
 //
 // Behaviour:
 //   - Cosmos SDK txs (non-EVM): pass through, decorator does not apply.
@@ -39,8 +39,8 @@ type MempoolGetter func() *evmmempool.ExperimentalEVMMempool
 //     `txPool.ContentFrom(addr)`. Reject if count >= max.
 //
 // Important: this is enforced at CheckTx time. It does NOT prevent a re-org
-// or post-mining accumulation, but it does stop a broadcast-spam flood from
-// saturating the EVM tx layer.
+// or post-mining accumulation, but it does stop the broadcast-spam flood that
+// took down mainnet EVM tx layer.
 type MaxPendingTxPerWalletDecorator struct {
 	getMempool MempoolGetter
 	max        int
@@ -66,9 +66,10 @@ func (d MaxPendingTxPerWalletDecorator) AnteHandle(
 	simulate bool,
 	next sdk.AnteHandler,
 ) (sdk.Context, error) {
-	// Enforce on both CheckTx AND RecheckTx. A CheckTx-only gate would let a
-	// sender keep the pool full indefinitely via Recheck, which fires after
-	// every block and would never be re-counted toward the cap.
+	// SA-H5 audit-2026-05-29: enforce on both CheckTx AND RecheckTx (was: only
+	// CheckTx). Previous gate allowed sender to maintain 50 pending forever via
+	// Recheck bypass — Recheck fires after every block, never re-counted toward
+	// cap. Now Recheck also enforces.
 	if simulate || !(ctx.IsCheckTx() || ctx.IsReCheckTx()) {
 		return next(ctx, tx, simulate)
 	}
@@ -83,22 +84,23 @@ func (d MaxPendingTxPerWalletDecorator) AnteHandle(
 		return next(ctx, tx, simulate)
 	}
 
-	// Bind the per-wallet quota to the SIGNATURE-VERIFIED sender, not the
-	// unverified MsgEthereumTx.From wire field.
+	// SA-AUDIT-2026-06-06 HIGH-1 (deep re-audit H1, audit batch B): bind the
+	// per-wallet quota to the SIGNATURE-VERIFIED sender, not the unverified
+	// MsgEthereumTx.From wire field.
 	//
 	// MsgEthereumTx.GetSender() returns common.BytesToAddress(msg.From) — a
 	// protobuf field that ValidateBasic only checks for length != 0
 	// (cosmos-evm v0.6.0 x/vm/types/msg.go:90). The signature check that
 	// binds From to the recovered signer runs LATER in the ante chain
-	// (EVMMonoDecorator step 5, mono_decorator.go:166). Without this check,
+	// (EVMMonoDecorator step 5, mono_decorator.go:166). Without this fix,
 	// an attacker could rotate a fake From per transaction so each tx's
 	// quota slot was counted against a fresh, unused address, defeating
 	// the per-wallet rate limit and forcing validators to spend CPU on
 	// ValidateTx / SetupContext / NewMonoDecoratorUtils /
 	// txpool.ValidateTransaction / fee math before the eventual
-	// VerifySender rejection. The whole point of the rate limiter (mempool
-	// DoS protection) is to STOP CPU spend before the mono preamble, so the
-	// quota must be bound to a verified address.
+	// VerifySender rejection. The whole point of the rate limiter (audit
+	// 2026-05-25 mempool DoS finding) is to STOP CPU spend before
+	// the mono preamble, so the quota must be bound to a verified address.
 	//
 	// Inline the MakeSigner + VerifySender pattern used by
 	// EthSigVerificationDecorator (cosmos-evm v0.6.0
@@ -137,7 +139,7 @@ func (d MaxPendingTxPerWalletDecorator) AnteHandle(
 	sender := ethMsg.GetSender()
 	pending, queued := txPool.ContentFrom(sender)
 	count := len(pending) + len(queued)
-	if count >= d.max {
+	if exceedsPendingCap(count, txPool.Has(ethMsg.Hash()), d.max) {
 		return ctx, errorsmod.Wrap(
 			errortypes.ErrMempoolIsFull,
 			fmt.Sprintf(
@@ -148,4 +150,15 @@ func (d MaxPendingTxPerWalletDecorator) AnteHandle(
 		)
 	}
 	return next(ctx, tx, simulate)
+}
+
+// exceedsPendingCap reports whether a tx must be rejected by the per-wallet cap.
+//
+// STOChain fix: a tx the pool already holds was admitted under the cap and is
+// itself part of count. Rechecking it (every block) or a #890 re-broadcast of
+// it must not be rejected by its own slot: with exactly max txs held, every
+// Recheck failed, so CometBFT dropped the whole bucket while the legacypool
+// kept it, leaving the wallet stuck on the RPC node.
+func exceedsPendingCap(count int, alreadyHeld bool, maxPending int) bool {
+	return !alreadyHeld && count >= maxPending
 }

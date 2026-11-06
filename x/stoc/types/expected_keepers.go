@@ -28,7 +28,7 @@ type BankKeeper interface {
 	GetSupply(ctx context.Context, denom string) sdk.Coin
 	SetDenomMetaData(ctx context.Context, denomMetaData banktypes.Metadata)
 	IterateAccountBalances(ctx context.Context, addr sdk.AccAddress, cb func(coin sdk.Coin) bool)
-	// Used by CreateToken to reject Tax.RecipientAddress
+	// SA-H11 audit-2026-05-29: used by CreateToken to reject Tax.RecipientAddress
 	// that is bank-blocked (would soft-rug the token via failing tax sends).
 	BlockedAddr(addr sdk.AccAddress) bool
 }

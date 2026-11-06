@@ -23,7 +23,8 @@ func (m *MsgReleaseTokens) GetSignBytes() []byte {
 
 // ValidateBasic does a sanity check on the provided data.
 //
-// Release takes a distributions list because release is a primary-issuance
+// SA-2026-06-03 (multi-recipient release): the prior single-recipient form
+// was replaced by a distributions list because release is a primary-issuance
 // event (similar to the CreateToken initial distribution) and issuers
 // typically want to drip-release to many holders atomically in a single
 // transaction (e.g. ICO tranche, founder allocation, vesting unlock). We
@@ -54,9 +55,11 @@ func (m *MsgReleaseTokens) ValidateBasic() error {
 			len(m.Distributions), MaxMultiSendOutputs)
 	}
 
-	// Key seenAddrs by canonical bech32 form so uppercase / mixed-case
-	// duplicates surface here at ValidateBasic rather than at the bank-op
-	// layer. Mirrors the dedup in types/msg_create_token.go ValidateBasic.
+	// SA-AUDIT-2026-06-08 fix15-4 (R3 token-keeper-fresh-0 +
+	// completeness-critic-r3-1): key seenAddrs by canonical bech32 form so
+	// uppercase / mixed-case duplicates surface here at ValidateBasic
+	// rather than at the bank-op layer. Mirror of the fix15-4 change in
+	// types/msg_create_token.go ValidateBasic.
 	seenAddrs := make(map[string]struct{}, len(m.Distributions))
 	for i, dist := range m.Distributions {
 		parsedAddr, err := sdk.AccAddressFromBech32(dist.Address)

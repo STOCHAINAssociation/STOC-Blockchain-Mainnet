@@ -28,6 +28,7 @@ import (
 // MockBankKeeper implements types.BankKeeper
 type MockBankKeeper struct {
 	Balances map[string]sdk.Coins
+	Blocked  map[string]bool
 }
 
 func NewMockBankKeeper() *MockBankKeeper {
@@ -85,21 +86,36 @@ func (m *MockBankKeeper) IterateAccountBalances(ctx context.Context, addr sdk.Ac
 	}
 }
 
-// BlockedAddr stub for tests — no addresses are blocked.
-func (m *MockBankKeeper) BlockedAddr(addr sdk.AccAddress) bool { return false }
+// BlockedAddr stub for tests — only addresses listed in Blocked are blocked.
+// SA-H11/SA-L8 interface compliance.
+func (m *MockBankKeeper) BlockedAddr(addr sdk.AccAddress) bool { return m.Blocked[addr.String()] }
 
-// MockAccountKeeper implements types.AccountKeeper for tests. NewKeeper requires
-// to receive a non-nil AccountKeeper; returning nil from GetAccount preserves the
-// "account does not exist" path used by SimulateMsgs.
-type MockAccountKeeper struct{}
+// MockAccountKeeper implements types.AccountKeeper for tests. SA-L8 requires NewKeeper
+// to receive a non-nil AccountKeeper. GetAccount returns nil ("account does not
+// exist") unless the test registered an account in Accounts.
+type MockAccountKeeper struct {
+	Accounts map[string]sdk.AccountI
+}
 
-func NewMockAccountKeeper() *MockAccountKeeper { return &MockAccountKeeper{} }
+func NewMockAccountKeeper() *MockAccountKeeper {
+	return &MockAccountKeeper{Accounts: make(map[string]sdk.AccountI)}
+}
 
 func (m *MockAccountKeeper) GetAccount(ctx context.Context, addr sdk.AccAddress) sdk.AccountI {
-	return nil
+	return m.Accounts[addr.String()]
+}
+
+// AddWallet registers a plain BaseAccount at addr.
+func (m *MockAccountKeeper) AddWallet(addr sdk.AccAddress) {
+	m.Accounts[addr.String()] = authtypes.NewBaseAccountWithAddress(addr)
 }
 
 func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.Context, *MockBankKeeper) {
+	k, ms, ctx, mockBank, _ := setupMsgServerWithMocks(t)
+	return k, ms, ctx, mockBank
+}
+
+func setupMsgServerWithMocks(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.Context, *MockBankKeeper, *MockAccountKeeper) {
 	storeKey := storetypes.NewKVStoreKey(types.StoreKey)
 	db := dbm.NewMemDB()
 	stateStore := store.NewCommitMultiStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
@@ -129,7 +145,7 @@ func setupMsgServerWithMock(t testing.TB) (keeper.Keeper, types.MsgServer, sdk.C
 		panic(err)
 	}
 
-	return k, keeper.NewMsgServerImpl(k), ctx, mockBank
+	return k, keeper.NewMsgServerImpl(k), ctx, mockBank, mockAcc
 }
 
 func TestBurnToken_NativeDenom_Allowed(t *testing.T) {
@@ -352,12 +368,13 @@ func TestBurnToken_BurnAllZeroBalance(t *testing.T) {
 	require.Contains(t, err.Error(), "no tokens remaining")
 }
 
-// TestBurnToken_RejectsDriftCreation verifies that MsgBurnToken does NOT
-// auto-adjust RemainingSupply. If the existing reserve (RemainingSupply) would
-// exceed the post-burn TotalSupply, the burn is rejected early with an
-// actionable error pointing operators at the 2-step
-// MsgReleaseTokens → MsgBurnToken flow. Silently clamping RemainingSupply down
-// would mask reserve drift and break the separation of balance vs reserve
+// TestBurnToken_RejectsDriftCreation verifies SA-H9-v2 audit-2026-05-30 policy:
+// MsgBurnToken does NOT auto-adjust RemainingSupply. If the existing reserve
+// (RemainingSupply) would exceed the post-burn TotalSupply, the burn is rejected
+// early with an actionable error pointing operators at the 2-step
+// MsgReleaseTokens → MsgBurnToken flow. Prior to SA-H9-v2 the burn silently
+// clamped RemainingSupply down, masking reserve drift; that auto-adjust was
+// removed because it broke regulator-required separation of balance vs reserve
 // actions for security tokens.
 func TestBurnToken_RejectsDriftCreation(t *testing.T) {
 	k, ms, ctx, mockBank := setupMsgServerWithMock(t)

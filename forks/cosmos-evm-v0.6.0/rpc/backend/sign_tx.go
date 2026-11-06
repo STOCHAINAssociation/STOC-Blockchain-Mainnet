@@ -109,12 +109,12 @@ func (b *Backend) SendTransaction(args evmtypes.TransactionArgs) (common.Hash, e
 		err = errorsmod.ABCIError(rsp.Codespace, rsp.Code, rsp.RawLog)
 	}
 	if err != nil {
-		// Require the error to originate from a non-zero ABCI response
-		// (rsp != nil && rsp.Code != 0) before treating a sentinel-substring
-		// match as "queued for future inclusion". Without this guard a transport
-		// error whose message happens to contain the sentinel string would
-		// falsely report success to the client. See call_tx.go for the matching
-		// guard.
+		// SA-M10 audit-2026-05-29: require the error to originate from a
+		// non-zero ABCI response (rsp != nil && rsp.Code != 0) before treating
+		// a sentinel-substring match as "queued for future inclusion". Without
+		// this guard a transport error whose message happens to contain the
+		// sentinel string would falsely report success to the client. See
+		// call_tx.go for the matching guard + follow-up note.
 		fromABCIRsp := rsp != nil && rsp.Code != 0
 		if fromABCIRsp && b.Mempool != nil && strings.Contains(err.Error(), mempool.ErrNonceGap.Error()) {
 			b.Logger.Info("transaction queued due to nonce gap", "hash", txHash.Hex())

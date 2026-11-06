@@ -191,27 +191,37 @@ var (
 		erc20types.ModuleName,
 		feemarkettypes.ModuleName,
 		evmutiltypes.ModuleName,
-		// x/stoc module holds custom-token reserves; direct MsgSend to it would
-		// (a) permanently lock funds (no withdrawal path for
+		// SA-C2 audit-2026-05-29: x/stoc module holds custom-token reserves; direct
+		// MsgSend to it would (a) permanently lock funds (no withdrawal path for
 		// non-managed denoms) and (b) inflate moduleBalance vs token.RemainingSupply
 		// → SupplyInvariant break → chain-halt-as-a-weapon via MsgVerifyInvariant.
 		// SendCoinsFromAccountToModule (used by MsgBurnToken) bypasses this check
 		// by SDK design, so legitimate keeper flows continue to work.
 		stocmoduletypes.ModuleName,
-		// Block the feegrant module account. x/stoc tax is a PostDecorator on
-		// MsgSend and does NOT
+		// SA-AUDIT-2026-06-11 fix19 A16-APP-H2: block the feegrant module
+		// account. x/stoc tax is a PostDecorator on MsgSend and does NOT
 		// fire on module-account-sourced sends — coins parked in (or routed
 		// through) the feegrant module account would form a tax-bypass
 		// corridor for custom-token transfers. Feegrant allowance accounting
 		// is pure state (grants never require coins to sit in the module
 		// account), so blocking direct MsgSend to it loses nothing.
 		feegrant.ModuleName,
-		// The ibctransfer + ICA host module accounts are intentionally NOT
-		// blocked. Blocking them would be defense-in-depth against
-		// self-inflicted fund-lock, but it can break legitimate relayer flows
-		// and must be verified with a full two-chain IBC transfer-in/out + ICA
-		// host regression before it is enabled. Direct-send fund-lock is a user
-		// footgun, not an attacker vector.
+		// v5.0.3 audit round 1 (module-account squatting): the ibc transfer and
+		// interchainaccounts module accounts are created lazily, so on mainnet and
+		// testnet they did not exist yet. A plain MsgSend of 1 ustoc to either
+		// address created a BaseAccount there, after which every
+		// GetModuleAccount(name) call panics ("account is not a module account")
+		// — IBC voucher mint/burn and any handler touching the account would halt.
+		// Blocking them only stops user-initiated sends (MsgSend / MultiSend /
+		// vesting create / IBC receive / feegrant / withdraw address). ibc-go v10
+		// itself never needs a user -> module SendCoins to these addresses: the
+		// transfer keeper uses MintCoins / BurnCoins / SendCoinsFromAccountToModule
+		// on its own module account and escrows into per-channel escrow addresses
+		// (not the module address); the ICA module account never holds coins.
+		// The v5.0.3 upgrade handler converts an already-squatted BaseAccount back
+		// into the module account (see ensureModuleAccounts in upgrades.go).
+		ibctransfertypes.ModuleName,
+		icatypes.ModuleName,
 		// We allow the following module accounts to receive funds:
 		// govtypes.ModuleName
 	}

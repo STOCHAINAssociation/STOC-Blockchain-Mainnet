@@ -1,10 +1,10 @@
 //go:build !stocrelease
 // +build !stocrelease
 
-// multi-node writes plaintext mnemonics to disk, defaults to the `test`
-// keyring backend and binds P2P to `0.0.0.0` with AllowDuplicateIP. Local
-// development only. Release builds use `-tags stocrelease` to exclude this
-// file entirely.
+// SA-C10 audit-2026-05-29: multi-node writes plaintext mnemonics to disk,
+// defaults to `test` keyring backend, sets 100% commission rates, binds P2P
+// `0.0.0.0` with AllowDuplicateIP. Local-dev only. Build production releases
+// with `-tags stocrelease` to exclude this file entirely.
 
 package cmd
 
@@ -56,9 +56,9 @@ var (
 	flagStartingIPAddress     = "starting-ip-address"
 )
 
-// Node dirs hold priv_validator_key.json and the mnemonic key_seed.json.
-// Owner-only (0o700) so other local users on the host cannot traverse and
-// read those secrets.
+// SA-L13 audit-2026-05-29: node dirs hold priv_validator_key.json + mnemonic
+// key_seed.json. Owner-only (0o700) so other local users on the host cannot
+// traverse and read those secrets.
 const nodeDirPerm = 0o700
 
 type initArgs struct {
@@ -112,9 +112,11 @@ Example:
 			args.ports = map[int]string{}
 			args.validatorsStakesAmount = make(map[int]sdk.Coin)
 			top := 0
-			// Fail loudly when the per-validator stake list length does not match
-			// --v, instead of silently falling back to a default power for missing
-			// indices (which would produce a heterogeneous network without warning).
+			// SA-M18 audit-2026-05-29: fail loudly when the per-validator stake
+			// list length does not match --v. Prior code silently fell back to
+			// a 100-power default for missing indices (testnet_multi_node.go
+			// initTestnetFiles loop), so an operator passing fewer stakes than
+			// validators got a heterogenous network without warning.
 			if s, err := cmd.Flags().GetString(flagValidatorsStakeAmount); err == nil && s != "" {
 				parts := strings.Split(s, ",")
 				if len(parts) != args.numValidators {
@@ -138,7 +140,7 @@ Example:
 						top += 1
 					}
 				} else {
-					// Same arity check for --list-ports.
+					// SA-M18: same arity check for --list-ports.
 					parts := strings.Split(s, ",")
 					if len(parts) != args.numValidators {
 						return fmt.Errorf("--%s has %d entries, must match --%s=%d",
@@ -274,10 +276,11 @@ func initTestnetFiles(
 		if err := writeFile(file, nodeDir, cliPrint); err != nil {
 			return err
 		}
-		// Best-effort zeroing of the mnemonic-bearing buffer after persisting.
-		// Go GC may still hold earlier copies (json.Marshal internals, the
-		// keyring's own buffers); this shrinks the heap-residue window rather
-		// than eliminating it.
+		// SA-AUDIT-2026-06-11 fix19 A16-CROSS-M2: best-effort zero the
+		// mnemonic-bearing buffer after persisting. Go GC may still hold
+		// earlier copies (json.Marshal internals, the keyring's own
+		// buffers); this shrinks the heap-residue window rather than
+		// eliminating it. Dev-only command (build tag !stocrelease).
 		for j := range cliPrint {
 			cliPrint[j] = 0
 		}
@@ -302,9 +305,9 @@ func initTestnetFiles(
 			valPubKeys[i],
 			valTokens,
 			stakingtypes.NewDescription(nodeDirName, "", "", "", ""),
-			// Sane local-dev commission rates (5%/10%/5%) instead of 100%, which
-			// would silently take all delegator rewards if the produced gentx were
-			// ever copied to a real network.
+			// SA-C10 audit-2026-05-29: sane local-dev commission rates (5%/10%/5%)
+			// instead of 100%/100%/100% which would silently steal all delegator
+			// rewards if the produced gentx were ever copied to a real network.
 			stakingtypes.NewCommissionRates(math.LegacyNewDecWithPrec(5, 2), math.LegacyNewDecWithPrec(10, 2), math.LegacyNewDecWithPrec(5, 2)),
 			math.OneInt(),
 		)
@@ -378,21 +381,24 @@ func initTestnetFiles(
 
 // writeFile creates `dir` (owner-only — 0o700) and writes `file` with 0o600.
 //
-// The directory is owner-only so the secret-file mode (0o600) is
-// meaningful: other local users on the host cannot traverse directories
-// that contain secret-bearing files (e.g. `key_seed.json` carrying
-// validator mnemonics). Callers that genuinely need world-readable dirs
-// (e.g. gentx exchange) chmod after the fact instead of accepting an
-// over-permissive default.
+// SA-L13 audit-2026-05-29: previous implementation forced 0o755 on the
+// containing directory regardless of caller intent, leaving other local
+// users on the host able to traverse directories that contain
+// secret-bearing files (e.g. `key_seed.json` carrying validator
+// mnemonics). Use 0o700 so the secret-file mode (0o600) is meaningful;
+// callers that genuinely need world-readable dirs (e.g. gentx exchange)
+// chmod after the fact instead of accepting an over-permissive default.
 func writeFile(file, dir string, contents []byte) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("could not create directory %q: %w", dir, err)
 	}
 
-	// O_EXCL refuses to follow a pre-planted symlink (TOCTOU write-redirect
-	// on a shared host) and refuses to clobber an existing secret-bearing file
-	// (key_seed.json / gentx). Re-running init on a dirty node dir fails loudly
-	// instead of silently overwriting; wipe the dir first.
+	// SA-AUDIT-2026-06-11 fix19 A16-CROSS-M1: O_EXCL refuses to follow a
+	// pre-planted symlink (TOCTOU write-redirect on a shared host) and
+	// refuses to clobber an existing secret-bearing file (key_seed.json /
+	// gentx). Re-running init on a dirty node dir now fails loudly instead
+	// of silently overwriting — wipe the dir first. Dev-only command
+	// (build tag !stocrelease), defense in depth.
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("could not create %q (already exists or symlink in path?): %w", file, err)
@@ -435,10 +441,10 @@ func initGenFiles(
 	}
 	appGenState[banktypes.ModuleName] = clientCtx.Codec.MustMarshalJSON(&bankGenState)
 
-	// Re-run ValidateGenesis on the assembled appGenState before persisting so
-	// operator-supplied inputs (--validators-stake-amount, a manually tampered
-	// DefaultGenesis, duplicate token IDs etc.) are caught now rather than at
-	// chain boot.
+	// SA-2026-06-02 LOW-11 (senior-skeptic audit): re-run ValidateGenesis on
+	// the assembled appGenState before persisting so operator-supplied
+	// inputs (--validators-stake-amount, manually-tampered DefaultGenesis,
+	// duplicate token IDs etc.) are caught now rather than at chain boot.
 	if err := mbm.ValidateGenesis(clientCtx.Codec, clientCtx.TxConfig, appGenState); err != nil {
 		return fmt.Errorf("assembled appGenState failed ValidateGenesis: %w", err)
 	}
@@ -585,9 +591,13 @@ func isSubDir(src, dstDir string) (bool, error) {
 
 // generateRandomString generates a random string of the specified length.
 //
-// Uses crypto/rand so generated chain IDs (`chain-<6char>`) are not
-// predictable from the host clock and do not collide across concurrent
-// bootstraps.
+// SA-L12 audit-2026-05-29: switched from math/rand seeded by
+// time.Now().UnixNano() to crypto/rand. The previous implementation produced
+// predictable chain IDs (`chain-<6char>`) for anyone observing the host's
+// clock — fine for ad-hoc dev runs, but two operators bootstrapping testnets
+// within the same nanosecond window would collide, and an adversary who
+// knew the boot time could pre-compute the chain ID before the network came
+// up (useful for DNS-style squat attacks on early peers).
 func generateRandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 	max := big.NewInt(int64(len(charset)))

@@ -39,19 +39,19 @@ import (
 const (
 	maxMessageSize = 1 << 20 // 1 MiB is the max message size for the websocket server
 
-	// Per-WS-connection cap on active eth_subscribe goroutines. Without this
-	// a client can open one connection and spam eth_subscribe forever,
-	// exhausting goroutines + memory.
+	// SA-AUDIT-2026-06-05-fix12 HIGH (audit pass A13): per-WS-connection cap on
+	// active eth_subscribe goroutines. Without this an attacker can open one
+	// connection and spam eth_subscribe forever, exhausting goroutines + memory.
 	maxSubscriptionsPerConn = 100
 
-	// Shared HTTP client timeouts. A per-call `http.Client{}` has no timeout
-	// — a slow JSON-RPC backend would block the WS goroutine indefinitely and
-	// exhaust file descriptors.
+	// SA-AUDIT-2026-06-05-fix12 HIGH: shared HTTP client timeouts. The original
+	// `http.Client{}` created per call had no timeout — a slow JSON-RPC backend
+	// would block the WS goroutine indefinitely and exhaust file descriptors.
 	wsBackendHTTPTimeout = 5 * time.Second
 
-	// Per-connection rate-limit envelope. go-ethereum SetBatchLimits caps a
-	// single batch but never total RPS — 100 connections × 1000-req batches
-	// saturate the node.
+	// SA-AUDIT-2026-06-05-fix12 MED (audit A13): per-connection rate-limit
+	// envelope. go-ethereum SetBatchLimits caps a single batch but never
+	// total RPS — 100 connections × 1000-req batches saturate the node.
 	wsConnRequestsPerSec = 100
 	wsConnBurst          = 200
 )
@@ -96,8 +96,8 @@ type websocketsServer struct {
 	allowedOrigins []string // allowed origins for WebSocket connections
 	api            *pubSubAPI
 	logger         log.Logger
-	// Bounded HTTP client shared across tcpGetAndSendResponse calls. Per-call
-	// ad-hoc clients have no timeout.
+	// SA-AUDIT-2026-06-05-fix12 HIGH: bounded HTTP client shared across
+	// tcpGetAndSendResponse calls. Per-call ad-hoc clients had infinite timeout.
 	backendHTTP *http.Client
 }
 
@@ -126,11 +126,13 @@ func NewWebsocketsServer(clientCtx client.Context, logger log.Logger, stream *st
 	}
 }
 
-// Start launches the WebSocket server. Start() is fire-and-forget; the
-// underlying http.Server is not exposed, so callers cannot trigger a
-// graceful Shutdown(). Acceptable for the current node lifecycle
-// (whole-process exit drops listening sockets immediately and CometBFT
-// halts upstream of this) but it does not support orderly hot-restart.
+// Start launches the WebSocket server. Note: API-surface limitation —
+// SA-AUDIT-2026-06-05-fix12 LOW (audit A13): Start() is fire-and-forget; the
+// underlying http.Server is not exposed, so callers cannot trigger graceful
+// Shutdown(). Acceptable for current node lifecycle (whole-process exit drops
+// listening sockets immediately and CometBFT halts upstream of this) but
+// blocks orderly hot-restart support. Refactor is deferred to v6.0 cosmos/evm
+// v0.7.0 upgrade which already reworks server start-up surface upstream.
 func (s *websocketsServer) Start() {
 	ws := mux.NewRouter()
 	ws.Handle("/", s)
@@ -195,11 +197,11 @@ func (s *websocketsServer) checkOrigin(r *http.Request) bool {
 		return false
 	}
 
-	// Reject a missing Origin header. Browsers send Origin on cross-origin
-	// requests per RFC 6454, but non-browser clients (curl, scripts) can omit
-	// it to dodge the allowlist below. Treating the empty case as allowed is
-	// a CORS-bypass vector; reject and force the client to declare its Origin
-	// explicitly.
+	// SA-AUDIT-2026-06-05-fix12 HIGH (audit A13): reject missing Origin header.
+	// Browsers send Origin on cross-origin requests per RFC 6454, but non-browser
+	// clients (curl, scripts) can omit it to dodge the allowlist below. Treating
+	// the empty case as allowed is a CORS-bypass vector; reject and force the
+	// client to declare its Origin explicitly.
 	if origin == "" {
 		s.logger.Debug("websocket connection rejected: missing Origin header")
 		return false
@@ -287,9 +289,9 @@ func (w *wsConn) ReadMessage() (messageType int, p []byte, err error) {
 func (s *websocketsServer) readLoop(wsConn *wsConn) {
 	// subscriptions of current connection
 	subscriptions := make(map[rpc.ID]context.CancelFunc)
-	// Per-connection token-bucket rate limiter. Cap normal traffic at
-	// wsConnRequestsPerSec with wsConnBurst leeway so the happy-path UX stays
-	// smooth; abusive clients block on Wait or get rejected.
+	// SA-AUDIT-2026-06-05-fix12 MED: per-connection token-bucket rate limiter.
+	// Cap normal traffic at wsConnRequestsPerSec with wsConnBurst leeway so the
+	// happy-path UX stays smooth; abusive clients block on Wait or get rejected.
 	limiter := rate.NewLimiter(rate.Limit(wsConnRequestsPerSec), wsConnBurst)
 	defer func() {
 		// cancel all subscriptions when connection closed
@@ -308,8 +310,8 @@ readLoop:
 			return
 		}
 
-		// Rate-limit BEFORE dispatch. Reject (not block) so a flooder can't pin a
-		// goroutine on Wait indefinitely.
+		// SA-AUDIT-2026-06-05-fix12 MED: rate-limit BEFORE dispatch. Reject
+		// (not block) so a flooder can't pin a goroutine on Wait indefinitely.
 		if !limiter.Allow() {
 			s.sendErrResponse(wsConn, "rate limit exceeded for this connection")
 			continue
@@ -358,9 +360,9 @@ readLoop:
 
 		switch method {
 		case "eth_subscribe":
-			// Cap active subscriptions per connection. An unbounded map would let a
-			// remote client OOM / exhaust goroutines on the node by opening one WS
-			// and spamming eth_subscribe.
+			// SA-AUDIT-2026-06-05-fix12 HIGH (audit A13): cap active subscriptions
+			// per connection. Unbounded map allowed remote attacker to OOM/goroutine
+			// exhaust the node by opening one WS + spamming eth_subscribe.
 			if len(subscriptions) >= maxSubscriptionsPerConn {
 				s.sendErrResponse(wsConn, fmt.Sprintf("too many active subscriptions on this connection (max %d)", maxSubscriptionsPerConn))
 				continue
@@ -451,9 +453,9 @@ func (s *websocketsServer) tcpGetAndSendResponse(wsConn *wsConn, mb []byte) erro
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	// Use the shared bounded client (5s timeout, pooled connections). A
-	// per-call `http.Client{}` has no timeout and leaks goroutines on a slow
-	// backend.
+	// SA-AUDIT-2026-06-05-fix12 HIGH: use the shared bounded client (5s timeout,
+	// pooled connections). Per-call `http.Client{}` had no timeout and leaked
+	// goroutines on a slow backend.
 	resp, err := s.backendHTTP.Do(req)
 	if err != nil {
 		return errors.Wrap(err, "Could not perform request")

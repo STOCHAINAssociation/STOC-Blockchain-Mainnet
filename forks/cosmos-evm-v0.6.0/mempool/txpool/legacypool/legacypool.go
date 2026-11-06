@@ -59,6 +59,13 @@ const (
 )
 
 var (
+	// ErrPoolNotReady is returned while the pool has no chain state yet
+	// (before its first reset onto a real block, e.g. right after a node
+	// restart). The tx was not checked; the sender should retry shortly.
+	// STOChain fix: such txs used to fail with a misleading "exceeds block
+	// gas limit" (zero gas limit placeholder head) or panic on the nil state.
+	ErrPoolNotReady = errors.New("EVM mempool is not ready yet (chain state not loaded after start), retry shortly")
+
 	// ErrTxPoolOverflow is returned if the transaction pool is full and can't accept
 	// another remote transaction.
 	ErrTxPoolOverflow = errors.New("txpool is full")
@@ -81,7 +88,7 @@ var (
 	evictionInterval    = time.Minute     // Time interval to check for evictable transactions
 	statsReportInterval = 8 * time.Second // Time interval to report transaction pool stats
 	// pendingHardEvictAfter caps how long a fee-stuck pending bucket can
-	// stay in the pool. Beyond this absolute age the bucket is
+	// stay in the pool (SA-M8). Beyond this absolute age the bucket is
 	// evicted regardless of feemarket state, so a permanently-elevated
 	// baseFee cannot grow the pool without bound.
 	pendingHardEvictAfter = 24 * time.Hour
@@ -93,7 +100,7 @@ var (
 	pendingReplaceMeter   = metrics.NewRegisteredMeter("txpool/pending/replace", nil)
 	pendingRateLimitMeter = metrics.NewRegisteredMeter("txpool/pending/ratelimit", nil) // Dropped due to rate limiting
 	pendingNofundsMeter   = metrics.NewRegisteredMeter("txpool/pending/nofunds", nil)   // Dropped due to out-of-funds
-	pendingEvictionMeter  = metrics.NewRegisteredMeter("txpool/pending/eviction", nil)  // Dropped from pending due to lifetime (stuck, unminable)
+	pendingEvictionMeter  = metrics.NewRegisteredMeter("txpool/pending/eviction", nil)  // STOChain: dropped from pending due to lifetime (stuck unminable)
 
 	// Metrics for the queued pool
 	queuedDiscardMeter   = metrics.NewRegisteredMeter("txpool/queued/discard", nil)
@@ -172,8 +179,8 @@ var DefaultConfig = Config{
 	AccountQueue: 64,
 	GlobalQueue:  1024,
 
-	// 1h to match a CometBFT mempool ttl-duration of 1h (config.toml), so both
-	// layers evict stuck txs after 1h idle.
+	// STOChain (2026-05-22): 1h to match CometBFT mempool ttl-duration=1h
+	// (config.toml). Both layers evict stuck txs after 1h idle for consistency.
 	Lifetime: 1 * time.Hour,
 }
 
@@ -390,7 +397,7 @@ func (pool *LegacyPool) loop() {
 					queuedEvictionMeter.Mark(int64(len(list)))
 				}
 			}
-			// Also evict stale PENDING txs.
+			// STOChain fix: also evict stale PENDING txs.
 			// Upstream go-ethereum only lifetime-evicts the queued bucket,
 			// assuming pending (executable) txs always mine within blocks. On
 			// Cosmos-EVM that assumption breaks: a pending tx can be permanently
@@ -402,41 +409,105 @@ func (pool *LegacyPool) loop() {
 			// definitively stuck: drop them so the pool drains. Legitimate
 			// pending txs mine within seconds and never reach Lifetime.
 			//
-			// Distinguish fee-stuck buckets from definitively-stuck ones. A bucket
-			// whose lowest-nonce tx has GasFeeCap < currentBaseFee is waiting on a
-			// feemarket cool-down, not permanently broken — eviction would force the
-			// user to re-broadcast after baseFee drops anyway. Skip eviction in that
-			// case until the absolute pendingHardEvictAfter bound is reached (safety
-			// cap for never-recovering feemarket scenarios).
-			for addr := range pool.pending {
-				age := time.Since(pool.beats[addr])
-				if age <= pool.config.Lifetime {
-					continue
-				}
-				list := pool.pending[addr].Flatten()
-				if age < pendingHardEvictAfter && len(list) > 0 {
-					if head := pool.currentHead.Load(); head != nil && head.BaseFee != nil {
-						if list[0].GasFeeCap().Cmp(head.BaseFee) < 0 {
-							// Lowest-nonce tx is fee-stuck. All higher
-							// nonces wait on it anyway — give the bucket
-							// time to drain when baseFee falls back.
-							continue
-						}
-					}
-				}
-				for _, tx := range list {
-					pool.removeTx(tx.Hash(), true, true)
-				}
-				pendingEvictionMeter.Mark(int64(len(list)))
-				// removeTx's pending-bucket branch does NOT delete pool.beats[addr]. A
-				// stale beats entry causes the next tx for addr (re-queued gapped nonce)
-				// to inherit the old timestamp → premature eviction. Drop the beats entry
-				// here when we evict the entire bucket.
-				delete(pool.beats, addr)
-			}
+			// SA-M8 audit-2026-05-29: distinguish fee-stuck buckets from
+			// definitively-stuck ones. A bucket whose lowest-nonce tx has
+			// GasFeeCap < currentBaseFee is waiting on a feemarket cool-down,
+			// not permanently broken — eviction would force the user to
+			// re-broadcast after baseFee drops anyway, wasting their tx fee
+			// signal. Skip eviction in that case until the absolute
+			// pendingHardEvictAfter bound is reached (safety cap for never-
+			// recovering feemarket scenarios).
+			pool.evictStalePendingLocked()
 			pool.mu.Unlock()
 		}
 	}
+}
+
+// evictStalePendingLocked drops pending buckets idle longer than Lifetime,
+// except fee-stuck ones younger than pendingHardEvictAfter (see loop).
+// pool.mu must be held. STOChain fix: split out of loop so it can be tested
+// without timing (audit L1).
+func (pool *LegacyPool) evictStalePendingLocked() {
+	for addr := range pool.pending {
+		// promoteExecutables deletes beats[addr] as soon as the
+		// account's queue empties, which is the normal state right
+		// after a fresh executable tx is promoted. A missing beat must
+		// NOT read as the zero time (age ~2000y): that evicted every
+		// freshly promoted pending tx on the next tick (<= 1 min),
+		// before any proposer could include it, leaving it orphaned in
+		// the CometBFT mempool. Start the clock now instead.
+		beat, ok := pool.beats[addr]
+		if !ok {
+			pool.beats[addr] = time.Now()
+			continue
+		}
+		age := time.Since(beat)
+		if age <= pool.config.Lifetime {
+			continue
+		}
+		list := pool.pending[addr].Flatten()
+		if age < pendingHardEvictAfter && len(list) > 0 {
+			if stuckFee := pool.feeStuckBaseFee(); stuckFee != nil {
+				if list[0].GasFeeCap().Cmp(stuckFee) < 0 {
+					// Lowest-nonce tx is fee-stuck. All higher
+					// nonces wait on it anyway — give the bucket
+					// time to drain when baseFee falls back.
+					continue
+				}
+			}
+		}
+		for _, tx := range list {
+			pool.removeTx(tx.Hash(), true, true)
+		}
+		pendingEvictionMeter.Mark(int64(len(list)))
+		// SA-H7 audit-2026-05-29: removeTx's pending-bucket branch
+		// does NOT delete pool.beats[addr]. Stale beats entry causes
+		// next-tx-for-addr (re-queued gapped nonce) to inherit the
+		// old timestamp → premature 1min-evict instead of 1h. Drop
+		// the beats entry here when we evict the entire bucket.
+		delete(pool.beats, addr)
+	}
+}
+
+// feeStuckBaseFee returns the base fee the SA-M8 fee-stuck eviction skip
+// compares against. pool.mu must be held.
+//
+// STOChain fix (audit L1): the skip used only the last header's base fee.
+// Proposals select with that base fee, but the next block executes with the
+// next one (feemarket BeginBlock), estimated at each reset and kept in the
+// price heap. A tx is includable in the next block only if its fee cap
+// covers both, so it is fee-stuck if it is below either: rising fees make
+// the next value the binding one, falling fees the current one (the proposer
+// still filters with it). Taking the larger of the two never evicts a
+// bucket the old check would have kept; the 24h hard cap still applies.
+func (pool *LegacyPool) feeStuckBaseFee() *big.Int {
+	var current *big.Int
+	if head := pool.currentHead.Load(); head != nil {
+		current = head.BaseFee
+	}
+	next := pool.priced.urgent.baseFee
+	switch {
+	case current == nil:
+		return next
+	case next == nil:
+		return current
+	case next.Cmp(current) > 0:
+		return next
+	default:
+		return current
+	}
+}
+
+// HeadNumber returns the number of the chain head the pool state was last
+// reset to. STOChain fix: it is 0 until the pool has been reset onto a real
+// block after start (before that the pool has no state to validate against),
+// so callers can wait before re-submitting txs (EVM mempool journal).
+func (pool *LegacyPool) HeadNumber() uint64 {
+	head := pool.currentHead.Load()
+	if head == nil || head.Number == nil {
+		return 0
+	}
+	return head.Number.Uint64()
 }
 
 // Close terminates the transaction pool.
@@ -491,11 +562,25 @@ func (pool *LegacyPool) SetGasTip(tip *big.Int) {
 
 // Nonce returns the next nonce of an account, with all transactions executable
 // by the pool already applied on top.
+// STOChain fix: before the pool has chain state it returns 0, so callers that
+// take max(chain nonce, pool nonce) fall back to the committed nonce.
 func (pool *LegacyPool) Nonce(addr common.Address) uint64 {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
+	if pool.currentState == nil {
+		return 0
+	}
 	return pool.pendingNonces.get(addr)
+}
+
+// HasState reports whether the pool has been reset onto a chain state it can
+// validate txs against (STOChain fix). It is false after start until the
+// first reset onto a real block.
+func (pool *LegacyPool) HasState() bool {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	return pool.currentState != nil
 }
 
 // Stats retrieves the current pool stats, namely the number of pending and the
@@ -639,13 +724,15 @@ func (pool *LegacyPool) validateTx(tx *types.Transaction) error {
 
 		FirstNonceGap:    nil, // Pool allows arbitrary arrival order, don't invalidate nonce gaps
 		UsedAndLeftSlots: nil, // Pool has own mechanism to limit the number of transactions
-		// Sum both the pending and the queued bucket totalcost for
-		// cumulative-balance validation. Counting only pending would leave the
-		// queued bucket invisible: a sender with a near-zero balance could submit
-		// AccountQueue (64) gapped txs each individually affordable, fill the
-		// queued bucket, then evict legitimate queued txs when GlobalQueue
-		// truncates. Promotion-time validation still drops anything that no longer
-		// fits, but the flood is not admitted in the first place.
+		// SA-2026-06-02 MED-9 (senior-skeptic audit): the prior implementation
+		// only summed pool.pending[addr].totalcost, leaving the queued bucket
+		// invisible to cumulative-balance validation. A sender with ~1 ustoc
+		// balance could submit AccountQueue (64) gapped txs each individually
+		// affordable, fill the queued bucket, then evict legitimate queued txs
+		// when GlobalQueue truncated. Bug A regression on the queued side.
+		// Fix: also sum the queued bucket totalcost; promotion-time validation
+		// still drops anything that no longer fits but we no longer admit the
+		// flood in the first place.
 		ExistingExpenditure: func(addr common.Address) *big.Int {
 			total := new(big.Int)
 			if list := pool.pending[addr]; list != nil {
@@ -1012,6 +1099,15 @@ func (pool *LegacyPool) Add(txs []*types.Transaction, sync bool) []error {
 		errs = make([]error, len(txs))
 		news = make([]*types.Transaction, 0, len(txs))
 	)
+	// STOChain fix: no chain state yet (the head is a zero placeholder with
+	// gas limit 0): refuse with a retryable error instead of validating
+	// against it.
+	if !pool.HasState() {
+		for i := range errs {
+			errs[i] = ErrPoolNotReady
+		}
+		return errs
+	}
 	for i, tx := range txs {
 		// If the transaction is known, pre-set the error slot
 		if pool.all.Get(tx.Hash()) != nil {
@@ -1204,6 +1300,12 @@ func (pool *LegacyPool) removeTx(hash common.Hash, outofbound bool, unreserve bo
 			// If no more pending transactions are left, remove the list
 			if pending.Empty() {
 				delete(pool.pending, addr)
+				// The pending eviction loop now keeps a heartbeat for
+				// pending-only accounts; drop it with the bucket so a later
+				// gapped tx starts a fresh queue lifetime.
+				if _, ok := pool.queue[addr]; !ok && len(invalids) == 0 {
+					delete(pool.beats, addr)
+				}
 			}
 			// Postpone any invalidated transactions
 			for _, tx := range invalids {
@@ -1374,22 +1476,31 @@ func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, 
 	if reset != nil {
 		pool.demoteUnexecutables()
 		if reset.newHead != nil {
-			// Defensive nil-BaseFee guard for fresh-genesis EVM deployments. On a
-			// chain whose just-committed block has not yet populated the EIP-1559
-			// header.BaseFee field (e.g. a brand-new EVM-enabled chain that has not
-			// yet executed any EIP-1559 transaction AND for which the feemarket module
-			// has not written a base fee into block headers), reset.newHead.BaseFee
-			// may be nil while chainconfig.IsLondon(newHead.Number+1) returns true
-			// (London is active from block 0 in the default cosmos-evm v0.6.0
+			// SA-AUDIT-2026-06-09 testnet-bootstrap-fix: defensive nil-BaseFee
+			// guard for fresh-genesis EVM deployments. On a chain whose
+			// just-committed block has not yet populated the EIP-1559
+			// header.BaseFee field (typical for a brand-new EVM-enabled
+			// testnet that has not yet executed any EIP-1559 transaction
+			// AND for which the feemarket module has not written a base fee
+			// into block headers), reset.newHead.BaseFee may be nil while
+			// chainconfig.IsLondon(newHead.Number+1) returns true (London is
+			// active from block 0 in the default cosmos-evm v0.6.0
 			// ChainConfig). go-ethereum's eip1559.CalcBaseFee dereferences
-			// parent.BaseFee inside new(big.Int).Set(...) → nil pointer dereference,
-			// panic on every block commit, validator restart loop.
+			// parent.BaseFee at line 88 inside new(big.Int).Set(...) →
+			// SIGSEGV nil pointer dereference, panic on every block commit,
+			// validator restart loop.
 			//
-			// Chains whose committed blocks already carry a populated BaseFee never
-			// hit this branch, so the guard is a no-op there. The fallback to
-			// pool.priced.Reheap() is the same path the non-London branch already
-			// uses — semantically equivalent to "no base fee data, just reorganize
-			// the price queue".
+			// Production chains (mainnet / existing chains) never hit this
+			// branch because every committed block past genesis already has
+			// a populated BaseFee, so the guard is a no-op there. The
+			// fallback to pool.priced.Reheap() is the same path the
+			// non-London branch already uses — semantically equivalent to
+			// "no base fee data, just reorganize the price queue".
+			//
+			// Discovered during STOChain testnet v2 redeploy 2026-06-09 with
+			// fix15 binary deployed directly (no 3-phase upgrade). Minimum-
+			// surface workaround that lets us bootstrap a brand-new
+			// EVM-enabled chain without the mainnet-replay phased pattern.
 			if pool.chainconfig.IsLondon(new(big.Int).Add(reset.newHead.Number, big.NewInt(1))) && reset.newHead.BaseFee != nil {
 				pendingBaseFee := eip1559.CalcBaseFee(pool.chainconfig, reset.newHead)
 				pool.priced.SetBaseFee(pendingBaseFee)
@@ -1450,6 +1561,13 @@ func (pool *LegacyPool) resetInternalState(newHead *types.Header, reinject types
 	statedb, err := pool.chain.StateAt(newHead.Root)
 	if err != nil {
 		log.Error("Failed to reset txpool state", "err", err)
+		return
+	}
+	if statedb == nil {
+		// STOChain fix: a zero placeholder head (latest context unavailable)
+		// has no state. Keep the previous head and state: promote/demote
+		// below would dereference a nil state and crash the reorg goroutine.
+		log.Warn("Skipping txpool reset onto a head without state", "number", newHead.Number)
 		return
 	}
 	pool.currentHead.Store(newHead)
@@ -1704,6 +1822,9 @@ func (pool *LegacyPool) demoteUnexecutables() {
 		if list.Empty() {
 			delete(pool.pending, addr)
 			if _, ok := pool.queue[addr]; !ok {
+				// Drop the heartbeat kept by the pending eviction loop so a
+				// later gapped tx starts a fresh queue lifetime.
+				delete(pool.beats, addr)
 				pool.reserver.Release(addr)
 			}
 		}
