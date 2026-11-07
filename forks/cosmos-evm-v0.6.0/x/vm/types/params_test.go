@@ -28,9 +28,9 @@ func TestParamsValidate(t *testing.T) {
 			expPass: true,
 		},
 		{
-			// Empty Params{} fails Validate() because the EvmDenom +
-			// ExtendedDenomOptions gates reject empty values that would later panic
-			// LoadEvmCoinInfo.
+			// SA-AUDIT-2026-06-05 H3/H4/H5: empty Params{} now correctly fails
+			// Validate() because EvmDenom + ExtendedDenomOptions defense-in-depth
+			// gates reject empty values that would later panic LoadEvmCoinInfo.
 			name:        "empty",
 			params:      Params{},
 			errContains: "invalid EvmDenom",
@@ -76,6 +76,27 @@ func TestParamsValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestParamsValidate_StaticPrecompilesDisabled pins the STOChain rule that no
+// static precompile can ever be active (v5.0.3): any non-empty, otherwise
+// valid list is rejected, while an empty or nil list validates.
+func TestParamsValidate_StaticPrecompilesDisabled(t *testing.T) {
+	for _, active := range [][]string{
+		{"0x0000000000000000000000000000000000000100"},
+		{"0x0000000000000000000000000000000000000400"},
+		AvailableStaticPrecompiles,
+	} {
+		params := DefaultParams()
+		params.ActiveStaticPrecompiles = active
+		require.ErrorContains(t, params.Validate(), "active static precompiles are disabled on STOChain")
+	}
+
+	params := DefaultParams()
+	params.ActiveStaticPrecompiles = []string{}
+	require.NoError(t, params.Validate())
+	params.ActiveStaticPrecompiles = nil
+	require.NoError(t, params.Validate())
 }
 
 func TestParamsEIPs(t *testing.T) {

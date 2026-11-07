@@ -14,8 +14,8 @@ import (
 )
 
 // EvmBankKeeper wraps the BankKeeper to provide EVM-compatible denomination conversion
-// between ustoc (6 decimals) and astoc (18 decimals), or between utstoc and
-// atstoc when the bond denom is utstoc.
+// between ustoc (6 decimals) and astoc (18 decimals) for mainnet
+// or utstoc (6 decimals) and atstoc (18 decimals) for testnet
 type EvmBankKeeper struct {
 	bankKeeper  types.BankKeeper
 	evmDenom    string // cached at construction, avoids runtime panic from GetEvmDenom()
@@ -75,8 +75,9 @@ func (k EvmBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, deno
 }
 
 // SendCoins transfers coins from one account to another.
-// Outflow: rounds DOWN (caller bears dust). Rounding up would overcharge the
-// sender and corrupt contract-internal Transfer(N) accounting.
+// SA-C8 audit-2026-05-29: outflow → round DOWN (caller-bears-dust).
+// Prevents contract-internal Transfer(N) corruption where round-UP would
+// overcharge sender and skew downstream contract accounting.
 func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, amt sdk.Coins) error {
 	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
@@ -86,8 +87,8 @@ func (k EvmBankKeeper) SendCoins(ctx context.Context, from, to sdk.AccAddress, a
 }
 
 // MintCoins mints coins to the module account.
-// Outflow (creates supply): rounds DOWN.
-// Rounding up would over-mint vs caller intent, breaking supply accounting.
+// SA-C7 audit-2026-05-29: outflow (creates supply) → round DOWN.
+// Round-UP would over-mint vs caller intent, breaking supply accounting.
 func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
 	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
@@ -97,8 +98,8 @@ func (k EvmBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk
 }
 
 // BurnCoins burns coins from the module account.
-// Outflow (destroys supply): rounds DOWN.
-// Rounding up would over-burn vs caller intent.
+// SA-C7 audit-2026-05-29: outflow (destroys supply) → round DOWN.
+// Round-UP would over-burn vs caller intent.
 func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
 	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
@@ -108,10 +109,9 @@ func (k EvmBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk
 }
 
 // SendCoinsFromModuleToAccount transfers coins from module to account.
-// Outflow (e.g. RefundGas from FeeCollector): rounds DOWN.
-// Rounding up would gift 1 ustoc from the FeeCollector to the user on every tx
-// with non-aligned leftover gas, a measurable validator-reward drain under
-// low-fee spam.
+// SA-C7 audit-2026-05-29: outflow (e.g., RefundGas from FeeCollector) → round DOWN.
+// Round-UP here gifted 1 ustoc per non-aligned-leftover-gas tx from FeeCollector to user.
+// At zero-gas spam rates (post-SA-C1) this was a quantifiable validator-reward drain.
 func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
 	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
@@ -121,8 +121,8 @@ func (k EvmBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderM
 }
 
 // SendCoinsFromAccountToModule transfers coins from account to module.
-// Inflow (e.g. fee collection, deposit): rounds UP.
-// Caller overpays at most 1 ustoc; protects module-account accounting from
+// SA-C7 audit-2026-05-29: inflow (e.g., fee collection, deposit) → round UP.
+// Caller overpays at most 1 udstoc; protects module-account accounting from
 // sub-ustoc dust loss.
 func (k EvmBankKeeper) SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error {
 	convertedAmt, err := k.convertCoinsForInflow(amt)
@@ -147,13 +147,14 @@ func (k EvmBankKeeper) SpendableCoins(ctx context.Context, addr sdk.AccAddress) 
 // LockedCoins returns the account's locked (e.g. vesting) balance expressed in
 // the EVM's 18-decimal scale, keyed under the EVM coin denom.
 //
-// The EVM statedb snapshots this value at account load and subtracts it from
-// the (also 18-dec) spendable balance to recover the full bank balance without
-// underflow on vesting accounts. The forked cosmos/evm statedb reads it via
+// Cosmos EVM Aug-2026 hotfix (vesting-underflow): the EVM statedb snapshots this
+// value at account load and subtracts it from the (also 18-dec) spendable balance
+// to recover the full bank balance without underflow. The fork reads it via
 // LockedCoins(ctx, addr).AmountOf(types.GetEVMCoinDenom()), where GetEVMCoinDenom()
 // is the 6-dec cosmos bond denom (ustoc) on this chain — so the locked amount MUST
 // be keyed under the cosmos denom while scaled to 18 decimals to match the balance,
 // exactly mirroring how SpendableCoin/GetBalance convert ustoc -> astoc.
+//
 // Custom x/stoc tokens are Cosmos-only and invisible to the EVM, so only the native
 // denom's locked portion is reported.
 func (k EvmBankKeeper) LockedCoins(ctx context.Context, addr sdk.AccAddress) sdk.Coins {
@@ -296,7 +297,7 @@ func (k EvmBankKeeper) SpendableCoin(ctx context.Context, addr sdk.AccAddress, d
 }
 
 // SendCoinsFromModuleToModule transfers coins between modules.
-// Outflow: rounds DOWN.
+// SA-C7 audit-2026-05-29: outflow → round DOWN.
 func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderModule string, recipientModule string, amt sdk.Coins) error {
 	convertedAmt, err := k.convertCoinsForOutflow(ctx, amt)
 	if err != nil {
@@ -307,8 +308,8 @@ func (k EvmBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderMo
 
 // convertCoinsForInflow converts EVM coins to Cosmos coins with round-UP (ceiling).
 // Use only for inflow paths (account → module fee deposit). Caller overpays at
-// most 1 ustoc (1e-6 STOC) per coin entry — negligible cost protecting module
-// accounting from sub-ustoc dust loss. Intended for fee collection only.
+// most 1 udstoc (1e-6 STOC) per coin entry — negligible cost protecting module
+// accounting from sub-ustoc dust loss. Justified UX for fee-collection only.
 func (k EvmBankKeeper) convertCoinsForInflow(amt sdk.Coins) (sdk.Coins, error) {
 	convertedAmt := sdk.NewCoins()
 	for _, coin := range amt {
@@ -316,7 +317,7 @@ func (k EvmBankKeeper) convertCoinsForInflow(amt sdk.Coins) (sdk.Coins, error) {
 			return nil, errorsmod.Wrapf(types.ErrInvalidDenom, "negative amount %s for denom %s", coin.Amount.String(), coin.Denom)
 		}
 		if coin.Amount.IsZero() {
-			continue // skip zero amounts to prevent a phantom 1-ustoc charge
+			continue // SA-C7: skip zero-amount to prevent phantom 1-udstoc charge
 		}
 		if coin.Denom == k.getEvmDenom() {
 			amount := coin.Amount
@@ -339,11 +340,12 @@ func (k EvmBankKeeper) convertCoinsForInflow(amt sdk.Coins) (sdk.Coins, error) {
 }
 
 // trySDKContext returns the sdk.Context wrapped inside ctx, if any. The
-// emission of the `evm_dust_dropped` event is best-effort: production paths
-// always wrap an sdk.Context via baseapp's sdk.WrapSDKContext before invoking
-// keeper methods, so emission fires. Tests that pass context.Background()
-// directly (no SDK wrap, no EventManager) silently skip emission instead of
-// panicking the way sdk.UnwrapSDKContext would.
+// emission of the SA-AUDIT-2026-06-06 MED-2 `evm_dust_dropped` event is
+// best-effort: production paths always wrap an sdk.Context via baseapp's
+// sdk.WrapSDKContext before invoking keeper methods, so emission fires.
+// Tests that pass context.Background() directly (no SDK wrap, no
+// EventManager) silently skip emission instead of panicking the way
+// sdk.UnwrapSDKContext would.
 func trySDKContext(ctx context.Context) (sdk.Context, bool) {
 	if c, ok := ctx.(sdk.Context); ok {
 		return c, true
@@ -362,27 +364,38 @@ func trySDKContext(ctx context.Context) (sdk.Context, bool) {
 // Use for all outflow paths: SendCoins, MintCoins, BurnCoins,
 // SendCoinsFromModuleToAccount (incl. RefundGas), SendCoinsFromModuleToModule.
 // Round-DOWN prevents:
-//   - FeeCollector drain via RefundGas rounding up sub-ustoc leftover gas.
-//   - contract-internal Transfer(N) corruption where caller intent diverges
+//   - SA-C7 FeeCollector drain via RefundGas rounding-up sub-ustoc leftover gas.
+//   - SA-C8 contract-internal Transfer(N) corruption where caller intent diverges
 //     from on-chain debit.
 //
 // Caller's astoc balance shows the truncated amount; dust below 1 ustoc is
 // burned by the conversion (not leaked to anyone) and cannot be recovered.
 //
-// Dust legs never revert the calling EVM frame: reverting whenever any leg
-// rounds to zero ustoc (amount < 1e12 wei) would break otherwise-valid EVM
-// contract calls and gas refunds that emit sub-ustoc legs. Dust legs are
-// dropped and the remaining Coins are processed. If EVERY leg rounds to zero
-// an empty sdk.Coins is returned, which downstream bank calls treat as a
-// no-op. Non-dust amounts still truncate (never round up), so the
-// protections above still hold.
+// SA-2026-06-02 MED-3 (senior-skeptic audit): the prior implementation
+// REVERTED the calling EVM frame with "amount too small ... (outflow
+// truncates dust)" whenever any leg of an outflow rounded to zero ustoc
+// (i.e. amount < 1e12 wei). This unilateral revert broke otherwise-valid
+// EVM contract calls and gas refunds that emitted sub-ustoc legs. The
+// godoc already documents the "dust burned by conversion" contract; the
+// revert was inconsistent with that contract. Business rule (locked
+// 2026-06-02): silently drop dust legs and continue processing the
+// remaining Coins. If EVERY leg rounds to zero we return an empty
+// sdk.Coins which downstream bank calls treat as a no-op. SA-C7 / SA-C8
+// protections still hold because non-dust amounts continue to truncate
+// (not round up), so neither FeeCollector drain nor Transfer(N)
+// corruption is reintroduced.
 //
-// Caveat: an EVM contract that maintains an independent ledger synced with
-// its native astoc balance can drift out of sync, because the bank call
-// returns success while no state changed. The standard ERC-20 precompile
-// reads balance from bankKeeper and is therefore not affected. So that
-// off-chain indexers and contract authors can detect dropped dust, an
-// observability event is emitted:
+// SA-AUDIT-2026-06-06 MED-2 (deep re-audit M2, audit batch B): the silent
+// drop is a real semantic trap for any future EVM contract that maintains
+// an independent ledger synced with native astoc balance — the bank call
+// returns success but no state changed, so a contract that decrements
+// its own ledger after a "successful" transfer drifts out of sync with
+// the on-chain balance. The standard ERC-20 precompile reads balance
+// from bankKeeper and is therefore not affected, but contracts with
+// independent accounting can be. We keep the silent-drop business rule
+// (MED-3 lock is correct — failing the EVM frame on sub-ustoc legs broke
+// gas refunds) and add an observability event so off-chain indexers and
+// contract authors can detect dropped dust:
 //
 //	evm_dust_dropped{evm_denom, evm_amount, cosmos_denom, reason}
 //
@@ -403,10 +416,12 @@ func (k EvmBankKeeper) convertCoinsForOutflow(ctx context.Context, amt sdk.Coins
 			// Round DOWN: truncate sub-ustoc remainder.
 			cosmosAmount := coin.Amount.Quo(types.ConversionMultiplier)
 			if cosmosAmount.IsZero() {
-				// Silent drop (matches the godoc dust-burn contract). Emit an
-				// observability event so contracts with independent ledgers and
-				// off-chain indexers can reconcile dropped dust. Best-effort emission:
-				// callers that pass context.Background() (no SDK wrap, no
+				// SA-2026-06-02 MED-3: silent drop (matches godoc dust-burn
+				// contract; replaces prior over-restrictive revert).
+				// SA-AUDIT-2026-06-06 MED-2: emit observability event so
+				// contracts with independent ledgers and off-chain indexers
+				// can reconcile dropped dust. Best-effort emission: tests
+				// that pass context.Background() (no SDK wrap, no
 				// EventManager) silently skip the event without panic.
 				if sdkCtx, ok := trySDKContext(ctx); ok {
 					sdkCtx.EventManager().EmitEvent(

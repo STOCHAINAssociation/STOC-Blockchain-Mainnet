@@ -18,13 +18,15 @@ import (
 )
 
 var (
-	// Chain defaults are hardcoded in the fork (upstream shipped
-	// uatom/aatom/atom). app.DefaultGenesis() also overrides these for
-	// genesis, but every OTHER consumer of the package defaults — upgrade
-	// handlers calling evmtypes.DefaultParams(), test helpers, simulators —
-	// would otherwise inherit a mismatched EVM denom. Running chains read
-	// params from state, so this only affects fresh genesis +
-	// default-constructed params.
+	// SA-AUDIT-2026-06-11 fix19 A16-CRYPTO-I2: STOC defaults hardcoded in
+	// the fork (upstream shipped uatom/aatom/atom). app.DefaultGenesis()
+	// already overrides these for genesis, but every OTHER consumer of the
+	// package defaults — future upgrade handlers calling
+	// evmtypes.DefaultParams(), test helpers, simulators — silently
+	// inherited the aatom landmine (the exact class of bug behind the
+	// v3-fix-evm-denom mainnet incident). Running chains read params from
+	// state, so this only affects fresh genesis + default-constructed
+	// params.
 	// DefaultEVMDenom is the default value for the evm denom
 	DefaultEVMDenom = "ustoc"
 	// DefaultEVMExtendedDenom is the default value for the evm extended denom
@@ -64,11 +66,12 @@ func NewParams(
 	evmChannels []string,
 	accessControl AccessControl,
 ) Params {
-	// Seed EvmDenom + ExtendedDenomOptions with the same defaults as
-	// DefaultParams so existing call sites (tests, programmatic init paths)
-	// continue to pass the Validate() gates. Without these, every NewParams
-	// caller would need an explicit follow-up SetEvmDenom /
-	// SetExtendedDenomOptions just to satisfy validation.
+	// SA-AUDIT-2026-06-05-fix9 HIGH (re-audit regression): seed EvmDenom +
+	// ExtendedDenomOptions with the same sane defaults as DefaultParams so
+	// existing call sites (tests, programmatic init paths) continue to pass
+	// the new Validate() gates. Without these, every NewParams caller would
+	// need an explicit follow-up SetEvmDenom / SetExtendedDenomOptions just
+	// to satisfy validation — surface-breaking for downstream chains.
 	return Params{
 		EvmDenom:                DefaultEVMExtendedDenom,
 		ExtraEIPs:               extraEIPs,
@@ -110,15 +113,16 @@ func validateChannels(i interface{}) error {
 	return nil
 }
 
-// deniedExtraEIPs is a deny-list of ExtraEIPs that drastically reduce
-// SSTORE / opcode gas costs (state-bloat risk if governance enables them).
-// Add to this list as new gas-reducer EIPs appear. Enabling these EIPs
-// requires removing them from the deny-list via a source change (not a
-// runtime param), creating an effective "code timelock".
+// SA-H17 audit-2026-05-29: deny-list of ExtraEIPs that drastically reduce
+// SSTORE / opcode gas costs (state-bloat economic disaster if gov accidentally
+// or maliciously enables). Add to this list as new gas-reducer EIPs appear.
+// Operators wanting these EIPs must remove from deny-list via source patch
+// (not a runtime param), creating an effective "code timelock".
 var deniedExtraEIPs = map[int64]string{
-	// 0o002 is the chain-specific "SSTORE = 500 gas fixed" activator
-	// (x/vm/eips/eips.go). Real EIP numbers don't conflict with this internal
-	// id-space. Block it so governance cannot re-enable the SSTORE discount.
+	// 0o002 is the STOChain-internal "SSTORE = 500 gas fixed" activator
+	// (forks/.../x/vm/eips/eips.go). Real EIP numbers don't conflict with
+	// this internal id-space. Block to prevent gov-prop from re-enabling
+	// the 44× SSTORE discount.
 	0o002: "EIP 0o002 (SSTORE fixed 500 gas) blocked by SA-H17 deny-list",
 }
 
@@ -128,8 +132,8 @@ func (p Params) Validate() error {
 		return err
 	}
 
-	// Reject deny-listed EIPs that would slash state-write costs and enable
-	// state-bloat attacks.
+	// SA-H17 audit-2026-05-29: reject deny-listed EIPs that would slash
+	// state-write costs and enable state-bloat archive-node-death attacks.
 	for _, eip := range p.ExtraEIPs {
 		if reason, denied := deniedExtraEIPs[eip]; denied {
 			return fmt.Errorf("%s", reason)
@@ -140,15 +144,25 @@ func (p Params) Validate() error {
 		return err
 	}
 
+	// STOChain (v5.0.3, owner rule 2026-11-05): static precompiles are never
+	// active. Precompiles reach bank, staking, distribution, gov and ICS-20
+	// without passing the STOChain custom-token ante walker. Rejecting the
+	// list here makes a gov MsgUpdateParams that enables any precompile fail
+	// at execution, and rejects such a genesis. Enabling one requires a
+	// source change and a binary upgrade.
+	if len(p.ActiveStaticPrecompiles) > 0 {
+		return fmt.Errorf("active static precompiles are disabled on STOChain: got %d (%v), want none", len(p.ActiveStaticPrecompiles), p.ActiveStaticPrecompiles)
+	}
+
 	if err := p.AccessControl.Validate(); err != nil {
 		return err
 	}
 
-	// Validate denom fields so a successful MsgUpdateParams cannot persist
-	// malformed values that later panic LoadEvmCoinInfo / InitGenesis.
-	// Without these gates a governance proposal could brick the chain by
-	// setting EvmDenom to an invalid bech32 sub-denom or by leaving
-	// ExtendedDenomOptions nil on a non-18-decimal chain.
+	// SA-AUDIT-2026-06-05 H3/H4/H5: validate denom fields so a successful
+	// MsgUpdateParams cannot persist malformed values that later panic
+	// LoadEvmCoinInfo / InitGenesis. Without these gates a gov-prop could
+	// brick the chain by setting EvmDenom to an invalid bech32 sub-denom or
+	// by leaving ExtendedDenomOptions nil on a non-18-decimal chain.
 	if err := sdk.ValidateDenom(p.EvmDenom); err != nil {
 		return fmt.Errorf("invalid EvmDenom %q: %w", p.EvmDenom, err)
 	}

@@ -226,11 +226,12 @@ func SortedKVStoreKeys(keys map[string]*storetypes.KVStoreKey) []*storetypes.KVS
 // GetBaseFee returns the current base fee, or nil when feemarket is effectively
 // disabled (london not active, NoBaseFee param, or BaseFee param is zero).
 //
-// Returning `new(big.Int)` (0, non-nil) when feemarket is disabled would make
-// JSON-RPC block headers advertise `baseFeePerGas: "0x0"`; wallets interpret
-// that as an EIP-1559 chain and build Type-2 txs with maxFeePerGas=0, which
-// the validator mempool rejects. Returning nil suppresses the header field
-// entirely so wallets fall back to the legacy Type-0 path.
+// STOChain v8.2 feemarket fix (2026-05-17): previously returned `new(big.Int)` (0
+// non-nil) when feemarket disabled, which caused JSON-RPC block headers to
+// advertise `baseFeePerGas: "0x0"`. MetaMask interpreted that as an EIP-1559
+// chain and built Type-2 txs with maxFeePerGas=0, which the validator mempool
+// rejected → MM auto-retried with a different fee → second popup. Returning nil
+// suppresses the header field entirely so MM falls back to legacy Type-0 path.
 //
 // All callers in ante/* and rpc/* already nil-check the result before use; the
 // header builder at rpc/types/utils.go gates `header.BaseFee = baseFee` on

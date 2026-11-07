@@ -24,15 +24,21 @@ import (
 
 // secp256r1 group order N (NIST P-256).
 //
-// Range checks r,s ∈ (0,n) are enforced; low-S (s <= N/2) is NOT required.
+// SA-AUDIT-2026-06-10 fix18 A15-CRYPTO-M1 introduced range checks AND a
+// low-S (s <= N/2) requirement.
+//
+// SA-AUDIT-2026-06-11 fix19 NHÓM-5 Q5=A (user policy decision, memory
+// #176): the low-S clause is REMOVED; range checks r,s ∈ (0,n) stay.
 // EIP-7212/RIP-7212 §Verification does not mandate low-S for P256VERIFY,
-// and other RIP-7212 implementations accept high-S — WebAuthn authenticators
+// and the production deployments we benchmark against (Sei, Polygon,
+// Optimism, Base, Linea) all accept high-S — WebAuthn authenticators
 // routinely emit high-S signatures, so enforcing low-S breaks real
 // passkey flows for no consensus-level gain (P256VERIFY is a pure boolean
 // oracle; replay protection lives in account nonces, not in signature
 // canonicality). Contracts needing a canonical (msg, sig) nullifier must
-// normalize S themselves. Low-S could be enforced by adding
-// `s.Cmp(N/2) > 0` to the check below.
+// normalize S themselves — the same contract-level burden as on every
+// other chain. Reversible by re-adding `s.Cmp(N/2) > 0` to the check
+// below if policy changes.
 var secp256r1N = elliptic.P256().Params().N
 
 // Verifies the given signature (r, s) for the given hash and public key (x, y).
@@ -45,7 +51,7 @@ func Verify(hash []byte, r, s, x, y *big.Int) bool {
 		return false
 	}
 
-	// Range check r,s ∈ (0, n) per RIP-7212. High-S is accepted (see above).
+	// Range check r,s ∈ (0, n) per RIP-7212. High-S accepted (Q5=A above).
 	if r == nil || s == nil ||
 		r.Sign() <= 0 || s.Sign() <= 0 ||
 		r.Cmp(secp256r1N) >= 0 || s.Cmp(secp256r1N) >= 0 {

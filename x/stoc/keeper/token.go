@@ -67,6 +67,8 @@ func (k Keeper) HasToken(ctx sdk.Context, minimalDenom string) bool {
 }
 
 // HasTokenSymbol returns whether ANY token with the given symbol exists.
+// SA-H13 audit-2026-05-29: enables CreateToken to reject same-symbol from
+// different creators (prevents symbol squatting of "USDC", "BTC", etc).
 func (k Keeper) HasTokenSymbol(ctx sdk.Context, symbol string) bool {
 	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	indexStore := prefix.NewStore(storeAdapter, types.KeyPrefix(types.TokenSymbolKey))
@@ -162,7 +164,7 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 
 	// Persist state AFTER all bank ops succeed.
 	//
-	// NOTE — NOT A CEI VIOLATION:
+	// AUDIT NOTE — NOT A CEI VIOLATION (reviewed April 2026, PR #80):
 	// In Solidity, state updates must come BEFORE external calls to prevent
 	// re-entrancy attacks (Checks-Effects-Interactions pattern). In Cosmos SDK,
 	// this concern does NOT apply because:
@@ -183,7 +185,7 @@ func (k Keeper) MintToken(ctx sdk.Context, owner sdk.AccAddress, minimalDenom st
 	}
 
 	//Emit event
-	// Emit token.Creator (persisted
+	// SA-AUDIT-2026-06-11 fix19 A16-STO-I1: emit token.Creator (persisted
 	// canonical source) instead of owner.String() — values are identical
 	// here because the auth check above already proved owner == Creator,
 	// but sourcing the attribute from state makes the event stream

@@ -5,6 +5,8 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	"github.com/cosmos/evm/mempool/txpool"
+
 	errorsmod "cosmossdk.io/errors"
 
 	"github.com/cosmos/cosmos-sdk/types"
@@ -17,7 +19,7 @@ import (
 // Returns a handler function that processes ABCI CheckTx requests and manages EVM transaction sequencing.
 func NewCheckTxHandler(mempool *ExperimentalEVMMempool) types.CheckTxHandler {
 	return func(runTx types.RunTx, request *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
-		// Drop orphan EVM txs on RecheckTx.
+		// STOChain fix: drop orphan EVM txs on RecheckTx.
 		// An EVM tx may live in the CometBFT mempool while the legacy pool has
 		// already evicted it (cumulative-balance reject after sender drain,
 		// replacement-by-fee, lifetime evict, etc.). Without an explicit drop
@@ -36,6 +38,16 @@ func NewCheckTxHandler(mempool *ExperimentalEVMMempool) types.CheckTxHandler {
 
 		gInfo, result, anteEvents, err := runTx(request.Tx, nil)
 		if err != nil {
+			// STOChain fix: an EVM tx that fails CheckTx for a temporary
+			// reason (fee cap < base fee, sender short of funds) while the
+			// legacypool keeps it is not (or no longer) in CometBFT. On
+			// Recheck it was in CometBFT and is dropped now; on New it is
+			// a re-broadcast (#890 promotion) or a peer's gossip of a tx we
+			// already hold. Remember it so it is re-broadcast once
+			// includable; otherwise a tx held only by this node's
+			// legacypool is never gossiped or proposed again. Txs not in
+			// the legacypool (any fresh tx rejected by the ante) are ignored.
+			mempool.RecordTemporaryDrop(request.Tx, err)
 			// detect if there is a nonce gap error (only returned for EVM transactions)
 			if errors.Is(err, ErrNonceGap) || errors.Is(err, ErrNonceLow) {
 				// send it to the mempool for further triage
@@ -43,6 +55,16 @@ func NewCheckTxHandler(mempool *ExperimentalEVMMempool) types.CheckTxHandler {
 				if err != nil {
 					return sdkerrors.ResponseCheckTxWithEvents(err, gInfo.GasWanted, gInfo.GasUsed, anteEvents, false), nil
 				}
+			}
+			// Already in the legacypool: typically a tx first queued on a
+			// nonce gap (only held by this node's legacypool) that was then
+			// promoted and re-broadcast. Accept it so CometBFT stores and
+			// gossips it; the legacypool is not modified again. A same-nonce
+			// replacement still needs the price bump (upstream #890).
+			// Only a New CheckTx inserts into the mempool, so Recheck never
+			// reaches this branch.
+			if errors.Is(err, txpool.ErrAlreadyKnown) {
+				return sdkerrors.ResponseCheckTxWithEvents(nil, gInfo.GasWanted, gInfo.GasUsed, anteEvents, false), nil
 			}
 			// anything else, return regular error
 			return sdkerrors.ResponseCheckTxWithEvents(err, gInfo.GasWanted, gInfo.GasUsed, anteEvents, false), nil

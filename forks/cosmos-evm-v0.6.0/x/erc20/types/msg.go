@@ -94,7 +94,7 @@ func (m *MsgRegisterERC20) ValidateBasic() error {
 		return errorsmod.Wrap(err, "invalid signer address")
 	}
 
-	// Cap batch size to prevent a consensus stall via
+	// SA-M11 audit-2026-05-29: cap batch size to prevent consensus-stall via
 	// gov-prop registering thousands of ERC20 contracts in one tx (each entry
 	// triggers 3 EVM static calls to read name/symbol/decimals → unbounded
 	// DeliverTx execution time).

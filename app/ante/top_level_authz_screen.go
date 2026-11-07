@@ -46,13 +46,21 @@ const AuthzPreSigScreenMaxDepth = 3
 // AuthzPreSigScreenMaxDepth. This screen is the cheap first-pass; the
 // recursive check post-fee is the deep backstop.
 //
-// Why a pre-sig screen is needed: the recursive AuthzLimiter runs post-fee,
-// but the fee debit is never persisted on ante failure (Cosmos SDK baseapp
-// wraps the ante in cacheTxContext and discards on error), so the fee gate
-// does not deter attackers and shallow attacks would otherwise spend
-// ecrecover before being rejected. This decorator covers both nested
-// MsgExec(MsgExec(disabled)) up to AuthzPreSigScreenMaxDepth AND
-// authz.MsgGrant on disabled types at the pre-sig layer.
+// SA-AUDIT-2026-06-07 M1 + LOW-4 (round 2 R2-M1, R2-LOW4): pre-fix13 the
+// recursive AuthzLimiter ran at position 2 of the ante chain (before
+// NewSigVerificationDecorator). Fix13 moved it post-fee under the
+// (inaccurate) assumption that the fee gate would deter nested-Any CPU
+// amplification. Round 2 audit established that the fee debit is never
+// persisted on ante failure (Cosmos SDK baseapp wraps the ante in
+// cacheTxContext and discards on error), so the post-fee placement
+// re-introduced an ecrecover-spend regression for shallow attacks.
+// fix14 added a depth-0-only TopLevelAuthzMsgExecScreenDecorator that
+// closed the MsgExec shape but missed two adjacent gaps round 3 then
+// flagged: nested MsgExec(MsgExec(disabled)) at depth 1 (R3-M2) and
+// authz.MsgGrant on disabled types (R3-M1). This decorator merges fix14
+// + the round 3 coverage: bounded recursion to AuthzPreSigScreenMaxDepth
+// AND symmetric MsgGrant coverage. Both round 3 MED findings are now
+// closed at the pre-sig layer.
 //
 // The disabled msg type list MUST be kept in sync with the list passed to
 // the post-fee cosmosante.NewAuthzLimiterDecorator — see
@@ -131,7 +139,7 @@ func (d AuthzPreSigScreenDecorator) screenMsg(ctx sdk.Context, msg sdk.Msg, dept
 				// reject txs that nest MsgExec without a cached struct.
 				// The post-fee recursive AuthzLimiter will unmarshal and
 				// either accept or reject; doing the unmarshal here would
-				// open the CPU surface this screen intentionally avoids.
+				// open the CPU surface fix14 intentionally avoids.
 				// In practice cosmos-sdk's MsgExec.SetMsgs (used by all
 				// canonical tx-builders) populates the cache, so a
 				// missing cache marks a hand-crafted or partially-decoded
@@ -172,18 +180,18 @@ func (d AuthzPreSigScreenDecorator) screenMsg(ctx sdk.Context, msg sdk.Msg, dept
 // hot paths.
 const authzMsgExecTypeURL = "/cosmos.authz.v1beta1.MsgExec"
 
-// --- backwards-compatibility shims for the previous type name --------------
+// --- backwards-compatibility shims for the fix14 type name -----------------
 //
 // TopLevelAuthzMsgExecScreenDecorator is preserved as a type alias and
-// constructor wrapper so any external caller built against the previous names
+// constructor wrapper so any external caller built against the fix14 names
 // keeps compiling. New code should use AuthzPreSigScreenDecorator /
 // NewAuthzPreSigScreenDecorator.
 
-// TopLevelAuthzMsgExecScreenDecorator is the previous name for what is now
+// TopLevelAuthzMsgExecScreenDecorator is the fix14 name for what is now
 // AuthzPreSigScreenDecorator. Kept as a type alias for compatibility.
 type TopLevelAuthzMsgExecScreenDecorator = AuthzPreSigScreenDecorator
 
-// NewTopLevelAuthzMsgExecScreenDecorator is the previous constructor name for
+// NewTopLevelAuthzMsgExecScreenDecorator is the fix14 constructor name for
 // NewAuthzPreSigScreenDecorator. Kept for compatibility.
 func NewTopLevelAuthzMsgExecScreenDecorator(disabledMsgTypes ...string) AuthzPreSigScreenDecorator {
 	return NewAuthzPreSigScreenDecorator(disabledMsgTypes...)

@@ -11,7 +11,7 @@ import (
 	"stoc/x/stoc/types"
 )
 
-// Multi-recipient release: MsgReleaseTokens accepts a
+// SA-2026-06-03 (multi-recipient release): MsgReleaseTokens now accepts a
 // distributions list of (address, absolute amount) entries. Tests below
 // exercise the validator paths (cumulative cap, dedup, zero/negative
 // amount), the happy path (single recipient creator-self, multi-recipient
@@ -248,12 +248,14 @@ func TestReleaseTokens_TokenNotFound(t *testing.T) {
 	require.ErrorIs(t, err, types.ErrTokenNotFound)
 }
 
-// Regression coverage: non-canonical (e.g. ALL-UPPERCASE) recipients in the
-// release manifest are REJECTED at the handler gate instead of silently
-// canonicalized, so the event stream can never diverge from the raw msg
-// bytes — non-canonical input never reaches the bank op or the event
-// emitter at all. Canonical input still succeeds and still emits the
-// canonical form (second half of this test).
+// SA-AUDIT-2026-06-08 fix15-3 regression coverage (R3 token-keeper-fresh-1),
+// REWRITTEN for SA-AUDIT-2026-06-11 fix19 A16-STO-M2: non-canonical (e.g.
+// ALL-UPPERCASE) recipients in the release manifest are now REJECTED at the
+// handler gate instead of silently canonicalized. The fix15-3 concern (event
+// stream emitting raw msg bytes that diverge from the persisted canonical
+// form) is closed one layer earlier — non-canonical input never reaches the
+// bank op or the event emitter at all. Canonical input still succeeds and
+// still emits the canonical form (second half of this test).
 func TestReleaseTokens_UppercaseRecipient_RejectedNonCanonical(t *testing.T) {
 	k, ms, ctx, _ := setupMsgServerWithMock(t)
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
@@ -280,8 +282,9 @@ func TestReleaseTokens_UppercaseRecipient_RejectedNonCanonical(t *testing.T) {
 	}
 	require.NoError(t, k.SetToken(ctx, token))
 
-	// Uppercase manifest entry must be rejected with a
-	// per-index canonical-mismatch error.
+	// A16-STO-M2: uppercase manifest entry must be rejected with a
+	// per-index canonical-mismatch error, mirroring MsgCreateToken
+	// (fix16 A14-STOC-M1).
 	_, err := ms.ReleaseTokens(ctx, &types.MsgReleaseTokens{
 		Creator: creator,
 		Symbol:  denom,
@@ -293,7 +296,7 @@ func TestReleaseTokens_UppercaseRecipient_RejectedNonCanonical(t *testing.T) {
 	require.Contains(t, err.Error(), "not canonical bech32")
 
 	// Canonical input still succeeds and the event stream still carries
-	// the canonical form.
+	// the canonical form (fix15-3 invariant preserved).
 	_, err = ms.ReleaseTokens(ctx, &types.MsgReleaseTokens{
 		Creator: creator,
 		Symbol:  denom,
@@ -320,14 +323,15 @@ func TestReleaseTokens_UppercaseRecipient_RejectedNonCanonical(t *testing.T) {
 	require.True(t, found, "expected at least one %s event with AttributeKeyRecipient", types.EventTypeReleaseTokens)
 }
 
-// A genesis-imported token with nil RemainingSupply (permitted by
-// ValidateState in types/token.go) must not panic the release handler at
-// the totalAmount.GT(token.RemainingSupply) comparison. cosmos-sdk
-// math.Int marshals nil as "0" and Unmarshal of "0"
+// SA-AUDIT-2026-06-06 MED-1 empirical refutation: the audit hypothesis was
+// that a genesis-imported token with nil RemainingSupply (permitted by
+// types/token.go:189-194 ValidateState) would panic the release handler at
+// the totalAmount.GT(token.RemainingSupply) comparison. Empirical test
+// confirms cosmos-sdk math.Int marshals nil as "0" and Unmarshal of "0"
 // returns Int(0), so SetToken → store → GetToken normalizes nil to a
 // non-nil Int(0). Release path always reads via FindToken → GetToken and
-// therefore sees a well-formed Int, so a nil-pointer panic cannot occur.
-// This test pins the normalization behavior so a future
+// therefore sees a well-formed Int. The "nil panic" attack chain does not
+// reproduce. This test pins the normalization behavior so a future
 // regression in math.Int marshal semantics surfaces here.
 func TestReleaseTokens_NilRemainingSupplyNormalizedToZero(t *testing.T) {
 	k, ms, ctx, _ := setupMsgServerWithMock(t)
@@ -336,7 +340,7 @@ func TestReleaseTokens_NilRemainingSupplyNormalizedToZero(t *testing.T) {
 	denom := "NILRES_0"
 
 	// RemainingSupply intentionally omitted → math.Int zero value, IsNil()=true
-	// in memory. ValidateState (types/token.go) tolerates this for
+	// in memory. ValidateState (types/token.go:189-194) tolerates this for
 	// genesis-import.
 	token := types.Token{
 		Id:            denom,

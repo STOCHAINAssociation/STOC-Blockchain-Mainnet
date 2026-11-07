@@ -222,7 +222,7 @@ func (k *Keeper) ToggleConversion(goCtx context.Context, req *types.MsgToggleCon
 		return nil, err
 	}
 
-	// Only require the global ERC20-enabled flag
+	// SA-L10 audit-2026-05-29: only require the global ERC20-enabled flag
 	// when this toggle would TURN A PAIR ON. Turning a pair OFF must remain
 	// possible even after governance has disabled ERC20 globally, otherwise
 	// operators cannot clean up individual misbehaving pairs once they have

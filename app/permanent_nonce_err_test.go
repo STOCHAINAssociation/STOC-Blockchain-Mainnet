@@ -5,8 +5,8 @@ import "testing"
 // TestIsPermanentNonceErr asserts every nonce-class error wording currently
 // emitted by go-ethereum core, cosmos-evm v0.6.0 fork, and cosmos-sdk core
 // still matches IsPermanentNonceErr. If an upstream merge changes a string,
-// this test fails in CI — preventing the PrepareProposal cascade-skip from
-// silently degrading.
+// this test fails at PR time — preventing Bug B cascade-skip from silently
+// degrading the way it did between fix7 and fix11.
 //
 // When adding a new fork or upstream wording, append to BOTH the test cases
 // below AND permanentNonceErrSubstrings in permanent_nonce_err.go.

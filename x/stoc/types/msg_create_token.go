@@ -49,11 +49,12 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	if !TokenSymbolRegex.MatchString(m.Symbol) {
 		return errorsmod.Wrap(ErrInvalidTokenSymbol, "symbol must be alphanumeric, start with a letter, and max 32 characters")
 	}
-	// Native-denom symbol collision is INTENTIONALLY ALLOWED: the on-chain denom is the
-	// unique minimalDenom SYMBOL_<counter> (e.g. "STOC_1"), never the bare native denom,
-	// so there is no denom/fund collision. Ticker collision is a display concern handled
-	// off-chain (indexer verified badges, similar to tokenfactory namespacing and ERC20
-	// token lists). Do NOT re-add a native-symbol block here.
+	// Native-denom symbol collision is INTENTIONALLY ALLOWED (audit round-22 2026-07-15,
+	// supersedes SA-H8): the on-chain denom is the unique minimalDenom SYMBOL_<counter>
+	// (e.g. "STOC_1"), never the bare native denom, so there is no denom/fund collision.
+	// Ticker collision is a display concern handled off-chain by the BE indexer verified
+	// badge (SA-H13 + industry norm: Osmosis tokenfactory namespacing, ERC20 token lists).
+	// Do NOT re-add a native-symbol block here.
 
 	if m.Decimals > 18 {
 		return errorsmod.Wrap(ErrInvalidToken, "decimals must be between 0 and 18")
@@ -100,16 +101,20 @@ func (m *MsgCreateToken) ValidateBasic() error {
 	}
 	if len(m.Distributions) > 0 {
 		totalPercent := uint32(0)
-		// Key seenAddrs by the canonical bech32 form
-		// (AccAddressFromBech32(addr).String()) instead of the raw caller
-		// string. cosmos-sdk Normalize accepts all-uppercase bech32, so a
-		// raw-string dedup would treat "stoc1abc..." and "STOC1ABC..." as
-		// distinct and a creator could split the same wallet across two
-		// entries that both canonicalize to the same AccAddress, leaving a
-		// duplicate-canonical-address footprint in Token.Distributions that
-		// indexers render as two separate holders. The canonical key closes
-		// the gap at the ValidateBasic gate so the caller sees a clear
-		// duplicate error before the handler runs.
+		// SA-AUDIT-2026-06-08 fix15-4 (R3 fix14-regression-1 +
+		// ante-chain-cumulative-1): key seenAddrs by the canonical bech32
+		// form (AccAddressFromBech32(addr).String()) instead of the raw
+		// caller string. cosmos-sdk Normalize accepts all-uppercase bech32,
+		// so pre-fix15 the dedup compared "stoc1abc..." against
+		// "STOC1ABC..." as distinct strings and a creator could split the
+		// same wallet across two entries that both canonicalized to the
+		// same AccAddress. The handler resolved both to the same wallet
+		// and sent the combined balance there (no theft), but the
+		// persisted Token.Distributions slice ended up with a
+		// duplicate-canonical-address footprint that indexers rendered as
+		// two separate holders. Canonical key closes the gap at the
+		// ValidateBasic gate so the caller sees a clear duplicate error
+		// before the handler runs.
 		seenAddrs := make(map[string]bool, len(m.Distributions))
 		for _, dist := range m.Distributions {
 			parsedAddr, err := sdk.AccAddressFromBech32(dist.Address)

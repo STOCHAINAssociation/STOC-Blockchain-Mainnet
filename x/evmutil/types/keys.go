@@ -28,8 +28,8 @@ var (
 // GetCosmosDenom returns the Cosmos token denom with 6 decimals
 // This is dynamically determined from sdk.DefaultBondDenom which is set from genesis staking params
 // Examples:
-//   - sdk.DefaultBondDenom = "ustoc" → returns "ustoc"
-//   - sdk.DefaultBondDenom = "utstoc" → returns "utstoc"
+//   - Mainnet: sdk.DefaultBondDenom = "ustoc" → returns "ustoc"
+//   - Testnet: sdk.DefaultBondDenom = "utstoc" → returns "utstoc"
 func GetCosmosDenom() string {
 	return sdk.DefaultBondDenom
 }
@@ -48,8 +48,8 @@ func SafeGetEvmDenom() (string, error) {
 // Panics if DefaultBondDenom is misconfigured. Use only during init/startup.
 // For runtime code, use SafeGetEvmDenom() instead.
 // Examples:
-//   - sdk.DefaultBondDenom = "ustoc" → returns "astoc"
-//   - sdk.DefaultBondDenom = "utstoc" → returns "atstoc"
+//   - Mainnet: sdk.DefaultBondDenom = "ustoc" → returns "astoc"
+//   - Testnet: sdk.DefaultBondDenom = "utstoc" → returns "atstoc"
 func GetEvmDenom() string {
 	denom, err := SafeGetEvmDenom()
 	if err != nil {

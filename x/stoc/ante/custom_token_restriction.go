@@ -30,14 +30,15 @@ import (
 // is rejected at the ante handler, preventing tax evasion and chain-level
 // entanglement of securities tokens.
 //
-// This decorator is the FIRST layer of the two-layer restriction model. The
-// SECOND layer is the bank SendRestrictionFn registered in app/app.go (see
-// SetSendRestriction call) + the IBC SendRestriction in
-// x/stoc/ante/ibc_restriction.go. The ante here blocks the user-signed msg
-// flow; the bank/IBC SendRestriction catches any indirect path (precompile
-// callbacks, IBC packets, gov-prop disbursement, module-internal accounting)
-// that bypasses ante. Both layers are required — removing either re-opens
-// custom-token leakage.
+// SA-AUDIT-2026-06-05-fix12 LOW (audit A13): this decorator is the FIRST layer
+// of the two-layer restriction model. The SECOND layer is the bank
+// SendRestrictionFn registered in app/app.go (see SetSendRestriction call) +
+// the IBC SendRestriction in x/stoc/ante/ibc_restriction.go. The ante here
+// blocks the user-signed msg flow; the bank/IBC SendRestriction catches any
+// indirect path (precompile callbacks, IBC packets, gov-prop disbursement,
+// module-internal accounting) that bypasses ante. Both layers are required —
+// removing either re-opens custom-token leakage. See the threat model notes
+// in this file and the audit rationale of PR #80.
 //
 // Design rationale: Custom stoc tokens represent company securities (digital
 // stock certificates). They are wallet-level ownership records for individual
@@ -54,7 +55,7 @@ import (
 //   - Be wrapped into EVM via ERC20 conversion (custom tokens are Cosmos-only —
 //     EvmBankKeeper already blocks, this adds ante-level defense)
 //
-// Native chain denoms (ustoc/astoc/stoc and their network variants) are ALWAYS
+// Native chain denoms (ustoc/astoc/stoc and test/devnet variants) are ALWAYS
 // allowed through all the operations above — vesting native tokens for team
 // allocation, funding community pool with STOC, staking STOC, etc. are all
 // legitimate use cases.
@@ -76,11 +77,12 @@ import (
 // Matches the design pattern of IBCCustomTokenRestriction: block custom stoc
 // tokens from any path other than wallet-to-wallet transfer + self-burn.
 //
-// Forward-defense note on feegrant: there is deliberately no feegrant case
-// in the blocklist above because the feegrant+custom-token combination is a
-// DEAD PATH — fee denoms are always native (feemarket/ante reject custom
-// denoms as fees), so a feegrant allowance can never move custom-token value
-// by itself, and the feegrant module account is bank-blocked so coins cannot
+// SA-AUDIT-2026-06-11 fix19 A16-BOUNDARY-I2 — forward-defense note on
+// feegrant: there is deliberately no feegrant case in the blocklist above
+// because the feegrant+custom-token combination is a DEAD PATH today — fee
+// denoms are always native (feemarket/ante reject custom denoms as fees),
+// so a feegrant allowance can never move custom-token value by itself, and
+// the feegrant module account is bank-blocked (A16-APP-H2) so coins cannot
 // be parked there either. IF a future change ever allows non-native fee
 // denoms, revisit this walker AND the AllowedMsgAllowance msg-type surface
 // at the same time.
@@ -93,7 +95,7 @@ func NewCustomTokenChainOpsRestriction(k keeper.Keeper) CustomTokenChainOpsRestr
 }
 
 func (d CustomTokenChainOpsRestriction) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
-	// Outer entry — insideProposalWrapper=false.
+	// SA-AUDIT-2026-06-06 CRIT-1: outer entry — insideProposalWrapper=false.
 	// Flipped to true only when recursing INTO a group proposal whose inner
 	// messages will execute later via MsgServiceRouter, bypassing both the
 	// ante chain AND the tax PostDecorator. See checkMsgs godoc.
@@ -107,6 +109,7 @@ func (d CustomTokenChainOpsRestriction) AnteHandle(ctx sdk.Context, tx sdk.Tx, s
 // group proposal inner messages. Depth cap mirrors TaxPostDecorator and
 // IBCCustomTokenRestriction (DoS prevention).
 //
+// SA-AUDIT-2026-06-06 CRIT-1 (deep re-audit C1, audit batch B):
 // The insideProposalWrapper flag tracks whether we are recursing INSIDE a
 // proposal that will execute its inner messages later via MsgServiceRouter,
 // bypassing the ante chain AND the tax PostDecorator. When inside such a
@@ -116,13 +119,12 @@ func (d CustomTokenChainOpsRestriction) AnteHandle(ctx sdk.Context, tx sdk.Tx, s
 //  1. TaxPostDecorator only unwraps authz.MsgExec (tax_post.go applyTaxesForMsgs
 //     switch). group.MsgSubmitProposal / group.MsgExec are NOT unwrapped, so any
 //     inner bank.MsgSend on a custom token bypasses tax entirely.
-//  2. The bank SendRestriction (blockCustomTokenNonWalletAccounts in app/app.go)
-//     treats group policy addresses as regular wallets — group policies are
-//     authtypes.BaseAccount-typed (cosmos-sdk x/group/keeper/msg_server.go uses
-//     authtypes.NewBaseAccountWithPubKey), NOT sdk.ModuleAccountI, so
-//     rejectIfNonWallet returns nil for them and the group → user transfer leg
-//     is not caught at the SendRestriction layer.
-//  3. Therefore the only place to close the bypass is here, at ante submit
+//  2. Before v5.0.3 the bank SendRestriction (blockCustomTokenNonWalletAccounts
+//     in app/app.go) treated group policy addresses as regular wallets (they
+//     are BaseAccounts with a module-credential pubkey). Since v5.0.3 it
+//     rejects custom tokens to/from group policies too, but a group proposal
+//     can still move custom tokens between OTHER wallets via authz grants.
+//  3. Therefore the place to close the bypass is here, at ante submit
 //     time, by rejecting any custom-token bank.MsgSend wrapped in a group
 //     proposal BEFORE the proposal is accepted into chain state. Once the
 //     proposal is accepted, group.MsgExec (or EXEC_TRY auto-execution) runs
@@ -138,7 +140,7 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 		switch m := msg.(type) {
 
 		// -------- Bank (only enforced when inside a proposal-wrapper that bypasses tax) --------
-		// bank.MsgSend at OUTER depth, or wrapped via
+		// SA-AUDIT-2026-06-06 CRIT-1: bank.MsgSend at OUTER depth, or wrapped via
 		// authz.MsgExec (which TaxPostDecorator unwraps), flows through the tax
 		// PostDecorator and is permitted. bank.MsgSend wrapped in a group
 		// proposal (which the tax PostDecorator does NOT unwrap) would bypass
@@ -169,7 +171,8 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 			if err := d.rejectCustomTokens(ctx, m.InitialDeposit, "gov.v1.MsgSubmitProposal.InitialDeposit", m.Proposer, "gov_module"); err != nil {
 				return err
 			}
-			// Gov v1 proposals dispatch arbitrary inner messages from the gov module account on
+			// SA-AUDIT-2026-06-10 fix18 A15-BOUNDARY-M2: gov v1 proposals
+			// dispatch arbitrary inner messages from the gov module account on
 			// execution. Bank SendRestriction catches inner bank.MsgSend
 			// (gov is ModuleAccountI), but MsgFundCommunityPool /
 			// MsgCreateVestingAccount / erc20.MsgConvertCoin embedded in a
@@ -212,10 +215,12 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 			// messages at submission time to prevent custom token leakage via
 			// group.MsgExec → bank.MsgSend → tax bypass.
 			//
-			// The cheap depth check runs BEFORE unmarshalling inner messages:
-			// otherwise a nested proposal with many inner msgs at depth N
-			// would force the validator to unmarshal every Any{} entry before
-			// the depth check refused, amplifying CheckTx CPU.
+			// SA-2026-06-02 LOW-6 (senior-skeptic audit): the prior version
+			// unmarshalled inner messages BEFORE checking depth. A nested
+			// proposal with 100 inner msgs at depth N would force the
+			// validator to unmarshal 100 Any{} entries before the depth
+			// check refused, amplifying CheckTx CPU. Cheap depth check
+			// first now.
 			if depth >= stoctypes.MaxAuthzUnwrapDepth {
 				return fmt.Errorf("group MsgSubmitProposal nesting depth exceeded (%d)", depth)
 			}
@@ -223,7 +228,7 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 			if err != nil {
 				return fmt.Errorf("failed to unwrap group MsgSubmitProposal inner messages: %w", err)
 			}
-			// Recurse with insideProposalWrapper=true
+			// SA-AUDIT-2026-06-06 CRIT-1: recurse with insideProposalWrapper=true
 			// so inner bank.MsgSend / bank.MsgMultiSend on custom tokens is
 			// rejected. The tax PostDecorator does NOT unwrap group, so without
 			// this submit-time block an attacker can drain custom tokens through
@@ -233,24 +238,32 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 			}
 
 		// -------- Group exec (forward-defense for stale custom-token proposals) --------
-		// grouptypes.MsgExec triggers execution of a PREVIOUSLY-stored group
-		// proposal via x/group's MsgServiceRouter dispatch path, bypassing the
-		// ante chain AND the tax PostDecorator. The submit-time recursion above
-		// closes the SUBMIT-time leg, so any proposal entering chain state while
-		// this decorator is active is guaranteed not to carry custom-token inner
-		// messages. The remaining risk window is purely stale state — a proposal
-		// that was submitted under an older binary without the submit-time check
-		// and is still in the x/group store when the new binary swaps in.
+		// SA-AUDIT-2026-06-07 LOW-1 (round 2 re-audit R2-LOW1): grouptypes.MsgExec
+		// triggers execution of a PREVIOUSLY-stored group proposal via x/group's
+		// MsgServiceRouter dispatch path, bypassing the ante chain AND the tax
+		// PostDecorator. The CRIT-1 fix above closes the SUBMIT-time leg, so any
+		// proposal entering chain state from this decorator's deploy height forward
+		// is guaranteed not to carry custom-token inner messages. The remaining
+		// risk window is purely stale state — a proposal that was submitted under
+		// an older binary (pre-CRIT-1) and is still in the x/group store at the
+		// moment the new binary swaps in.
 		//
-		// This decorator assumes no such stale x/group proposals exist when it
-		// is activated; an upgrade handler can add a one-time sweep step to
-		// invalidate any pending proposals carrying custom-token inner msgs if
-		// that assumption does not hold.
+		// At fix14 deployment time we have empirical evidence that this window is
+		// empty:
+		//   - Devnet has been wiped on every redeploy cycle (mainnet-replay flow),
+		//     so no proposals predating CRIT-1 survive.
+		//   - Mainnet has not yet been upgraded to v5.0.0; this decorator is not
+		//     in production. The mainnet v5.0.0 upgrade prop will deploy the
+		//     CRIT-1 fix and the *grouptypes.MsgExec walker simultaneously, and
+		//     no x/group proposals exist in mainnet state today (x/group has not
+		//     been used on STOChain). The mainnet v5.0.0 upgrade handler can add
+		//     a one-time sweep step to invalidate any pending proposals carrying
+		//     custom-token inner msgs if the assumption ever changes.
 		//
 		// Therefore we do NOT need to thread x/group keeper into this decorator
 		// to query proposal contents at MsgExec time. Document the assumption
-		// here and leave the case as an explicit no-op marker. If a chain ever
-		// boots with x/group state predating the submit-time check, this is the
+		// here and leave the case as an explicit no-op marker. If a future
+		// chain ever boots with x/group state predating CRIT-1, this is the
 		// place to add a keeper-backed proposal-content lookup + reject path.
 		case *grouptypes.MsgExec:
 			// no-op — forward-defense marker; see comment above.
@@ -289,7 +302,7 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 			if err != nil {
 				return fmt.Errorf("failed to unwrap authz MsgExec for custom token restriction: %w", err)
 			}
-			// authz.MsgExec is NOT a tax-bypass
+			// SA-AUDIT-2026-06-06 CRIT-1: authz.MsgExec is NOT a tax-bypass
 			// wrapper (TaxPostDecorator unwraps it), so preserve the parent's
 			// insideProposalWrapper flag. authz inside a group proposal still
 			// bypasses tax (the tax check sees the outer group msg type),
@@ -306,7 +319,7 @@ func (d CustomTokenChainOpsRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Ms
 // a custom stoc-managed token. Native chain denoms pass through unchanged.
 func (d CustomTokenChainOpsRestriction) rejectCustomTokens(ctx sdk.Context, coins sdk.Coins, msgLabel, fromAddr, toAddr string) error {
 	for _, coin := range coins {
-		// Native denoms (ustoc/astoc/stoc + network variants) always allowed.
+		// Native denoms (ustoc/astoc/stoc + test/devnet variants) always allowed.
 		if stoctypes.IsNativeDenom(coin.Denom) {
 			continue
 		}

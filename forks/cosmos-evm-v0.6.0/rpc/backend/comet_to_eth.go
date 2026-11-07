@@ -13,7 +13,9 @@ import (
 
 	cmtrpctypes "github.com/cometbft/cometbft/rpc/core/types"
 
+	"github.com/cosmos/evm/indexer"
 	rpctypes "github.com/cosmos/evm/rpc/types"
+	servertypes "github.com/cosmos/evm/server/types"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -236,10 +238,20 @@ func (b *Backend) ReceiptsFromCometBlock(
 	blockHash := common.BytesToHash(resBlock.BlockID.Hash)
 	receipts := make([]*ethtypes.Receipt, len(msgs))
 	cumulatedGasUsed := uint64(0)
+	// fromBlock is built lazily from blockRes when the EVM tx indexer has not
+	// caught up with this block yet (STOChain fix, see indexer.TxResultsFromBlock).
+	var fromBlock map[common.Hash]servertypes.TxResult
 	for i, ethMsg := range msgs {
 		txResult, err := b.GetTxByEthHash(ethMsg.Hash())
-		if err != nil {
-			return nil, fmt.Errorf("tx not found: hash=%s, error=%s", ethMsg.Hash(), err.Error())
+		if err != nil || txResult == nil {
+			if fromBlock == nil {
+				fromBlock = indexer.TxResultsFromBlock(b.ClientCtx.TxConfig.TxDecoder(), b.Logger, resBlock.Block, blockRes.TxsResults)
+			}
+			r, ok := fromBlock[ethMsg.Hash()]
+			if !ok {
+				return nil, fmt.Errorf("tx not found: hash=%s, error=%v", ethMsg.Hash(), err)
+			}
+			txResult = &r
 		}
 
 		cumulatedGasUsed += txResult.GasUsed

@@ -115,14 +115,12 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 	// add evm ERC20 middleware capabilities
 	transferStack = erc20.NewIBCMiddleware(&app.Erc20Keeper, transferStack)
 
+	// v5.0.3: outermost transfer middleware. A transfer channel's escrow is
+	// recorded in the x/stoc escrow index when the channel is created, so it
+	// is blocked for custom tokens from the next message on.
+	transferStack = newTransferChannelGuard(transferStack, app.StocKeeper)
+
 	// create static IBC router, add transfer route, then set it on the keeper
-	//
-	// Scope: IBC classic (channel/port based) only. No IBC v2 (client-ID
-	// based) router is set, and the only light clients registered below are
-	// 07-tendermint and 06-solomachine (no 08-wasm). The transfer stack has no
-	// packet-forward or ibc-hooks middleware, so this chain can be a transfer
-	// source/destination but not a forwarding hop. Counterparties must connect
-	// over a classic ICS-20 channel.
 	ibcRouter := porttypes.NewRouter().
 		AddRoute(ibctransfertypes.ModuleName, transferStack).
 		AddRoute(icacontrollertypes.SubModuleName, icaControllerStack).

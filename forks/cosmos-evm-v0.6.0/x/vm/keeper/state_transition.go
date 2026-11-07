@@ -471,16 +471,20 @@ func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, stateDB *statedb.StateD
 		// Apply EIP-7702 authorizations.
 		if msg.SetCodeAuthorizations != nil {
 			for _, auth := range msg.SetCodeAuthorizations {
-				// Structured Debug log so operators can see WHICH authorization was
-				// rejected (chain id / address / nonce) without reading the full
-				// marshalled SetCodeAuthorization. Per spec we must continue (invalid
-				// auths are skipped, not the whole tx), so behavior is identical; only
-				// observability changes.
+				// SA-AUDIT-2026-06-10 fix18 A15-CRYPTO-M3: structured Debug log
+				// so operators can see WHICH authorization was rejected (chain
+				// id / address / nonce) without reading the full marshalled
+				// SetCodeAuthorization. fix17-H2 hard-rejects ChainID=0 — this
+				// surfaces the rejection in logs at full fidelity. Per spec we
+				// must continue (invalid auths are skipped, not the whole tx),
+				// so behavior is identical; only observability changes.
 				if err := k.applyAuthorization(&auth, stateDB, ethCfg.ChainID); err != nil {
-					// ChainID=0 wildcard rejects log at Info — on a coin-type-118 chain a
-					// wildcard authorization is the signature of a cross-chain replay
-					// attempt (see validateAuthorization), not a user mistake, and typical
-					// production log levels filter Debug out. Routine rejects (wrong
+					// SA-AUDIT-2026-06-11 fix19 A16-CRYPTO-I1: ChainID=0
+					// wildcard rejects log at Info — on a coin-type-118
+					// chain a wildcard authorization is the signature of a
+					// CROSS-CHAIN REPLAY attempt (fix17 A15-CRYPTO-H2
+					// threat model), not a user mistake, and prod log
+					// levels filter Debug out. Routine rejects (wrong
 					// concrete chain id, bad nonce, bad sig) stay Debug.
 					logFn := k.Logger(ctx).Debug
 					if auth.ChainID.IsZero() {
@@ -543,10 +547,25 @@ func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, stateDB *statedb.StateD
 		// Instead, we want to flush to the cacheCtx.
 		if callFromPrecompile {
 			if err := stateDB.FlushToCacheCtx(); err != nil {
+				// The EVM work has already been performed, so the measured gas
+				// must be charged even though the flush failed. Otherwise, a
+				// post-execution error would silently drop all the gas
+				// consumed by the EVM call from the outer Cosmos gas meter.
+				//
+				// Charge the full amount of gas used (maxUsedGas), without the
+				// refund, because gas refunds are only earned when the state
+				// changes actually commit. Charging the refunded amount
+				// (temporaryGasUsed) instead would let a caller inflate
+				// stateDB refunds (fully refundable on internal calls) and
+				// repeat cheaply, since the failing commit discards the very
+				// state changes that earned the refund.
+				ctx.GasMeter().ConsumeGas(maxUsedGas, "apply evm message")
 				return nil, errorsmod.Wrap(err, "failed to flush stateDB to cacheCtx")
 			}
 		} else {
 			if err := stateDB.Commit(); err != nil {
+				// See the comment on the FlushToCacheCtx error branch above.
+				ctx.GasMeter().ConsumeGas(maxUsedGas, "apply evm message")
 				return nil, errorsmod.Wrap(err, "failed to commit stateDB")
 			}
 		}
@@ -637,25 +656,26 @@ func (k *Keeper) applyAuthorization(auth *ethtypes.SetCodeAuthorization, state v
 
 // validateAuthorization validates an EIP-7702 authorization against the state.
 func (k *Keeper) validateAuthorization(auth *ethtypes.SetCodeAuthorization, state vm.StateDB, chainID *big.Int) (authority common.Address, err error) {
-	// This chain uses coin-type 118 (Cosmos standard) — the same secp256k1
-	// keypair signs valid txs on every cosmos-evm sibling chain. EIP-7702's
-	// ChainID=0 "any chain" wildcard therefore lets a SetCodeAuthorization
-	// minted on a sibling chain be replayed against the same EOA here,
-	// installing attacker-chosen delegation on the victim's account. Reject
-	// the wildcard entirely and require chain-id-bound authorizations. This is
-	// a strict deviation from EIP-7702 §verification justified by the
-	// shared-key threat model.
+	// SA-AUDIT-2026-06-10 fix17 A15-CRYPTO-H2: STOChain uses coin-type 118
+	// (Cosmos standard) — the same secp256k1 keypair signs valid txs on every
+	// cosmos-evm sibling chain. EIP-7702's ChainID=0 "any chain" wildcard
+	// therefore lets a SetCodeAuthorization minted on a sibling chain be
+	// replayed against the same EOA on STOChain, installing attacker-chosen
+	// delegation on the victim's account. Reject the wildcard entirely and
+	// require chain-id-bound authorizations. This is a strict deviation from
+	// EIP-7702 §verification rationalized by the shared-key threat model; can
+	// be relaxed via gov param if a future use case justifies wildcard.
 	//
-	// DETERMINISM NOTE for future upstream re-syncs: because this reject fires
-	// BEFORE auth.Authority() recovery and BEFORE
-	// state.AddAddressToAccessList(authority) below, a ChainID=0 authorization
-	// never warms the authority address. Upstream go-ethereum (wildcard
-	// allowed) recovers + warms it even when other checks fail, so gas-used
-	// may diverge from upstream by up to one cold-vs-warm access delta (≤2400
-	// gas) per ChainID=0 auth in the tx. All nodes of this chain run this same
-	// fork, so consensus is unaffected — but DO NOT blindly replace this
-	// function on the next cosmos-evm bump. Pinned by
-	// TestValidateAuthorizationRejectsChainIDZero.
+	// SA-AUDIT-2026-06-11 fix19 A16-CRYPTO-L1 — DETERMINISM NOTE for future
+	// upstream re-syncs: because this reject fires BEFORE auth.Authority()
+	// recovery and BEFORE state.AddAddressToAccessList(authority) below,
+	// a ChainID=0 authorization on STOChain never warms the authority
+	// address. Upstream go-ethereum (wildcard allowed) recovers + warms it
+	// even when other checks fail, so gas-used may diverge from upstream by
+	// up to one cold-vs-warm access delta (≤2400 gas) per ChainID=0 auth in
+	// the tx. All STOChain nodes run this same fork, so consensus is
+	// unaffected — but DO NOT blindly replace this function on the next
+	// cosmos-evm bump. Pinned by TestValidateAuthorizationRejectsChainIDZero.
 	if auth.ChainID.IsZero() {
 		return authority, fmt.Errorf("%w: STOChain rejects EIP-7702 ChainID=0 wildcard (coin-type 118 shared-key replay risk)", core.ErrAuthorizationWrongChainID)
 	}

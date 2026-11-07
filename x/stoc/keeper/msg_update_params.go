@@ -14,7 +14,7 @@ func (k msgServer) UpdateParams(goCtx context.Context, req *types.MsgUpdateParam
 		return nil, errorsmod.Wrapf(types.ErrInvalidSigner, "invalid authority; expected %s, got %s", k.GetAuthority(), req.Authority)
 	}
 
-	// Validate params inside the keeper
+	// Audit round-20 2026-07-09 (A4 LOW-1): validate params inside the keeper
 	// handler. Gov proposal execution routes MsgUpdateParams through the msg
 	// service router, which does NOT call ValidateBasic — so this handler is the
 	// ONLY enforcement point for a gov-submitted param update. No-op today

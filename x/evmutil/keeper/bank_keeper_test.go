@@ -17,6 +17,7 @@ import (
 // mockBankKeeper implements types.BankKeeper for testing
 type mockBankKeeper struct {
 	balances       map[string]sdk.Coins // addr -> coins
+	locked         map[string]sdk.Coins // addr -> locked (e.g. vesting) coins
 	supply         sdk.Coins
 	blockedAddrs   map[string]bool
 	sendEnabled    map[string]bool // denom -> enabled
@@ -34,6 +35,7 @@ type mockBankKeeper struct {
 func newMockBankKeeper() *mockBankKeeper {
 	return &mockBankKeeper{
 		balances:      make(map[string]sdk.Coins),
+		locked:        make(map[string]sdk.Coins),
 		supply:        sdk.NewCoins(),
 		blockedAddrs:  make(map[string]bool),
 		sendEnabled:   map[string]bool{"ustoc": true},
@@ -95,6 +97,13 @@ func (m *mockBankKeeper) SendCoinsFromModuleToModule(_ context.Context, senderMo
 
 func (m *mockBankKeeper) SpendableCoins(_ context.Context, addr sdk.AccAddress) sdk.Coins {
 	return m.balances[addr.String()]
+}
+
+// LockedCoins mirrors the bank keeper's locked (vesting) balance. Added to the
+// types.BankKeeper interface by the cosmos/evm v0.6.3 vesting-underflow backport
+// (v5.0.1); the mock must implement it or this package fails to compile.
+func (m *mockBankKeeper) LockedCoins(_ context.Context, addr sdk.AccAddress) sdk.Coins {
+	return m.locked[addr.String()]
 }
 
 func (m *mockBankKeeper) SpendableCoin(_ context.Context, addr sdk.AccAddress, denom string) sdk.Coin {
@@ -275,12 +284,15 @@ func TestSendCoins_CustomToken_Blocked(t *testing.T) {
 	require.Contains(t, err.Error(), "MYTOKEN_0")
 }
 
-// Outflow paths round DOWN and SILENTLY DROP sub-1-ustoc dust. Reverting on
-// dust would break otherwise-valid EVM contract calls and gas refunds whose
-// wei amounts land in (0, 1e12); the godoc documents the dust-burn contract.
-// The FeeCollector-drain and Transfer(N)-corruption protections still hold
-// because non-dust amounts truncate (not round up) — see other tests in this
-// file. Inflow paths still round UP.
+// SA-2026-06-02 MED-3 (senior-skeptic audit): outflow paths round DOWN and
+// SILENTLY DROP sub-1-ustoc dust. The earlier SA-C7/C8 v1 implementation
+// rejected dust with "outflow truncates dust" but that revert broke
+// otherwise-valid EVM contract calls and gas refunds whose wei amounts
+// landed in (0, 1e12). The godoc has always documented the dust-burn
+// contract; the revert was inconsistent with it. SA-C7/C8 protections
+// (no FeeCollector drain, no Transfer(N) corruption) still hold because
+// non-dust amounts truncate (not round up) — see other tests in this file.
+// Inflow paths still round UP.
 func TestSendCoins_DustAmount_SilentlyDropped(t *testing.T) {
 	ebk, mock := setup(t)
 	from, to := testAddr(), testAddr2()
@@ -336,8 +348,10 @@ func TestMintCoins_CustomToken_Blocked(t *testing.T) {
 	require.Contains(t, err.Error(), "custom token")
 }
 
-// MintCoins is an outflow path that silently drops sub-1-ustoc dust legs.
-// See TestSendCoins_DustAmount_SilentlyDropped for the rationale.
+// SA-2026-06-02 MED-3: MintCoins is an outflow path that silently drops
+// sub-1-ustoc dust legs. See TestSendCoins_DustAmount_SilentlyDropped for
+// the rationale (revert was over-restrictive and broke valid contract
+// frames). SA-C7/C8 protections still hold.
 func TestMintCoins_DustAmount_SilentlyDropped(t *testing.T) {
 	ebk, mock := setup(t)
 
@@ -359,8 +373,9 @@ func TestBurnCoins_EvmDenom_ConvertsAndBurns(t *testing.T) {
 	require.Equal(t, math.NewInt(5), mock.lastBurnCoins.AmountOf("ustoc"))
 }
 
-// BurnCoins is an outflow path that silently drops sub-1-ustoc dust legs.
-// See TestSendCoins_DustAmount_SilentlyDropped for the rationale.
+// SA-2026-06-02 MED-3: BurnCoins is an outflow path that silently drops
+// sub-1-ustoc dust legs. See TestSendCoins_DustAmount_SilentlyDropped for
+// the rationale.
 func TestBurnCoins_DustAmount_SilentlyDropped(t *testing.T) {
 	ebk, mock := setup(t)
 
@@ -862,7 +877,7 @@ func TestGetBalance_ExactConversion(t *testing.T) {
 // ===================== getDisplayDenom Tests =====================
 
 func TestGetDenomMetaData_EvmDenom_TestnetDenom(t *testing.T) {
-	// Construct EvmBankKeeper with the utstoc denom (cached at construction)
+	// Construct EvmBankKeeper with testnet denom (cached at construction)
 	old := sdk.DefaultBondDenom
 	sdk.DefaultBondDenom = "utstoc"
 	t.Cleanup(func() { sdk.DefaultBondDenom = old })

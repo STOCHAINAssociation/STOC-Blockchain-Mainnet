@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -18,7 +17,6 @@ import (
 	cmtrpcclient "github.com/cometbft/cometbft/rpc/client"
 	cmtrpctypes "github.com/cometbft/cometbft/rpc/core/types"
 
-	"github.com/cosmos/evm/mempool/txpool"
 	rpctypes "github.com/cosmos/evm/rpc/types"
 	servertypes "github.com/cosmos/evm/server/types"
 	"github.com/cosmos/evm/utils"
@@ -99,6 +97,21 @@ func (b *Backend) GetTransactionByHash(txHash common.Hash) (*rpctypes.RPCTransac
 // GetTransactionByHashPending find pending tx from mempool
 func (b *Backend) GetTransactionByHashPending(txHash common.Hash) (*rpctypes.RPCTransaction, error) {
 	hexTx := txHash.Hex()
+
+	// STOChain fix: look in the EVM legacypool first. A tx can be held only
+	// by this node's legacypool (dropped from the CometBFT mempool on Recheck
+	// while fee-stuck, or queued on a nonce gap), and UnconfirmedTxs below
+	// returns only the first page of the CometBFT mempool. Without this the
+	// RPC answers null for a tx that eth_getTransactionCount("pending")
+	// already counts. Same zero block values as the CometBFT branch.
+	if b.Mempool != nil {
+		if pool := b.Mempool.GetTxPool(); pool != nil {
+			if tx := pool.Get(txHash); tx != nil {
+				return rpctypes.NewRPCTransaction(tx, common.Hash{}, 0, 0, 0, nil, b.ChainConfig()), nil
+			}
+		}
+	}
+
 	// try to find tx in mempool
 	txs, err := b.PendingTransactions()
 	if err != nil {
@@ -141,36 +154,13 @@ func (b *Backend) GetTransactionReceipt(hash common.Hash) (map[string]interface{
 	hexTx := hash.Hex()
 	b.Logger.Debug("eth_getTransactionReceipt", "hash", hexTx)
 
-	// Retry logic for transaction lookup with exponential backoff
-	maxRetries := 10
-	baseDelay := 50 * time.Millisecond
-
-	var res *servertypes.TxResult
-	var err error
-
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		res, err = b.GetTxByEthHash(hash)
-		if err == nil {
-			break // Found the transaction
-		}
-
-		if attempt == maxRetries/2 && b.Mempool != nil {
-			status := b.Mempool.GetTxPool().Status(hash)
-			if status == txpool.TxStatusUnknown {
-				break
-			}
-		}
-
-		if attempt < maxRetries {
-			// Exponential backoff: 50ms, 100ms, 200ms
-			delay := time.Duration(1<<attempt) * baseDelay
-			b.Logger.Debug("tx not found, retrying", "hash", hexTx, "attempt", attempt+1, "delay", delay)
-			time.Sleep(delay)
-		}
-	}
-
+	// An unmined tx has no receipt: answer null right away like geth and let
+	// the client poll. The previous retry loop slept up to ~51s, past
+	// json-rpc.http-timeout (30s), so wallets saw -32002 "request timed out"
+	// for every pending tx (upstream cosmos/evm #1271 / #1272).
+	res, err := b.GetTxByEthHash(hash)
 	if err != nil {
-		b.Logger.Debug("tx not found after retries", "hash", hexTx, "error", err.Error())
+		b.Logger.Debug("tx not found", "hash", hexTx, "error", err.Error())
 		return nil, nil
 	}
 
@@ -552,9 +542,11 @@ func (b *Backend) initAccessListTracer(args evmtypes.TransactionArgs, blockNum r
 	}
 
 	if args.Nonce == nil {
-		// Route through pendingNonceWithPool so eth_createAccessList accounts
-		// for EVM-pool-resident nonces; the raw getAccountNonce misses them,
-		// mis-tracing the access list and rejecting valid burst-send patterns.
+		// SA-2026-06-02 HIGH-3: route through pendingNonceWithPool so the
+		// SA-H25 fix lands here too. eth_createAccessList previously used
+		// the raw upstream getAccountNonce and missed EVM-pool-resident
+		// nonces, mis-tracing the access list and rejecting valid burst-send
+		// patterns from DEX market-makers.
 		pending := blockNum == rpctypes.EthPendingBlockNumber
 		nonce, err := b.pendingNonceWithPool(args.GetFrom(), pending, blockNum.Int64())
 		if err != nil {

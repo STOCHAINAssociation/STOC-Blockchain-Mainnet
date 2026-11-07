@@ -16,12 +16,6 @@ import (
 // EVM extension as an active dynamic precompile.
 //
 // CONTRACT: This must ONLY be called if there is no existing token pair for the given denom.
-//
-// NOTE: in this fork the automatic call from OnRecvPacket was removed (see
-// ibc_callbacks.go), so this function has no production caller. Any new
-// caller must be authority-gated and restricted to an explicit denom
-// allow-list; exposing it permissionlessly re-opens the IBC-denom
-// state-bloat vector.
 func (k Keeper) RegisterERC20Extension(ctx sdk.Context, denom string) (*types.TokenPair, error) {
 	pair, err := k.CreateNewTokenPair(ctx, denom)
 	if err != nil {

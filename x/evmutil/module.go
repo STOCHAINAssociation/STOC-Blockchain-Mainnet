@@ -87,15 +87,16 @@ func (am AppModule) IsAppModule() {}
 
 // RegisterInvariants registers the evmutil module invariants.
 //
-// evmutil has no persistent state of its own, so no invariant is registered.
-// The module's storeKey is declared but never written: all "EVM-side"
-// balances (astoc) are computed as a virtual view over the underlying Cosmos
-// balances (ustoc) — see EvmBankKeeper.GetSupply (astoc supply == ustoc
-// supply × 10^12 by construction). There is no boundary accounting that can
-// drift, so any registered invariant would be a tautology. Conversion
-// rounding (round-UP for inflow, round-DOWN for outflow) is per-operation and
-// never accumulates as state. If a separate escrow account is ever introduced,
-// register an invariant comparing escrow_ustoc × 10^12 to total_astoc supply.
+// SA-M4 audit-2026-05-29 (FALSE POSITIVE — by design): evmutil has no
+// persistent state of its own. The module's storeKey is declared but never
+// written: all "EVM-side" balances (astoc) are computed as a virtual view
+// over the underlying Cosmos balances (ustoc) — see EvmBankKeeper.GetSupply
+// (astoc supply == ustoc supply × 10^12 by construction). There is no
+// boundary accounting that can drift, so any registered invariant would be
+// a tautology. Conversion rounding (round-UP for inflow, round-DOWN for
+// outflow per SA-C7/C8) is per-operation and never accumulates as state.
+// If future work introduces a separate escrow account, register an
+// invariant comparing escrow_ustoc × 10^12 to total_astoc supply.
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
 // RegisterServices registers module services.

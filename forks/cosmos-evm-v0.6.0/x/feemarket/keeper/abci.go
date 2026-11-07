@@ -30,7 +30,7 @@ func (k *Keeper) BeginBlock(ctx sdk.Context) error {
 			ctx.Logger().Error("error converting base fee to float64", "error", err.Error())
 			return
 		}
-		// float32 saturates to +Inf above ~3.4e38.
+		// SA-L9 audit-2026-05-29: float32 saturates to +Inf above ~3.4e38.
 		// At sustained-spike feemarket scenarios (10^38+ wei baseFee) the
 		// telemetry gauge would emit Inf, breaking downstream Prometheus
 		// scrapers and dashboards. Clamp to math.MaxFloat32 so the gauge

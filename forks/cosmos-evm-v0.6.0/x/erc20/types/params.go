@@ -24,11 +24,11 @@ func NewParams(
 func DefaultParams() Params {
 	return Params{
 		EnableErc20: true,
-		// Permissionless ERC20 registration is off by default. Enabled with
-		// zero-fee registration it is free spam → bank metadata bloat + Symbol
-		// Unicode-confusable phishing surface + dynamic precompile registry
-		// pollution. Enable via governance only after a Symbol-uniqueness check
-		// and a per-tx registration fee are in place.
+		// SA-H21 audit-2026-05-29: permissionless ERC20 registration default-off.
+		// Combined with SA-C1 (zero-fee post-upgrade) this was free-spam → bank
+		// metadata bloat + Symbol Unicode-confusable phishing surface + dynamic
+		// precompile registry pollution. Mainnet must enable via gov prop only
+		// after Symbol-uniqueness check + per-tx registration fee are wired.
 		PermissionlessRegistration: false,
 	}
 }
