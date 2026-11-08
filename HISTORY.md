@@ -1,11 +1,13 @@
 # Binary history — STOChain mainnet (chain-id `stoc`)
 
+> Testnet (`tstoc_1999-1`) has its own history, reset cycles included: [HISTORY-TESTNET.md](HISTORY-TESTNET.md).
+
 Which source produced which range of blocks, from genesis to the current head.
 
-Mainnet has run **eight** binaries since it launched on 2025-04-24. Only **three** of those changes
+Mainnet has run **nine** binaries since it launched on 2025-04-24. Only **four** of those changes
 went through governance; the other five were swapped in without a proposal, so nothing on chain records
-them. Anyone replaying the chain from block 1 needs every one up to `v5.0.0`, in order, or their app hash
-diverges and the node stops.
+them. Anyone replaying the chain from block 1 needs every one up to `v5.0.0`, in order, then `v5.0.3` from
+block 7,946,000, or their app hash diverges and the node stops.
 
 Replaying up to `v5.0.0` takes **eight** steps for seven binaries, because no single source reproduces
 the `v2-evm` range on its own. See the `v2-evm` note below — two sources in sequence reproduce the same
@@ -32,12 +34,14 @@ comparing app hashes, not from any on-chain record.
 | `v3` | 4,705,316 | 4,794,076 | [`v3`](../../tree/phase/v3) | `go1.24.3` | ✔ prop #4 | replay-verified |
 | `v3.1` | 4,794,077 | 6,408,099 | [`v3.1`](../../tree/phase/v3.1) | `go1.24.3` | — | replay-verified |
 | `v5.0.0` | 6,408,100 | head | [`v5.0.0`](../../tree/phase/v5.0.0) | `go1.25.8` | ✔ prop #5 | replay-verified |
-| `v5.0.1` | rolling swap from 2026-08-28 | head | [`v5.0.1`](../../tree/main) | `go1.25.8` | — | running on mainnet, app-hash-identical to `v5.0.0` |
+| `v5.0.1` | rolling swap from 2026-08-28 | 7,945,999 | [`v5.0.1`](../../tree/v5.0.1) | `go1.25.8` | — | app-hash-identical to `v5.0.0` |
+| `v5.0.3` | 7,946,000 | head | [`v5.0.3`](../../tree/v5.0.3) | `go1.26.10` | ✔ prop #6 | running on mainnet since 2026-11-08 (upgrade block time 09:57:27 UTC) |
 
-`v5.0.1` (tag `v5.0.1`, the `main` branch) is the binary mainnet runs today. Nodes switched to it one
-at a time from 2026-08-28, with no proposal and no halt, so it has no single start height. It is
-app-hash-identical to `v5.0.0` and owns no separate replay range — a `v5.0.0` binary re-executes the same
-blocks to the same hashes. Run `v5.0.1`: it carries a security fix. See *What each version changes* below.
+`v5.0.3` (tag `v5.0.3`) is the binary mainnet runs today, from the governance upgrade at block 7,946,000
+on 2026-11-08. Before it, `v5.0.1` ran from 2026-08-28: nodes switched to it one at a time, with no
+proposal and no halt, so it has no single start height. It is app-hash-identical to `v5.0.0` and owns no
+separate replay range — a `v5.0.0` binary re-executes the same blocks to the same hashes. Use `v5.0.1`
+(or `v5.0.0`) up to 7,945,999 and `v5.0.3` from 7,946,000. See *What each version changes* below.
 
 Every source up to `v5.0.0` is a tag with a matching branch, `phase/<tag>`, and is only tagged once a node
 has re-executed its range from block 1 and matched mainnet. `v5.0.1` is tag `v5.0.1` on `main`, verified
@@ -96,6 +100,14 @@ inferred.
   build on another machine produces a different hash. Verify it the same way as any self-built binary —
   the node keeps syncing with matching app hashes. Operators should run v5.0.1 for the security fix,
   though it is not required to stay in sync.
+- **v5.0.3** — governance upgrade `v5.0.3` (proposal #6, height **7,946,000**), security release, state-breaking.
+  Backports the upstream cosmos/evm **v0.6.4** security fixes (four advisories published 2026-11-02), closes
+  module-account address squatting, disables Interchain Accounts, restricts IBC light clients to an allowlist
+  (`07-tendermint`), hardens custom (`x/stoc`) tokens, and makes ERC20 registration governance-only. Go 1.26.10.
+  Release binary (linux/amd64, `-trimpath`) SHA256
+  `d81a0a023d6ce0deb7d2f4581738b5693b3934ee5b3424b988b75d6db873a2f5`, the same hash written in the proposal's
+  plan `info`. Run `v5.0.1` up to block 7,945,999; the v5.0.1 node halts at 7,946,000 with
+  `UPGRADE "v5.0.3" NEEDED` and must be restarted on `v5.0.3`.
 
 ## Three things that will cost you a day if you miss them
 
@@ -195,7 +207,7 @@ loop instead of stopping. The wrong hash is already committed by then.
 
 ## Building
 
-`GOTOOLCHAIN=go1.24.3` builds every tag except `v5.0.0` and `v5.0.1`, whose `go.mod` requires go ≥ 1.25.8. Do not
+`GOTOOLCHAIN=go1.24.3` builds every tag except `v5.0.0` and `v5.0.1`, whose `go.mod` requires go ≥ 1.25.8, and `v5.0.3`, which requires go ≥ 1.26.10. Do not
 simply use the newest Go for all of them — `v1.1` fails to compile on Go 1.25, because
 `bytedance/sonic` v1.13.2 reaches into runtime internals that release removed.
 
@@ -215,6 +227,10 @@ CGO_ENABLED=1 GOTOOLCHAIN=go1.25.8 go build -o ~/stocd-bins/stocd_v5.0.0 ./cmd/s
 # v5.0.0 range too — build it instead if you are not testing that boundary.
 git checkout v5.0.1
 CGO_ENABLED=1 GOTOOLCHAIN=go1.25.8 go build -o ~/stocd-bins/stocd_v5.0.1 ./cmd/stocd
+
+# From the v5.0.3 upgrade height (7,946,000) on.
+git checkout v5.0.3
+CGO_ENABLED=1 GOTOOLCHAIN=go1.26.10 go build -o ~/stocd-bins/stocd_v5.0.3 ./cmd/stocd
 ```
 
 Each tag also has a branch of the same name under `phase/`, for example `git checkout phase/v3`.
@@ -281,7 +297,7 @@ snapshot restores in under an hour and needs none of the above:
 
 ```bash
 git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
-cd STOC-Blockchain-Mainnet && git checkout v5.0.1 && make install
+cd STOC-Blockchain-Mainnet && git checkout v5.0.3 && make install
 
 stocd init <moniker> --chain-id stoc
 curl -s https://api-stoc-mainnet.stochainscan.io/rpc/genesis | jq '.result.genesis' > ~/.stoc/config/genesis.json

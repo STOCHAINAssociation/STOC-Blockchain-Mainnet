@@ -1,9 +1,10 @@
 //go:build !stocrelease
 // +build !stocrelease
 
-// Dev-only commands (in-place-testnet, multi-node) are registered here so
-// release builds compiled with `-tags stocrelease` exclude them entirely. See
-// commands_devcmds_release.go for the no-op stub used in release builds.
+// SA-C9 + SA-C10 audit-2026-05-29: dev-only commands (in-place-testnet,
+// multi-node) are registered HERE so production releases built with
+// `-tags stocrelease` exclude them entirely. See commands_devcmds_release.go
+// for the no-op stub used in release builds.
 
 package cmd
 
@@ -21,10 +22,11 @@ import (
 // devCmdsEnableEnv gates the dev-only commands at RUNTIME on top of the
 // build tag.
 //
-// Defense in depth: if a dev-tagged binary is ever run on a production host,
-// the state-rewriting commands still refuse to run without an explicit
-// opt-in. A chain-id check is not sufficient here because non-production
-// networks may intentionally reuse the production chain-id "stoc".
+// SA-AUDIT-2026-06-11 fix19 A16-CROSS-L3: belt-and-braces — if a dev-tagged
+// binary ever leaks onto a production host (operator copies the wrong
+// artifact), the state-rewriting commands still refuse to run without an
+// explicit opt-in. A chain-id check is NOT viable here because devnet runs
+// mainnet-parity chain-id "stoc" by design (replay-mainnet workflow).
 const devCmdsEnableEnv = "STOCD_ENABLE_DEV_CMDS"
 
 func addDevOnlyCmds(rootCmd *cobra.Command, basicManager module.BasicManager, addStartFlags servertypes.ModuleInitFlags) {

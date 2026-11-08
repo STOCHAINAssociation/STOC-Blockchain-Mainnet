@@ -15,12 +15,13 @@ import (
 	stocante "stoc/app/ante"
 )
 
-// Regression coverage: the depth-0 pre-sig screen rejects authz.MsgExec
-// wrapping a disabled msg type BEFORE NewSigVerificationDecorator runs
-// ecrecover. This gives a cheap reject for the common shallow attack
-// without re-introducing a deep-recursion CPU amplification surface before
-// fee deduction. Deep nesting is still caught by the post-fee
-// cosmosante.NewAuthzLimiterDecorator.
+// SA-AUDIT-2026-06-07 M1 + LOW-4 regression coverage (R2-M1, R2-LOW4): the
+// depth-0 pre-sig screen rejects authz.MsgExec wrapping a disabled msg type
+// BEFORE NewSigVerificationDecorator runs ecrecover. This restores the
+// pre-fix13 cheap-reject behavior for the common shallow attack without
+// re-introducing the deep-recursion CPU amplification surface the fix13
+// post-fee reorder was meant to address. Deep nesting is still caught by
+// the post-fee cosmosante.NewAuthzLimiterDecorator.
 
 var screenDisabledTypes = []string{
 	sdk.MsgTypeURL(&evmtypes.MsgEthereumTx{}),
@@ -92,10 +93,10 @@ func TestTopLevelAuthzScreen_EmptyDisabledList_PassesThrough(t *testing.T) {
 	require.NoError(t, err, "empty disabledMsgTypes list must short-circuit (no scan)")
 }
 
-// Regression coverage: pre-sig screen must cover top-level authz.MsgGrant
-// whose Authorization targets a disabled msg type. Matching only
-// *authz.MsgExec would leave the symmetric MsgGrant shape exposed to the
-// same ecrecover-spend issue.
+// SA-AUDIT-2026-06-08 R3-M1 regression coverage: pre-sig screen must cover
+// top-level authz.MsgGrant whose Authorization targets a disabled msg type.
+// Pre-fix15, only *authz.MsgExec was matched, leaving the symmetric MsgGrant
+// shape exposed to the same ecrecover-spend regression.
 func TestAuthzPreSigScreen_MsgGrant_DisabledType_Rejected(t *testing.T) {
 	decorator := stocante.NewAuthzPreSigScreenDecorator(screenDisabledTypes...)
 
@@ -127,7 +128,7 @@ func TestAuthzPreSigScreen_MsgGrant_AllowedType_Allowed(t *testing.T) {
 	require.NoError(t, err, "MsgGrant for ALLOWED type must pass through")
 }
 
-// Regression coverage: pre-sig screen must walk
+// SA-AUDIT-2026-06-08 R3-M2 regression coverage: pre-sig screen must walk
 // at least AuthzPreSigScreenMaxDepth (=3) levels of nested authz.MsgExec so
 // that a single-wrapper bypass (MsgExec(MsgExec(disabled))) is caught
 // before ecrecover.
@@ -147,11 +148,12 @@ func TestAuthzPreSigScreen_NestedMsgExec_DisabledInner_Rejected(t *testing.T) {
 		"error must surface the depth at which the rejection fired (defence-in-depth diagnostic)")
 }
 
-// The disabled msg type slice that both the pre-sig
-// AuthzPreSigScreenDecorator and the post-fee
-// cosmosante.NewAuthzLimiterDecorator consume MUST be the same. It lives in
-// package-level AuthzDisabledMsgTypes() so the invariant has a single
-// editing point. This test pins the slice contents so a
+// SA-AUDIT-2026-06-08 fix15-2 (R3 completeness-critic finding): the
+// disabled msg type slice that both the pre-sig AuthzPreSigScreenDecorator
+// and the post-fee cosmosante.NewAuthzLimiterDecorator consume MUST be the
+// same. fix14 hoisted the slice to a local variable in newCosmosAnteHandler;
+// fix15 hoists it to package-level AuthzDisabledMsgTypes() so the invariant
+// has a single editing point. This test pins the slice contents so a
 // future PR that adds a type to one layer but forgets the other surfaces
 // in CI rather than as a silent ecrecover-DoS regression.
 func TestAuthzDisabledMsgTypes_StableInvariant(t *testing.T) {
@@ -161,17 +163,23 @@ func TestAuthzDisabledMsgTypes_StableInvariant(t *testing.T) {
 		"/cosmos.vesting.v1beta1.MsgCreateVestingAccount",
 		"/cosmos.vesting.v1beta1.MsgCreatePermanentLockedAccount",
 		"/cosmos.vesting.v1beta1.MsgCreatePeriodicVestingAccount",
-		// x/stoc lifecycle msgs.
+		// SA-AUDIT-2026-06-10 fix18 A15-STO-L3: x/stoc lifecycle msgs.
 		"/stoc.stoc.MsgCreateToken",
 		"/stoc.stoc.MsgMintTokens",
 		"/stoc.stoc.MsgReleaseTokens",
 		"/stoc.stoc.MsgBurnToken",
+		// v5.0.3: IBC v2 messages.
+		"/ibc.core.client.v2.MsgRegisterCounterparty",
+		"/ibc.core.channel.v2.MsgSendPacket",
+		"/ibc.core.channel.v2.MsgRecvPacket",
+		"/ibc.core.channel.v2.MsgAcknowledgement",
+		"/ibc.core.channel.v2.MsgTimeout",
 	}
 	require.Equal(t, expected, got,
 		"fix15-2: AuthzDisabledMsgTypes invariant — any change must be intentional; both pre-sig screen and post-fee AuthzLimiter must reject the same set")
 }
 
-// AuthzDisabledMsgTypes returns a fresh slice
+// SA-AUDIT-2026-06-08 fix15-2: AuthzDisabledMsgTypes returns a fresh slice
 // so a caller cannot mutate the shared state.
 func TestAuthzDisabledMsgTypes_ReturnsFreshSlice(t *testing.T) {
 	first := stocante.AuthzDisabledMsgTypes()

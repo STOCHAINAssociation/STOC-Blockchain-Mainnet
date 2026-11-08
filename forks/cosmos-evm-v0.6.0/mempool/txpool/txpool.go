@@ -419,6 +419,10 @@ func (p *TxPool) Nonce(addr common.Address) uint64 {
 	p.stateLock.RLock()
 	defer p.stateLock.RUnlock()
 
+	// STOChain fix: no state before the first reset onto a real block.
+	if p.state == nil {
+		return 0
+	}
 	return p.state.GetNonce(addr)
 }
 

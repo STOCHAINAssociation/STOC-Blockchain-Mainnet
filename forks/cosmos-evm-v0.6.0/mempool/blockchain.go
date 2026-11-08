@@ -87,11 +87,15 @@ func (b *Blockchain) CurrentBlock() *types.Header {
 	}
 
 	blockHeight := ctx.BlockHeight()
-	// prevent the reorg from triggering after a restart since previousHeaderHash is stored as an in-memory variable
+	// STOChain fix: after a restart previousHeaderHash is empty (in-memory
+	// only). Upstream returned the zero placeholder header here to avoid the
+	// legacypool's reorg path, which panicked; that path is now a debug log
+	// (reset_production.go, cosmos/evm #668). The placeholder (gas limit 0,
+	// no state) left the pool unable to validate txs until the second block
+	// after start: inserts failed with "exceeds block gas limit" and the
+	// pending nonce lookup panicked on the nil state. Return the real header;
+	// its ParentHash is simply empty for the first block seen.
 	previousHeaderHash := b.getPreviousHeaderHash()
-	if blockHeight > 1 && previousHeaderHash == (common.Hash{}) {
-		return b.zeroHeader
-	}
 
 	blockTime := ctx.BlockTime().Unix()
 	gasUsed := b.feeMarketKeeper.GetBlockGasWanted(ctx)
@@ -115,8 +119,8 @@ func (b *Blockchain) CurrentBlock() *types.Header {
 			// collapses nil and zero to nil). Leaving header.BaseFee nil makes the
 			// go-ethereum mempool CalcBaseFee(parent) nil-deref in runReorg. Use an
 			// explicit zero so the London base-fee math is well-defined. Only reachable
-			// when feemarket min_gas_price==0; with min_gas_price>0 the base fee is
-			// floored above zero and this branch never triggers.
+			// when feemarket min_gas_price==0 (e.g. devnet); mainnet floors base fee at
+			// min_gas_price>0 so this branch never triggers there.
 			baseFee = big.NewInt(0)
 		}
 		header.BaseFee = baseFee
@@ -181,6 +185,33 @@ func (b *Blockchain) NotifyNewBlock() {
 		b.setLatestContext(sdk.Context{})
 		b.logger.Debug("failed to get latest context, notifying chain head", "error", err)
 	}
+	b.notifyWithContext(latestCtx)
+}
+
+// NotifyNewBlockIfAvailable is NotifyNewBlock for catch-ups right after
+// (re)subscribing. STOChain fix: until a block is committed after a restart
+// the regular latest context is unavailable, and NotifyNewBlock would then
+// replace the primed startup context with an empty one, sending the pool
+// back to "not ready". This keeps the current context and reports false.
+func (b *Blockchain) NotifyNewBlockIfAvailable() bool {
+	latestCtx, err := b.newLatestContext()
+	if err != nil {
+		b.logger.Debug("catch-up skipped: latest context not available yet", "error", err)
+		return false
+	}
+	b.notifyWithContext(latestCtx)
+	return true
+}
+
+// notifyNewBlockWithContext installs ctx (a read-only context at the latest
+// committed height) as the latest context and sends the chain head event.
+// STOChain fix: used at startup when the regular query context is not
+// available yet (see ExperimentalEVMMempool.primeFromLatestBlock).
+func (b *Blockchain) notifyNewBlockWithContext(ctx sdk.Context) {
+	b.notifyWithContext(ctx.WithBlockGasMeter(sdktypes.NewGasMeter(b.blockGasLimit)))
+}
+
+func (b *Blockchain) notifyWithContext(latestCtx sdk.Context) {
 	b.setLatestContext(latestCtx)
 	header := b.CurrentBlock()
 	headerHash := header.Hash()
@@ -239,6 +270,15 @@ func (b *Blockchain) setLatestContext(ctx sdk.Context) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.latestCtx = ctx
+}
+
+// LatestHeight returns the height of the latest context installed by
+// NotifyNewBlock, 0 before the first one. Unlike reading latestCtx directly it
+// is synchronised with NotifyNewBlock (STOChain fix).
+func (b *Blockchain) LatestHeight() int64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.latestCtx.BlockHeight()
 }
 
 // GetLatestContext returns the latest context as updated by the block,

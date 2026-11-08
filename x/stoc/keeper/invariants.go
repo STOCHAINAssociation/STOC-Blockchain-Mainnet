@@ -20,19 +20,21 @@ func RegisterInvariants(ir sdk.InvariantRegistry, k Keeper) {
 //   - bank total supply == token.TotalSupply
 //   - module account balance == token.RemainingSupply
 //
-// Returns broken=false (non-halting) and instead logs + emits an event when
-// divergence is detected. A halting invariant would be chain-halt-as-a-weapon:
-// any user could send `MsgVerifyInvariant` to trigger a halt if state drift
-// exists. Operators monitor `stoc_supply_drift` events instead. To restore
-// hard-halt behavior, set `broken = true` again.
+// SA-H14 audit-2026-05-29: returns broken=false (non-halting) and instead
+// logs + emits event when divergence detected. Previous halting behavior
+// = chain-halt-as-a-weapon: any user could send `MsgVerifyInvariant` to
+// trigger halt if state drift exists (and SA-C2 module-lock vulnerability
+// guaranteed drift would exist). Operators monitor `stoc_supply_drift`
+// events instead. To restore hard-halt behavior, set `broken = true` again.
 //
-// By design, mint/burn/release handlers do NOT cross-check bank supply
+// SA-AUDIT-2026-06-11 fix19 A16-STO-L2 (BY DESIGN per SA-H14, re-confirmed):
+// mint/burn/release handlers intentionally do NOT cross-check bank supply
 // inline — the per-block invariant here is the single detection point, and
-// it must stay non-halting. Alerting must subscribe to the
-// `stoc_supply_drift` event; a drift event that nobody observes means
-// silent accounting divergence. Genesis boots get the strict counterpart
-// check in x/stoc/module/genesis.go, where panicking is safe because there
-// is no liveness to protect yet.
+// it must stay non-halting. OPS REQUIREMENT: alerting must subscribe to the
+// `stoc_supply_drift` event (validator-watcher / BE indexer); a drift event
+// with no page = silent accounting divergence. Genesis boots get the strict
+// counterpart check in x/stoc/module/genesis.go (A16-STO-L4), where
+// panicking is safe because there is no liveness to protect yet.
 func SupplyInvariant(k Keeper) sdk.Invariant {
 	return func(ctx sdk.Context) (string, bool) {
 		var msg string
@@ -71,7 +73,7 @@ func SupplyInvariant(k Keeper) sdk.Invariant {
 			}
 		}
 
-		// Log + emit event for operator observability; return broken=false
+		// SA-H14: log + emit event for operator observability; return broken=false
 		// so MsgVerifyInvariant cannot weaponize the check to halt the chain.
 		if drift {
 			k.Logger().Error("x/stoc supply drift detected (non-halting)", "details", msg)

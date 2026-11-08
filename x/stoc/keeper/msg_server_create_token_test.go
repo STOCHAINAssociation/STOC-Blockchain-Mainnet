@@ -268,11 +268,12 @@ func TestCreateToken_WithRemainingSupply(t *testing.T) {
 }
 
 func TestCreateToken_WithTax(t *testing.T) {
-	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+	k, ms, ctx, mockBank, mockAcc := setupMsgServerWithMocks(t)
 
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
 	creator := creatorAddr.String()
 	recipientAddr := sdk.AccAddress([]byte("tax_recipient_12345"))
+	mockAcc.AddWallet(recipientAddr) // v5.0.3: tax recipient must already exist
 
 	mockBank.Balances[creator] = sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, math.NewInt(200_000_000)))
 
@@ -355,14 +356,15 @@ func TestCreateToken_CounterIncrement(t *testing.T) {
 	require.Equal(t, "SECOND_1", token2.MinimalDenom)
 }
 
-// Regression coverage: cosmos-sdk bech32 Normalize accepts ALL-UPPERCASE
-// bech32 input. If CreateToken stored msg.Creator raw, an uppercase
-// submission would persist an uppercase token.Creator. The downstream
-// MintToken / ReleaseTokens comparisons use canonical lowercase
-// (owner.String() or canonicalized msg.Creator), so the token would
-// self-DoS — Mint and Release would permanently fail with ErrUnauthorized.
-// CreateToken canonicalizes msg.Creator at the persistence site so the
-// stored field is always lowercase bech32, regardless of caller input case.
+// SA-AUDIT-2026-06-06 MED-4 regression coverage: cosmos-sdk bech32 Normalize
+// accepts ALL-UPPERCASE bech32 input. Pre-fix, CreateToken stored
+// msg.Creator raw, so an uppercase submission persisted an uppercase
+// token.Creator. The downstream MintToken / ReleaseTokens comparisons use
+// canonical lowercase (owner.String() or canonicalized msg.Creator), so the
+// token would self-DoS — Mint and Release would permanently fail with
+// ErrUnauthorized until a gov state-edit. The fix canonicalizes
+// msg.Creator at the persistence site so the stored field is always
+// lowercase bech32, regardless of caller input case.
 func TestCreateToken_UppercaseCreator_StoredAsCanonicalLowercase(t *testing.T) {
 	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
 
@@ -402,12 +404,15 @@ func TestCreateToken_UppercaseCreator_StoredAsCanonicalLowercase(t *testing.T) {
 		"MED-4: default distribution address must use canonicalized creator")
 }
 
-// Regression coverage: when the caller submits an Unlimited token with
-// InitialSupply=0 AND a non-empty Distributions slice, the two pieces of
-// input contradict each other (zero supply but upfront-distribution intent).
-// Silently dropping the Distributions list would leave on-chain balances out
-// of sync with the requested distribution, so the handler rejects the
-// contradiction loudly and the issuer can fix the input.
+// SA-AUDIT-2026-06-08 fix15-5 regression coverage (R3 fix14-regression-2 +
+// tax-postdecorator-fresh-2 + token-keeper-fresh-2): when the caller submits
+// an Unlimited token with InitialSupply=0 AND a non-empty Distributions
+// slice, the two pieces of input contradict each other (zero supply but
+// upfront-distribution intent). Pre-fix15-5, the handler silently dropped
+// the Distributions list because the mint loop short-circuited on the
+// skipDistribution flag, leaving on-chain balances out of sync with the
+// persisted Token.Distributions metadata. fix15-5 rejects the
+// contradiction loudly so the issuer can fix the input.
 func TestCreateToken_UnlimitedZeroInitial_WithDistributions_Rejected(t *testing.T) {
 	_, ms, ctx, mockBank := setupMsgServerWithMock(t)
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
@@ -437,8 +442,9 @@ func TestCreateToken_UnlimitedZeroInitial_WithDistributions_Rejected(t *testing.
 	require.Contains(t, err.Error(), "Distributions")
 }
 
-// The empty-Distributions canonical "mint later" shape must persist with
-// Distributions=nil (not the auto-injected default [{creator, 100%}]).
+// SA-AUDIT-2026-06-08 fix15-5: the empty-Distributions canonical "mint
+// later" shape must persist with Distributions=nil (not the auto-injected
+// default [{creator, 100%}] that pre-fix15-5 would leave on the token).
 // Indexers reading token.Distributions then correctly see "no upfront
 // distribution intent", matching the actual on-chain zero balance.
 func TestCreateToken_UnlimitedZeroInitial_PersistsEmptyDistributions(t *testing.T) {
@@ -470,13 +476,14 @@ func TestCreateToken_UnlimitedZeroInitial_PersistsEmptyDistributions(t *testing.
 		"fix15-5: Unlimited+InitialSupply=0 token must NOT auto-inject default [{creator, 100%}] — persisted Distributions must mirror actual on-chain balances (empty)")
 }
 
-// Regression coverage: unlimited tokens with InitialSupply=0 + TotalSupply=0
-// must be creatable. Running the distribution loop would hit the zero-rounded
-// reject with a misleading "increase InitialSupply or merge low-percent
-// recipients" error — meaningless for the canonical "mint later via
-// MsgMintTokens" pattern. The handler skips the distribution loop entirely
-// when Unlimited && InitialSupply is zero so the token persists with zero
-// circulating + zero reserve, and MsgMintTokens can grow supply on demand.
+// SA-AUDIT-2026-06-07 LOW-3 regression coverage (R2-LOW3): unlimited tokens
+// with InitialSupply=0 + TotalSupply=0 must be creatable. Pre-fix14, the
+// distribution loop hit the SA-2026-06-02 LOW-3 zero-rounded reject with a
+// misleading "increase InitialSupply or merge low-percent recipients" error
+// — meaningless for the canonical "mint later via MsgMintTokens" pattern.
+// fix14 skips the distribution loop entirely when Unlimited && InitialSupply
+// is zero so the token persists with zero circulating + zero reserve, and
+// MsgMintTokens can grow supply on demand.
 func TestCreateToken_UnlimitedZeroInitialSupply_Creatable(t *testing.T) {
 	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
 
@@ -507,9 +514,9 @@ func TestCreateToken_UnlimitedZeroInitialSupply_Creatable(t *testing.T) {
 	require.True(t, stored.RemainingSupply.IsZero(), "RemainingSupply must be zero since TotalSupply.GT(InitialSupply) is false")
 }
 
-// Ensure the zero-rounded reject is preserved for non-unlimited tokens whose
-// distribution percent rounds to 0. The skip path is gated on
-// token.Unlimited && InitialSupply.IsZero(),
+// SA-AUDIT-2026-06-07 LOW-3: ensure the existing LOW-3 zero-rounded reject is
+// preserved for non-unlimited tokens whose distribution percent rounds to 0.
+// The fix14 skip path is gated on token.Unlimited && InitialSupply.IsZero(),
 // so a fixed-supply token with InitialSupply>0 and a distribution entry
 // that rounds to 0 must still fail loudly (no silent misallocation).
 func TestCreateToken_FixedSupplyZeroRounded_StillRejected(t *testing.T) {
@@ -544,8 +551,8 @@ func TestCreateToken_FixedSupplyZeroRounded_StillRejected(t *testing.T) {
 	require.Contains(t, err.Error(), "rounds to 0 tokens at initial supply")
 }
 
-// Regression coverage: CreateToken extends the creator canonicalization to
-// token.Distributions[i].Address and
+// SA-AUDIT-2026-06-07 LOW-2 regression coverage (R2-LOW2): fix14 extends the
+// MED-4 canonicalization to token.Distributions[i].Address and
 // token.Tax.RecipientAddress. Verify that uppercase entries on either field
 // are persisted in canonical lowercase form.
 func TestCreateToken_UppercaseDistributions_StoredAsCanonical(t *testing.T) {
@@ -587,11 +594,12 @@ func TestCreateToken_UppercaseDistributions_StoredAsCanonical(t *testing.T) {
 }
 
 func TestCreateToken_UppercaseTaxRecipient_StoredAsCanonical(t *testing.T) {
-	k, ms, ctx, mockBank := setupMsgServerWithMock(t)
+	k, ms, ctx, mockBank, mockAcc := setupMsgServerWithMocks(t)
 
 	creatorAddr := sdk.AccAddress([]byte("creator_address_123"))
 	creator := creatorAddr.String()
 	recipientAddr := sdk.AccAddress([]byte("tax_recipient_______"))
+	mockAcc.AddWallet(recipientAddr) // v5.0.3: tax recipient must already exist
 	canonicalRecipient := recipientAddr.String()
 	upperRecipient := strings.ToUpper(canonicalRecipient)
 
@@ -620,7 +628,7 @@ func TestCreateToken_UppercaseTaxRecipient_StoredAsCanonical(t *testing.T) {
 		"LOW-2: token.Tax.RecipientAddress must persist canonical lowercase")
 }
 
-// The read-side counterpart in ReleaseTokens
+// SA-AUDIT-2026-06-06 MED-4: the read-side counterpart in ReleaseTokens
 // canonicalizes msg.Creator before comparing against token.Creator. Verify
 // that a release call with an uppercase msg.Creator succeeds when the
 // stored token.Creator is canonical lowercase. Without canonicalization on
@@ -633,7 +641,7 @@ func TestReleaseTokens_UppercaseMsgCreatorMatchesCanonicalStored(t *testing.T) {
 	uppercaseCreator := strings.ToUpper(canonicalCreator)
 	denom := "UPPER_0"
 
-	// Seed a token with the canonical creator stored.
+	// Seed a token with the canonical creator stored (post-fix shape).
 	token := types.Token{
 		Id:              denom,
 		Name:            "Upper Release Token",

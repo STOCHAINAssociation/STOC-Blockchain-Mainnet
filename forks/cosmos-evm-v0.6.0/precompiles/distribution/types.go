@@ -92,11 +92,11 @@ func NewMsgSetWithdrawAddress(args []interface{}, addrCdc address.Codec) (*distr
 
 	// If the withdrawer address is a hex address, convert it to a bech32 address.
 	if common.IsHexAddress(withdrawerAddress) {
-		// Reject precompile addresses as withdrawer.
+		// SA-H18 audit-2026-05-29: reject precompile addresses as withdrawer.
 		// SendCoinsFromModuleToAccount (used by distribution to send rewards)
 		// is blocked by SendRestriction for precompile addrs → every future
-		// reward withdraw fails → delegator's rewards locked until they re-set
-		// the withdrawer. Catch the mistake here.
+		// reward withdraw fails → delegator's rewards permanently locked until
+		// they re-set withdrawer. Catch the fat-finger / phishing here.
 		hexAddr := common.HexToAddress(withdrawerAddress)
 		if hexAddr.Big().Cmp(common.Big0) > 0 && hexAddr.Big().BitLen() <= 16 {
 			// addresses 0x0001 - 0xFFFF reserved for precompiles

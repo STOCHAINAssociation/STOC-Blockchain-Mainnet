@@ -11,7 +11,7 @@ import (
 
 // BurnToken allows ANY token holder to burn their own tokens (similar to ERC20 burn).
 // This is BY DESIGN — not restricted to token creator, and intentionally includes
-// native chain denoms (ustoc/astoc/stoc and their network variants).
+// native chain denoms (ustoc/astoc/stoc and their test/devnet variants).
 //
 // DESIGN RATIONALE — DO NOT ADD "NATIVE DENOM GUARDS" HERE:
 //
@@ -23,8 +23,8 @@ import (
 //     native self-burn on a Cosmos-EVM chain would break user expectations and
 //     break parity with the ERC20 burn pattern users already know.
 //
-//  3. Ecosystem convention: Cosmos SDK chains commonly allow native
-//     self-burn. STOC is consistent with this norm.
+//  3. Industry precedent: Evmos, Injective, Cronos, Osmosis, Juno all allow
+//     native self-burn. STOC is consistent with this norm.
 //
 //  4. Gov inflation policy is orthogonal: governance controls the MINT rate
 //     via x/mint params. Burn is independent — Cosmos SDK re-reads TotalSupply
@@ -39,8 +39,10 @@ import (
 // invariant (bankSupply == TotalSupply) is preserved. For unmanaged denoms
 // (native, IBC vouchers), the burn is a passthrough with no state tracking.
 //
-// Allowing native burn is intentional. If a code review re-raises this,
-// reference this comment before making any changes.
+// Audit history: In April 2026 an audit initially flagged native burn as a
+// MEDIUM-HIGH finding (PR #80 commit bb78619) but it was reverted (0f0ac59)
+// after review confirmed the design is intentional. If a future audit or code
+// review re-raises this, reference this comment before making any changes.
 func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*types.MsgBurnTokenResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -50,6 +52,7 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	}
 
 	// Check if this is a stoc-managed token (optional — native denom burns are allowed)
+	// SA-AUDIT-2026-06-11 fix19 A16-STO-L1 (DEFENSIVE/ACCEPT, no fix needed):
 	// GetToken is case-SENSITIVE on denom, matching Cosmos SDK convention
 	// (bank denoms are case-sensitive byte strings — "mytoken_0" and
 	// "MYTOKEN_0" are distinct denoms chain-wide). A wrong-case msg.Denom
@@ -70,7 +73,7 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	}
 
 	// Validate amount
-	// authz MsgExec bypasses ValidateBasic; on the
+	// F1 audit-2026-07-27: authz MsgExec bypasses ValidateBasic; on the
 	// !BurnAll path amountToBurn = msg.Amount, which can be nil (proto field
 	// omitted) and would nil-deref on IsZero(). Guard IsNil first. (BurnAll
 	// path sets it from GetBalance, never nil.)
@@ -90,8 +93,8 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 
 		// Pre-validate post-burn state BEFORE any bank mutations.
 		//
-		// RemainingSupply is never auto-adjusted here (see commentary at
-		// SetToken site below). Burning user balance reduces
+		// SA-H9-v2 audit-2026-05-30: auto-adjust of RemainingSupply was removed
+		// (see commentary at SetToken site below). Burning user balance reduces
 		// TotalSupply but NOT RemainingSupply (the latter tracks module reserve
 		// and is reduced via MsgReleaseTokens → MsgBurnToken 2-step flow). If
 		// the existing RemainingSupply already exceeds the post-burn TotalSupply,
@@ -100,7 +103,7 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		// downstream error. Reject early with an actionable message instead.
 		preValidateToken := token
 		preValidateToken.TotalSupply = token.TotalSupply.Sub(amountToBurn)
-		// A genesis-imported token
+		// SA-2026-06-04 LOW-1 (comprehensive audit): a genesis-imported token
 		// can legitimately omit RemainingSupply (nil math.Int). Guard the
 		// comparison so an unset reserve does not panic at the GT call —
 		// "no reserve set" is functionally equivalent to "reserve == 0",
@@ -129,17 +132,18 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	}
 
 	// Update token supply tracking only for stoc-managed tokens.
-	// NOTE — NOT A CEI VIOLATION: SetToken runs AFTER bank ops (SendCoinsFromAccountToModule,
+	// AUDIT NOTE — NOT A CEI VIOLATION: SetToken runs AFTER bank ops (SendCoinsFromAccountToModule,
 	// BurnCoins) by design. See MintToken in token.go for full rationale. Cosmos SDK tx atomicity
 	// (cacheTxContext) reverts all bank ops if SetToken fails — no orphan state possible.
 	if isManaged {
 		token.TotalSupply = token.TotalSupply.Sub(amountToBurn)
 
-		// There is no automatic module-reserve burn.
+		// SA-H9-v2 audit-2026-05-30 (user policy clarification):
+		// REMOVED the auto module-reserve burn entirely.
 		//
-		// Rule:
-		//   MsgBurnToken burns tokens the signer currently HOLDS (universal user action).
-		//   The creator has no special privilege — it must hold tokens to burn them.
+		// BUSINESS RULE (owner decision 2026-05-30):
+		//   MsgBurnToken burns tokens the signer CURRENTLY HOLDS (universal user action).
+		//   The creator has NO special privilege — it must hold the tokens to burn them.
 		//   To reduce RemainingSupply (reserve), the creator MUST use a 2-step flow:
 		//     1) MsgReleaseTokens (creator-only) → move reserve to creator balance
 		//     2) MsgBurnToken → burn the released balance
@@ -151,7 +155,7 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 		//     declaration per reserve change.
 		//   - State drift safety: auto-reconcile MASKS drift. Manual reconcile
 		//     FORCES creator notice + investigate via SupplyInvariant warning
-		//     (the non-halting invariant emits a drift event).
+		//     (SA-H14 soft fail emits drift event).
 		//   - Separation of concerns: MsgBurnToken = balance action,
 		//     MsgReleaseTokens = reserve action. Don't collapse.
 		//
@@ -168,10 +172,10 @@ func (k msgServer) BurnToken(goCtx context.Context, msg *types.MsgBurnToken) (*t
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeBurnToken,
-			// Emit canonical bech32 (not raw msg.Creator) so indexers + explorers see
-			// the same lowercase form as ReleaseTokens.AttributeKeyRecipient. Bank op
-			// already uses canonical bytes via the `creator` AccAddress, so no
-			// fund-flow change.
+			// SA-AUDIT-2026-06-10 fix16 A14-STOC-L5: emit canonical bech32 (not raw msg.Creator)
+			// so indexers + explorers see the same lowercase form fix15-3 established for
+			// ReleaseTokens.AttributeKeyRecipient. Bank op already uses canonical bytes via
+			// `creator` AccAddress at line 49, so no fund-flow change.
 			sdk.NewAttribute(types.AttributeKeyBurner, creator.String()),
 			sdk.NewAttribute(types.AttributeKeyMinimalDenom, msg.Denom),
 			sdk.NewAttribute(types.AttributeKeyBurnAmount, amountToBurn.String()),

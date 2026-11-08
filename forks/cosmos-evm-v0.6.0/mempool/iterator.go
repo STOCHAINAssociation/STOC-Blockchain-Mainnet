@@ -40,10 +40,10 @@ type EVMMempoolIterator struct {
 	/** Blockchain Access **/
 	blockchain *Blockchain
 
-	// Track which iterator actually produced the last returned tx so
-	// advanceCurrentIterator can advance the right one even when EVM conversion
-	// failed mid-iteration (would otherwise advance EVM but return Cosmos,
-	// causing the same Cosmos tx to repeat → duplicate-tx ProcessProposal
+	// SA-H6 audit-2026-05-29: track which iterator actually produced the last
+	// returned tx so advanceCurrentIterator can advance the right one even when
+	// EVM conversion failed mid-iteration (would otherwise advance EVM but return
+	// Cosmos, causing the same Cosmos tx to repeat → duplicate-tx ProcessProposal
 	// reject).
 	lastReturnedFromEVM bool
 }
@@ -126,30 +126,34 @@ func (i *EVMMempoolIterator) Tx() sdk.Tx {
 	return tx
 }
 
+// STOChain v8 Bug B fix (2026-05-16): allow PrepareProposal handler to discard the
+// entire sender-bucket from the EVM iterator when the current head tx fails ante.
+// Upstream behaviour Shifts to the next nonce from the same account, which then
+// also fails ante (nonce-too-high cascade), wasting iterations. Geth-style: Pop
+// the account so other senders proceed in this block.
+//
 // PopCurrentAccount drops the current head's account from the underlying
 // price-and-nonce heap. Safe to call when the iterator has selected an EVM tx
 // and the caller has determined that tx (and all its account-mates) cannot mine
 // in this block. No-op when current head is a Cosmos tx or iterator is empty.
 //
-// This lets a PrepareProposal handler discard the entire sender bucket when
-// the current head tx fails ante. Shifting to the next nonce from the same
-// account would also fail ante (nonce-too-high cascade) and waste iterations;
-// popping the account (geth-style) lets other senders proceed in this block.
-//
-// The decision uses the cached lastReturnedFromEVM set by Tx() rather than
-// re-querying shouldUseEVM(), which would RE-EVALUATE the head selection.
-// After Tx() falls back to the Cosmos lane because convertEVMToSDKTx failed
-// (lastReturnedFromEVM=false), the EVM iterator head is still EVM and
+// SA-2026-06-02 MED-8 (senior-skeptic audit): the prior implementation
+// re-queried shouldUseEVM() at Pop time, which RE-EVALUATES the head
+// selection. After Tx() falls back to the Cosmos lane because convertEVMToSDKTx
+// failed (lastReturnedFromEVM=false), the EVM iterator head is still EVM and
 // shouldUseEVM() may yet return true — Pop would then drop an innocent EVM
-// bucket. The cached field is the SAME signal the caller used to decide to call
+// bucket whose only sin was being aligned with a fee-matching Cosmos tx that
+// already failed ante. We now consult the cached lastReturnedFromEVM that
+// Tx() sets, which is the SAME signal the caller used to decide to call
 // PopCurrentAccount in the first place. Pre-condition: callers MUST invoke
-// Tx() before PopCurrentAccount.
+// Tx() before PopCurrentAccount (the existing PrepareProposal wrapper
+// already does).
 func (i *EVMMempoolIterator) PopCurrentAccount() {
 	if i == nil || i.evmIterator == nil || i.evmIterator.Empty() {
 		return
 	}
 	// Use the cached signal from the last Tx() call rather than re-querying
-	// shouldUseEVM() — see rationale above.
+	// shouldUseEVM() — see MED-8 rationale above.
 	if !i.lastReturnedFromEVM {
 		return
 	}
@@ -162,9 +166,9 @@ func (i *EVMMempoolIterator) PopCurrentAccount() {
 // handlers to decide between PopCurrentAccount (EVM-side bucket pop) and
 // standard Cosmos invalid-tx cleanup.
 //
-// Relying on the cached field avoids the re-evaluation race when Tx()'s
-// fallback path has switched lanes after a failed EVM-to-Cosmos conversion
-// (same rationale as PopCurrentAccount).
+// SA-2026-06-02 MED-8: same rationale as PopCurrentAccount — relying on the
+// cached field avoids the re-evaluation race when Tx()'s fallback path has
+// switched lanes after a failed EVM-to-Cosmos conversion.
 func (i *EVMMempoolIterator) CurrentIsEVM() bool {
 	if i == nil {
 		return false
@@ -279,8 +283,8 @@ func (i *EVMMempoolIterator) getPreferredTransaction(nextEVMTx *txpool.LazyTrans
 
 // advanceCurrentIterator advances the appropriate iterator based on which transaction was used
 func (i *EVMMempoolIterator) advanceCurrentIterator() {
-	// Use the cached `lastReturnedFromEVM` field rather than re-querying
-	// shouldUseEVM(). On the EVM-conversion-fail fallback path
+	// SA-H6 audit-2026-05-29: use the cached `lastReturnedFromEVM` field rather
+	// than re-querying shouldUseEVM(). On the EVM-conversion-fail fallback path
 	// getPreferredTransaction returns Cosmos, but shouldUseEVM still reports EVM
 	// (head unchanged) — re-querying advances the wrong iterator and the same
 	// Cosmos tx repeats forever.

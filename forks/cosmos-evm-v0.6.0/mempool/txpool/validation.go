@@ -239,11 +239,11 @@ func ValidateTransactionWithState(tx *types.Transaction, signer types.Signer, op
 	if balance.Cmp(cost) < 0 {
 		return fmt.Errorf("%w: balance %v, tx cost %v, overshot %v", core.ErrInsufficientFunds, balance, cost, new(big.Int).Sub(cost, balance))
 	}
-	// Cumulative-balance check (as in upstream geth). Without it an attacker
-	// can submit N txs each individually affordable but cumulatively > balance;
-	// only the first mines and the rest pin queue slots for the full Lifetime.
-	// The check applies to NEW slots (replacement txs at the same nonce skip —
-	// handled below).
+	// SA-H2 audit-2026-05-29: restore upstream geth cumulative-balance check.
+	// Bug A patch removed this, opening a 6144-slot DoS surface: attacker submits N
+	// txs each individually-affordable but cumulatively > balance; only first mines,
+	// rest pin queue slots for ~1h Lifetime. Re-enable cumulative check on NEW slots
+	// (replacement txs at same nonce skip — handled below).
 	if prev := opts.ExistingCost(from, tx.Nonce()); prev == nil {
 		if opts.ExistingExpenditure != nil {
 			pending := opts.ExistingExpenditure(from)

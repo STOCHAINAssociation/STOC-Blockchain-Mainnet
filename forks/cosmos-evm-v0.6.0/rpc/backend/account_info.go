@@ -215,17 +215,23 @@ func (b *Backend) GetTransactionCount(address common.Address, blockNum rpctypes.
 	return &n, nil
 }
 
-// pendingNonceWithPool returns the next nonce for `address`. When the caller
-// wants the pending nonce (i.e. the nonce the next outgoing tx should use),
-// it takes the max of the chain nonce, the chain nonce re-read after a
-// head-advance race window, and the EVM txpool's PoolNonce. Every site that
-// needs a pending nonce MUST call this helper instead of
-// b.getAccountNonce(..., pending=true, ...) so behaviour is consistent across
+// pendingNonceWithPool returns the next nonce for `address` honouring the
+// STOChain v8 Bug C / SA-H25 fix: when the caller wants the pending nonce
+// (i.e. the nonce the next outgoing tx should use), we take the max of the
+// chain nonce, the chain nonce re-read after a head-advance race window, and
+// the EVM txpool's PoolNonce. This is the canonical implementation; every
+// site that previously called b.getAccountNonce(..., pending=true, ...) MUST
+// call this helper instead so that the fix lands consistently on
 // eth_getTransactionCount, SetTxDefaults (eth_sendTransaction /
 // eth_estimateGas) and initAccessListTracer (eth_createAccessList).
-// Otherwise dApps that sign and broadcast via eth_sendTransaction without a
-// preceding nonce round-trip receive a stale nonce and hit "nonce too low"
-// rejections (common with the fire-and-forget batched-send pattern).
+//
+// SA-2026-06-02 HIGH-3 (senior-skeptic audit): the prior implementation only
+// patched eth_getTransactionCount, so dApps that signed and broadcast via
+// eth_sendTransaction with no preceding nonce round-trip received the stale
+// upstream nonce and hit "nonce too low" rejections. Extracting this helper
+// is the load-bearing fix; the audit explicitly called this out as a HIGH
+// because production dApps frequently use the fire-and-forget batched-send
+// pattern.
 //
 // includePending=false reduces to the upstream getAccountNonce(false, ...)
 // behaviour, so call sites that want only the chain-committed nonce can
@@ -242,11 +248,13 @@ func (b *Backend) pendingNonceWithPool(address common.Address, includePending bo
 	if pool == nil {
 		return nonce, nil
 	}
-	// Snapshot chain head BEFORE reading pool nonce, then re-query chain nonce
-	// at that height to ensure a consistent TOCTOU-safe pair. If a new block
-	// commits between the two reads, the caller would otherwise receive a
-	// stale max (chainNonce moved up, poolNonce stale) leading wallets to sign
-	// with an already-used nonce → replay / rejection. Recheck after pool read.
+	// SA-H25 audit-2026-05-29: snapshot chain head BEFORE reading pool
+	// nonce, then re-query chain nonce at that height to ensure a
+	// consistent TOCTOU-safe pair. If a new block commits between the
+	// two reads, the caller would otherwise receive a stale max
+	// (chainNonce moved up, poolNonce stale) leading wallets to sign
+	// with an already-used nonce → replay / rejection. Recheck after
+	// pool read.
 	poolNonce := pool.PoolNonce(address)
 	if nonce2, err2 := b.getAccountNonce(address, false, height, b.Logger); err2 == nil && nonce2 > nonce {
 		nonce = nonce2

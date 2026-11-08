@@ -98,10 +98,10 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 			panic(err)
 		}
 
-		// Use the guarded form instead of MustAccAddressFromBech32 to mirror
-		// the ValAddressFromBech32 pattern above. Must* emits a cryptic
-		// uppercase-hex panic; wrap so operators see which delegator address
-		// is corrupt during zero-height export.
+		// SA-AUDIT-2026-06-05-fix11 MED: replace MustAccAddressFromBech32 with
+		// guarded form to mirror lines 96-98 ValAddressFromBech32 pattern. Must*
+		// emits a cryptic uppercase-hex panic; wrap so operators see which
+		// delegator address is corrupt during zero-height export.
 		delAddr, err := sdk.AccAddressFromBech32(delegation.DelegatorAddress)
 		if err != nil {
 			panic(fmt.Errorf("invalid delegator address %q in WithdrawDelegationRewards loop: %w", delegation.DelegatorAddress, err))
@@ -155,7 +155,7 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 		if err != nil {
 			panic(err)
 		}
-		// Same guarded form as in the WithdrawDelegationRewards loop above.
+		// SA-AUDIT-2026-06-05-fix11 MED: same guarded form as line ~101.
 		delAddr, err := sdk.AccAddressFromBech32(del.DelegatorAddress)
 		if err != nil {
 			panic(fmt.Errorf("invalid delegator address %q in BeforeDelegationCreated loop: %w", del.DelegatorAddress, err))

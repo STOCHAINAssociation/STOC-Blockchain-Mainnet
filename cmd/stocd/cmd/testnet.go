@@ -1,11 +1,11 @@
 //go:build !stocrelease
 // +build !stocrelease
 
-// in-place-testnet rewrites the validator set and funds arbitrary accounts
-// (valVotingPower is far above the total supply scale) without HRP/chain-id
-// validation, so running it against a production node's data would destroy
-// local state. Release builds use `-tags stocrelease` to exclude this file
-// entirely.
+// SA-C9 audit-2026-05-29: in-place-testnet rewrites validator set + funds
+// arbitrary accounts (line 33 valVotingPower = 900T, ~9× total supply scale).
+// No HRP/chain-id validation. On a mainnet validator binary this command is
+// one fat-finger away from local state destruction. Build production releases
+// with `-tags stocrelease` to exclude this file entirely.
 
 package cmd
 
@@ -205,8 +205,8 @@ func initAppForTestnet(app *app.App, args valArgs) *app.App {
 
 	// Set validator signing info for our new validator.
 	newConsAddr := sdk.ConsAddress(args.newValAddr.Bytes())
-	// app.LastBlockHeight() returns 0 on a brand-new app; subtraction would
-	// underflow uint64 to MaxUint64. Clamp at 0.
+	// SA-2026-06-02 LOW-13: app.LastBlockHeight() returns 0 on a brand-new
+	// app; subtraction would underflow uint64 to MaxUint64. Clamp at 0.
 	startHeight := int64(0)
 	if h := app.LastBlockHeight(); h > 0 {
 		startHeight = h - 1
@@ -272,10 +272,11 @@ func getCommandArgs(appOpts servertypes.AppOptions) (valArgs, error) {
 	// validate  and set accounts to fund
 	accountsString := cast.ToString(appOpts.Get(flagAccountsToFund))
 
-	// Bound the list. Each entry triggers a MintCoins of 1000 STOC in
-	// initAppForTestnet, so an unbounded comma list (e.g. a generated file pasted
-	// into the flag) would mint without limit. 100 covers any realistic
-	// local-network need.
+	// SA-AUDIT-2026-06-11 fix19 A16-CROSS-L2: bound the list. Each entry
+	// triggers a MintCoins of 1000 STOC in initAppForTestnet — an unbounded
+	// comma list (e.g. a generated file pasted into the flag) would mint
+	// without limit. 100 covers any realistic local-testnet need. Dev-only
+	// command (build tag !stocrelease).
 	const maxAccountsToFund = 100
 	accountEntries := strings.Split(accountsString, ",")
 	if len(accountEntries) > maxAccountsToFund {
@@ -285,9 +286,9 @@ func getCommandArgs(appOpts servertypes.AppOptions) (valArgs, error) {
 	expectedPrefix := sdk.GetConfig().GetBech32AccountAddrPrefix()
 	for _, account := range accountEntries {
 		if account != "" {
-			// sdk.AccAddressFromBech32 does NOT validate the HRP, so a `cosmos1...`
-			// address typed by mistake would be funded on a `stoc1...` chain. Reject
-			// mismatched prefixes explicitly.
+			// SA-2026-06-02 LOW-12: sdk.AccAddressFromBech32 does NOT validate
+			// HRP, so a `cosmos1...` address typed by mistake would be funded
+			// from a `stoc1...` chain. Reject mismatched prefixes explicitly.
 			if !strings.HasPrefix(account, expectedPrefix+"1") {
 				return args, fmt.Errorf("address %q does not match expected bech32 prefix %q", account, expectedPrefix)
 			}

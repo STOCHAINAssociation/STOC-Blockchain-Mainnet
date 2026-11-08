@@ -10,8 +10,9 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// TestValidateAuthorizationRejectsChainIDZero pins the EIP-7702 deviation:
-// a ChainID=0 "any chain" wildcard authorization must be rejected BEFORE
+// TestValidateAuthorizationRejectsChainIDZero pins the STOChain EIP-7702
+// deviation (fix17 A15-CRYPTO-H2, documented fix19 A16-CRYPTO-L1): a
+// ChainID=0 "any chain" wildcard authorization must be rejected BEFORE
 // authority recovery and BEFORE access-list warming. The nil StateDB below
 // is intentional — if a future upstream re-sync moves the reject after
 // state.AddAddressToAccessList, this test panics on the nil state instead

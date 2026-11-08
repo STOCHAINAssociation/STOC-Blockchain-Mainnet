@@ -608,6 +608,14 @@ func (k Keeper) TraceBlock(c context.Context, req *types.QueryTraceBlockRequest)
 	}
 
 	ctx := sdk.UnwrapSDKContext(c)
+	// STOChain fix (v5.0.3 audit round 1): bound the requested height the same
+	// way TraceTx and TraceCall do. The caller sets ctx.BlockHeight() to
+	// requestedHeight - 1. An unbounded height let a query context carry an
+	// arbitrary future height into keeper code (e.g. app-level caches keyed
+	// by block height).
+	if contextHeight > ctx.BlockHeight()+1 {
+		return nil, status.Errorf(codes.FailedPrecondition, "requested height [%d] must be less than or equal to current height [%d]", contextHeight, ctx.BlockHeight())
+	}
 	ctx = ctx.WithBlockHeight(contextHeight)
 	ctx = ctx.WithBlockTime(req.BlockTime)
 	ctx = ctx.WithHeaderHash(common.Hex2Bytes(req.BlockHash))

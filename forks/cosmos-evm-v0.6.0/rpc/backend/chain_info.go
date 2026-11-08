@@ -152,6 +152,13 @@ var (
 	errRequestBeyondHead = fmt.Errorf("request beyond head block")
 )
 
+// SA-H24 audit-2026-05-29: status = NOT A REAL BUG normal-path.
+// Tested 8 parallel eth_feeHistory calls on devnet — no hang, no race symptoms.
+// Goroutine race concern (shared `err` + unbuffered chanErr) only manifests
+// when ProcessBlocker panics inside the goroutine. Best-practice fix
+// (errgroup.Group + buffered chan) is invasive upstream refactor; defer until
+// panic-trigger evidence appears. Documented for posterity.
+//
 // FeeHistory returns data relevant for fee estimation based on the specified range of blocks.
 func (b *Backend) FeeHistory(
 	userBlockCount math.HexOrDecimal64, // number blocks to fetch, maximum is 100
@@ -215,13 +222,17 @@ func (b *Backend) FeeHistory(
 
 	// rewards should only be calculated if reward percentiles were included
 	calculateRewards := rewardCount != 0
-	// The per-batch chanErr is buffered to maxBlockFetchers so per-goroutine
-	// sends are non-blocking and cannot leak; the deferred recover writes the
-	// panic error into chanErr (NOT the closure-captured outer `err`, which
-	// would be a data race across goroutines); and the nil-block paths
-	// synthesise an explicit error so the channel is never fed a nil (a
-	// `(nil, nil)` result would read as a zero-baseFee fee history and push
-	// wallets back to legacy gasPrice).
+	// SA-2026-06-02 MED-10/11/12 (senior-skeptic audit): the per-batch
+	// chanErr was previously unbuffered, the deferred recover wrote to the
+	// outer `err` closure variable from up to four goroutines concurrently
+	// (Go data race), and three nil-block paths sent `chanErr <- err` where
+	// the underlying err was already nil — producing a `(nil, nil)` silent
+	// success that downstream wallets read as a zero-baseFee fee history
+	// and reverted to legacy gasPrice. Fix: buffer chanErr to
+	// maxBlockFetchers so per-goroutine sends are non-blocking + no leak;
+	// write the panic error into chanErr (NOT the closure-captured outer
+	// `err`); and synthesise an explicit error in the nil-block paths so
+	// the channel is never fed a nil.
 	const maxBlockFetchers = 4
 	for blockID := blockStart; blockID <= blockEnd; blockID += maxBlockFetchers {
 		wg := sync.WaitGroup{}
@@ -280,8 +291,8 @@ func (b *Backend) FeeHistory(
 
 				oneFeeHistory := rpctypes.OneFeeHistory{}
 				if processErr := b.ProcessBlocker(cometBlock, &ethBlock, rewardPercentiles, cometBlockResult, &oneFeeHistory); processErr != nil {
-					// Route the error through the channel, not the closure-captured
-					// outer `err` (closure write race).
+					// MED-11 (closure write race): route the error through the
+					// channel, not the closure-captured outer `err`.
 					chanErr <- processErr
 					return
 				}

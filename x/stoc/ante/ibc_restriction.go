@@ -9,14 +9,19 @@ import (
 	govv1beta1types "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 	grouptypes "github.com/cosmos/cosmos-sdk/x/group"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	channelv2types "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	"stoc/x/stoc/keeper"
 	stoctypes "stoc/x/stoc/types"
 )
 
 // IBCCustomTokenRestriction is an AnteDecorator that blocks outgoing IBC transfers
-// of custom tokens created via x/stoc. Custom tokens are Cosmos-only and
-// should not be sent cross-chain because:
+// of custom tokens created via x/stoc. Since v5.0.3 the same message walker
+// also rejects IBC v2 messages wherever they appear, including inside group
+// and gov proposals.
+//
+// Custom tokens are Cosmos-only and should not be sent cross-chain because:
 //  1. Tax enforcement cannot be applied on other chains
 //  2. Token metadata/rules are lost when crossing chains
 //  3. Returning tokens via IBC would bypass tax on the outgoing path
@@ -29,13 +34,12 @@ import (
 // every token created via x/stoc MsgCreateToken (e.g. "MYTOKEN_0").
 //
 // =============================================================================
-// FUTURE WORK — Foreign Asset Integration (e.g. IBC stablecoins)
+// FUTURE WORK — Foreign Asset Integration (e.g. USDC via Noble)
 // =============================================================================
 // The current decorator only blocks outgoing transfers of x/stoc-created tokens.
-// Inbound foreign assets (e.g. USDC, USDT) are minted by the ibctransfer module
-// as "ibc/<HASH>" denoms and holders can send them out again or return them
-// via standard IBC transfers (no automatic multi-hop forwarding: packet-forward
-// middleware is not wired, see app/ibc.go). No changes are required at the ante
+// Inbound foreign assets (USDC from Noble, USDT from Kava, etc.) are minted by
+// the ibctransfer module as "ibc/<HASH>" denoms and the chain can then forward
+// or return them via standard IBC paths. No changes are required at the ante
 // layer to support new inbound foreign assets — the existing fall-through path
 // permits them automatically.
 //
@@ -46,19 +50,12 @@ import (
 //      the foreign denom — by default bank allows all denoms; if an explicit
 //      block list is added in the future, foreign denoms must be excluded.
 //   3. x/erc20 token-pair registration (if EVM exposure of the foreign asset
-//      is desired). NOTE: no entry point for this exists in the current build
-//      — MsgRegisterERC20 only accepts ERC20 contract addresses, and automatic
-//      registration on receive is disabled. See the Case 1 comment in
-//      forks/cosmos-evm-v0.6.0/x/erc20/keeper/ibc_callbacks.go. Until that is
-//      added, foreign IBC denoms are bank-only (Cosmos txs), not visible to
-//      EVM contracts.
+//      is desired) is performed via governance proposal, mapping the IBC denom
+//      to an ERC-20 contract address.
 //   4. The custom-token block list above (x/stoc keeper lookup) remains
 //      authoritative for chain-native custom tokens. Foreign assets must NOT
 //      be registered through x/stoc MsgCreateToken — they are already provided
 //      as IBC-wrapped denoms by their origin chain.
-//
-// Foreign IBC denoms are not in the x/stoc registry, so the recipient-side
-// tax (tax_post.go) never applies to them.
 //
 // Summary of denom flows:
 //   Native STOC denom out ........ allowed (used as fee / cross-chain settlement)
@@ -81,21 +78,24 @@ func (d IBCCustomTokenRestriction) AnteHandle(ctx sdk.Context, tx sdk.Tx, simula
 }
 
 // checkMsgs recursively checks messages, unwrapping any of the following
-// wrappers so an inner ibctransfertypes.MsgTransfer of a custom denom is
-// caught at submit time:
+// wrappers so an inner ibctransfertypes.MsgTransfer of a custom denom or an
+// IBC v2 message is caught at submit time:
 //
 //   - cosmos.authz.v1beta1.MsgExec        (signer-delegated execution)
-//   - cosmos.group.v1.MsgSubmitProposal   (group policy proposals)
-//   - cosmos.gov.v1.MsgSubmitProposal     (gov v1 proposals)
+//   - cosmos.group.v1.MsgSubmitProposal   (group policy proposals, fix17)
+//   - cosmos.gov.v1.MsgSubmitProposal     (gov v1 proposals, fix17)
 //
 // Depth is capped at stoctypes.MaxAuthzUnwrapDepth to bound CheckTx CPU
 // (DoS prevention) — mirrors TaxPostDecorator and CustomTokenChainOpsRestriction.
 //
 // Forward-defense note: grouptypes.MsgExec is NOT walked here — see the
-// matching no-op case below (and the longer comment on the
-// *grouptypes.MsgExec case in custom_token_restriction.go) for the rationale.
+// matching no-op case below (and the longer comment in
+// custom_token_restriction.go fix14 R2-LOW1) for the rationale.
 //
-// Unlike the bank-send walker in
+// SA-AUDIT-2026-06-10 fix18 A15-BOUNDARY-I1: godoc accuracy — fix17 added
+// group + gov v1 wrappers; prior godoc only mentioned authz.
+//
+// SA-AUDIT-2026-06-11 fix19 A16-BOUNDARY-I1: unlike the bank-send walker in
 // custom_token_restriction.go, this walker does NOT carry an
 // insideProposalWrapper flag — and does not need one. The check here is
 // DENOM-ONLY (is the MsgTransfer token a x/stoc-managed denom?), with an
@@ -112,8 +112,15 @@ func (d IBCCustomTokenRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Msg, de
 			if err := d.checkTransfer(ctx, m); err != nil {
 				return err
 			}
+		case *clientv2types.MsgRegisterCounterparty, *channelv2types.MsgSendPacket, *channelv2types.MsgRecvPacket,
+			*channelv2types.MsgAcknowledgement, *channelv2types.MsgTimeout:
+			// v5.0.3 audit round 2: IBC v2 is disabled (no v2 router). The
+			// app ante rejects these at the top level and inside authz; this
+			// walker also covers group and gov proposals, so a group policy
+			// that created a client cannot register a v2 counterparty.
+			return fmt.Errorf("IBC v2 message %s is disabled on STOChain", sdk.MsgTypeURL(msg))
 		case *authz.MsgExec:
-			// Include msg type
+			// SA-AUDIT-2026-06-10 fix18 A15-BOUNDARY-L2: include msg type
 			// prefix + cap value so log alerting can distinguish authz vs
 			// group vs gov sources.
 			if depth >= stoctypes.MaxAuthzUnwrapDepth {
@@ -127,7 +134,7 @@ func (d IBCCustomTokenRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Msg, de
 				return err
 			}
 		case *grouptypes.MsgSubmitProposal:
-			// x/group policy accounts
+			// SA-AUDIT-2026-06-10 fix17 A15-BOUNDARY-H2: x/group policy accounts
 			// can hold custom-token balances and dispatch inner messages on
 			// execution. Recurse into the proposal's Messages so an inner
 			// ibctransfertypes.MsgTransfer of a custom denom is blocked at
@@ -144,7 +151,7 @@ func (d IBCCustomTokenRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Msg, de
 				return err
 			}
 		case *govv1types.MsgSubmitProposal:
-			// Gov v1 proposals can
+			// SA-AUDIT-2026-06-10 fix17 A15-BOUNDARY-H2: gov v1 proposals can
 			// carry arbitrary inner messages too. Recurse same as group above.
 			if depth >= stoctypes.MaxAuthzUnwrapDepth {
 				return fmt.Errorf("gov.v1.MsgSubmitProposal nesting depth exceeded (%d/%d) in IBC restriction check", depth, stoctypes.MaxAuthzUnwrapDepth)
@@ -157,20 +164,22 @@ func (d IBCCustomTokenRestriction) checkMsgs(ctx sdk.Context, msgs []sdk.Msg, de
 				return err
 			}
 
-		// grouptypes.MsgExec triggers execution of a PREVIOUSLY-stored group
-		// proposal which may carry an inner ibctransfertypes.MsgTransfer. The
-		// recursion on grouptypes.MsgSubmitProposal closes the SUBMIT-time leg,
-		// so any proposal entering chain state while this decorator is active
-		// cannot carry a custom-token MsgTransfer. The remaining risk window is
-		// stale proposals submitted before the submit-time check existed. Marker
-		// case kept in sync with the custom_token_restriction.go forward-defense
-		// annotation (see the *grouptypes.MsgExec case there for the longer
-		// rationale); an upgrade handler can add a one-time sweep if stale
-		// x/group proposals may exist.
+		// SA-AUDIT-2026-06-10 fix18 A15-BOUNDARY-L1: grouptypes.MsgExec
+		// triggers execution of a PREVIOUSLY-stored group proposal which may
+		// carry an inner ibctransfertypes.MsgTransfer. The fix17 recursion on
+		// grouptypes.MsgSubmitProposal closes the SUBMIT-time leg, so any
+		// proposal entering chain state from fix17 deploy forward cannot carry
+		// a custom-token MsgTransfer. The remaining risk window is stale
+		// pre-fix17 proposals — empirically empty on STOChain (devnet wiped
+		// every redeploy, mainnet has no x/group state). Marker case kept in
+		// sync with custom_token_restriction.go forward-defense annotation
+		// (see fix14 R2-LOW1 for the longer rationale); mainnet v5.0.0 upgrade
+		// handler should add a one-time sweep if x/group usage starts before
+		// then.
 		case *grouptypes.MsgExec:
 			_ = m
 
-		// Forward-defense marker.
+		// SA-AUDIT-2026-06-11 fix19 A16-BOUNDARY-L2: forward-defense marker.
 		// gov v1beta1 proposals carry a Content interface (not raw sdk.Msg
 		// slices), and no registered v1beta1 Content type today can embed an
 		// ibctransfertypes.MsgTransfer — so there is nothing to recurse into.

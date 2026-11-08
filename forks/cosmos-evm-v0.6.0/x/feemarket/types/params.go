@@ -57,9 +57,9 @@ func DefaultParams() Params {
 	}
 }
 
-// MaxFeemarketGasPrice caps BaseFee/MinGasPrice so a governance
-// misconfiguration cannot brick the chain. 10^18 raw Dec = effective max
-// ~10^6 gwei after wrapper — far above any realistic gas price, but bounded.
+// SA-H23 audit-2026-05-29: cap BaseFee/MinGasPrice to prevent gov-prop misconfig
+// from bricking the chain. 10^18 raw Dec = effective max ~10^6 gwei after wrapper —
+// far above any realistic gas price, but bounded.
 var MaxFeemarketGasPrice = math.LegacyNewDec(1_000_000_000_000_000_000)
 
 // Validate performs basic validation on fee market parameters.
@@ -68,7 +68,7 @@ func (p Params) Validate() error {
 		return fmt.Errorf("base fee change denominator cannot be 0")
 	}
 
-	// Guard nil BEFORE any Dec method call. Validate is
+	// FEE1 audit-2026-07-28: guard nil BEFORE any Dec method call. Validate is
 	// now reached on the gov MsgUpdateParams path (feemarket msg_server calls it),
 	// and a proposal that omits base_fee unmarshals to a nil LegacyDec — the
 	// IsNegative() below would nil-panic. Return an error instead (fail-closed:
@@ -81,7 +81,7 @@ func (p Params) Validate() error {
 		return fmt.Errorf("initial base fee cannot be negative: %s", p.BaseFee)
 	}
 
-	// Cap BaseFee to prevent a governance misconfiguration EVM halt.
+	// SA-H23 audit-2026-05-29: cap BaseFee to prevent gov-misconfig EVM halt.
 	if p.BaseFee.GT(MaxFeemarketGasPrice) {
 		return fmt.Errorf("base fee exceeds max allowed (%s > %s)", p.BaseFee, MaxFeemarketGasPrice)
 	}
@@ -102,14 +102,14 @@ func (p Params) Validate() error {
 		return err
 	}
 
-	// Enforce the BaseFee >= MinGasPrice invariant.
+	// SA-H23 audit-2026-05-29: enforce BaseFee >= MinGasPrice invariant.
 	// If BaseFee floats below MinGasPrice, the dynamic-fee floor pinches the
 	// effective price to MinGasPrice and feemarket signaling drifts.
 	if !p.NoBaseFee && p.BaseFee.LT(p.MinGasPrice) {
 		return fmt.Errorf("base fee (%s) must be >= min gas price (%s)", p.BaseFee, p.MinGasPrice)
 	}
 
-	// When base fee is enabled (NoBaseFee=false), a zero
+	// FEE1 audit-2026-07-27: when base fee is enabled (NoBaseFee=false), a zero
 	// BaseFee removes the sole Cosmos-tx consensus fee floor — DynamicFeeChecker
 	// compares feeCap >= BaseFee, so BaseFee=0 admits zero-fee txs (free spam).
 	// Reject an explicit zero. This is conditional and cannot break existing
@@ -141,8 +141,8 @@ func validateMinGasPrice(gasPrice math.LegacyDec) error {
 		return fmt.Errorf("value cannot be negative: %s", gasPrice)
 	}
 
-	// Cap MinGasPrice to prevent a governance misconfiguration from
-	// rejecting all Cosmos txs (chain halt).
+	// SA-H23 audit-2026-05-29: cap MinGasPrice to prevent gov-misconfig
+	// from rejecting all Cosmos txs (chain halt).
 	if gasPrice.GT(MaxFeemarketGasPrice) {
 		return fmt.Errorf("min gas price exceeds max allowed (%s > %s)", gasPrice, MaxFeemarketGasPrice)
 	}

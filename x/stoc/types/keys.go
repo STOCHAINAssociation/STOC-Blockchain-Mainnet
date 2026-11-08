@@ -12,6 +12,12 @@ const (
 	// TokenCounterKey is the key for storing the token ID counter
 	TokenCounterKey = "TokenCounter-"
 
+	// IBCEscrowKey prefixes the index of ICS-20 transfer escrow addresses:
+	// IBCEscrowKey | len(address) | address -> channel id. Written when a
+	// transfer channel is created; read by the custom-token bank
+	// SendRestriction (v5.0.3).
+	IBCEscrowKey = "IBCEscrow-"
+
 	// Query pagination limits
 	MaxQueryLimit     = 100
 	DefaultQueryLimit = 20

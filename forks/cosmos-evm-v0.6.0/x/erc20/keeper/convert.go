@@ -30,9 +30,9 @@ import (
 //   - checks if token balance decreased by amount
 //   - checks for unexpected `Approval` event in logs
 func (k Keeper) ConvertERC20IntoCoinsForNativeToken(ctx sdk.Context, stateDB *statedb.StateDB, contract common.Address, amount math.Int, receiver sdk.AccAddress, sender common.Address, commit bool, callFromPrecompile bool) (*types.MsgConvertERC20Response, error) {
-	// Reject non-positive amount, symmetric with ConvertCoinNativeERC20.
-	// Without this gate a zero/negative amount could reach EVM contract
-	// transferFrom/burn paths with undefined behaviour.
+	// SA-AUDIT-2026-06-05 M4: reject non-positive amount symmetric with
+	// ConvertCoinNativeERC20. Without this gate a zero/negative amount could
+	// reach EVM contract transferFrom/burn paths with undefined behaviour.
 	if !amount.IsPositive() {
 		return nil, errors.Wrapf(types.ErrNegativeToken, "converted erc20 amount must be positive, got %s", amount.String())
 	}
@@ -52,13 +52,14 @@ func (k Keeper) ConvertERC20IntoCoinsForNativeToken(ctx sdk.Context, stateDB *st
 	}
 
 	// Remove token pair if contract is suicided
-	// Returning (nil, nil) would be indistinguishable from a successful
-	// conversion at the gRPC layer and let ICS20 callers proceed blindly.
-	// Emit an explicit event AND return a sentinel error (wrapped on
-	// ErrUndefinedOwner) so callers can branch on it. The state deletion
-	// still persists because it runs BEFORE the error returns at the keeper
-	// boundary — Cosmos SDK commits the cacheCtx writes on the successful msg
-	// server path.
+	// SA-AUDIT-2026-06-05-fix11 MED: returning (nil, nil) was indistinguishable
+	// from a successful conversion at the gRPC layer and let ICS20 callers
+	// proceed blindly. Emit an explicit event AND return a sentinel error
+	// (wrapped on ErrUndefinedOwner) so callers can branch on it. The state
+	// deletion still persists because we run BEFORE the error returns at the
+	// keeper boundary — Cosmos SDK commits the cacheCtx writes on the
+	// successful msg server path. For convert.go this is fine: callers who
+	// previously treated (nil,nil) as success now correctly surface failure.
 	acc := k.evmKeeper.GetAccountWithoutBalance(ctx, pair.GetERC20Contract())
 	if acc == nil || !acc.HasCodeHash() {
 		k.DeleteTokenPair(ctx, pair)

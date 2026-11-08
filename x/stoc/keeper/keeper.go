@@ -23,6 +23,18 @@ type (
 		authority     string
 		accountKeeper types.AccountKeeper
 		bankKeeper    types.BankKeeper
+
+		// hooks is shared by every copy of the keeper (depinject hands value
+		// copies to the module, the msg server and the app), so a check
+		// installed by the app after construction is seen by all of them.
+		hooks *keeperHooks
+	}
+
+	keeperHooks struct {
+		// taxRecipientCheck is an app-provided check run by MsgCreateToken on
+		// the tax recipient after the keeper's own checks (module address,
+		// group policy, EVM contract — state owned by other modules).
+		taxRecipientCheck func(ctx sdk.Context, addr sdk.AccAddress) error
 	}
 )
 
@@ -34,10 +46,11 @@ func NewKeeper(
 	bankKeeper types.BankKeeper,
 	accountKeeper types.AccountKeeper,
 ) Keeper {
-	// Fail loudly at boot when expected keepers are nil rather than panicking
-	// deep inside a message handler later. A nil-tolerant constructor would
-	// survive depinject misconfig and surface as a hard-to-diagnose nil deref
-	// the first time a token was created or burned.
+	// SA-L8 audit-2026-05-29: fail loudly at boot when expected keepers are
+	// nil rather than panicking deep inside a message handler later. The
+	// previous nil-tolerant constructor would survive depinject misconfig and
+	// surface as a hard-to-diagnose nil deref the first time a token was
+	// created or burned.
 	if bankKeeper == nil {
 		panic("x/stoc: BankKeeper must not be nil")
 	}
@@ -58,7 +71,15 @@ func NewKeeper(
 		authority:     authority,
 		bankKeeper:    bankKeeper,
 		accountKeeper: accountKeeper,
+		hooks:         &keeperHooks{},
 	}
+}
+
+// SetTaxRecipientCheck installs the app-level tax recipient check used by
+// MsgCreateToken. Call once during app construction, before the app serves
+// any request.
+func (k Keeper) SetTaxRecipientCheck(fn func(ctx sdk.Context, addr sdk.AccAddress) error) {
+	k.hooks.taxRecipientCheck = fn
 }
 
 // GetBankKeeper returns the bank keeper for controlled access

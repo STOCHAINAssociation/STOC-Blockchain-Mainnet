@@ -15,7 +15,7 @@ import (
 	"stoc/x/stoc/types"
 )
 
-// Regression coverage: tax bypass via x/group MsgExec
+// SA-AUDIT-2026-06-06 CRIT-1 regression coverage: tax bypass via x/group MsgExec
 // wrapping bank.MsgSend on a custom token. The CustomTokenChainOpsRestriction
 // must reject any bank.MsgSend / bank.MsgMultiSend wrapped in a
 // grouptypes.MsgSubmitProposal at submit time so the proposal is never
@@ -46,9 +46,9 @@ func registerCustomToken(t testing.TB, k interface {
 }
 
 func TestChainOpsRestriction_OuterBankSend_CustomToken_Allowed(t *testing.T) {
-	// bank.MsgSend at OUTER depth flows through the tax PostDecorator and is
-	// allowed by the ante restriction. Verify the restriction does not
-	// over-block legitimate wallet-to-wallet custom-token transfers.
+	// SA-AUDIT-2026-06-06 CRIT-1: bank.MsgSend at OUTER depth flows through the
+	// tax PostDecorator and is allowed by the ante restriction. Verify the
+	// fix did not over-block legitimate wallet-to-wallet custom-token transfers.
 	setDefaultBondDenom(t)
 	k, ctx, _, _ := setupTaxTest(t)
 
@@ -96,7 +96,7 @@ func TestChainOpsRestriction_OuterBankMultiSend_CustomToken_Allowed(t *testing.T
 }
 
 func TestChainOpsRestriction_GroupProposal_InnerBankSendCustomToken_Blocked(t *testing.T) {
-	// Main regression: attacker tries to drain a
+	// SA-AUDIT-2026-06-06 CRIT-1 main regression: attacker tries to drain a
 	// custom token via group proposal whose inner message is a bank.MsgSend.
 	// Must be rejected at submit time so the proposal is never accepted into
 	// chain state.
@@ -274,10 +274,11 @@ func TestChainOpsRestriction_AuthzWrappingGroupProposalCustomToken_Blocked(t *te
 	require.Contains(t, err.Error(), denom)
 }
 
-// grouptypes.MsgExec at outer depth is currently a no-op in the chain-ops
-// restriction (forward-defense marker for stale proposals submitted before
-// the submit-time check — see comment in custom_token_restriction.go
-// *grouptypes.MsgExec case). The submit-time recursion stops new proposals from entering state, so MsgExec on
+// SA-AUDIT-2026-06-07 LOW-1 regression coverage (R2-LOW1): grouptypes.MsgExec
+// at outer depth is currently a no-op in the chain-ops restriction (forward-
+// defense marker for stale pre-CRIT-1 proposals — see comment in
+// custom_token_restriction.go *grouptypes.MsgExec case). The CRIT-1 submit-time
+// recursion stops new proposals from entering state, so MsgExec on
 // freshly-created proposals can only target proposals whose inner messages
 // have already been validated. Pin the no-op behavior so the case stays
 // compile-clean and does not regress to a blanket reject (which would break

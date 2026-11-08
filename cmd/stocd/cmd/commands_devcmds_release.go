@@ -1,9 +1,10 @@
 //go:build stocrelease
 // +build stocrelease
 
-// Release-build stub. Dev commands (in-place-testnet, multi-node) are not
-// registered in release binaries, preventing accidental local state
-// destruction. Build with `-tags stocrelease` to use this stub.
+// SA-C9 + SA-C10 audit-2026-05-29: release-build stub. Dev commands
+// (in-place-testnet, multi-node) are NOT registered in production binaries
+// to prevent operator-fat-finger state destruction. Build with `-tags stocrelease`
+// to use this stub.
 
 package cmd
 

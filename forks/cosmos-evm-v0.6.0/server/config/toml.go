@@ -52,6 +52,11 @@ global-queue = {{ .EVM.Mempool.GlobalQueue }}
 # Lifetime is the maximum amount of time non-executable transaction are queued
 lifetime = "{{ .EVM.Mempool.Lifetime }}"
 
+# Journal keeps this node's pending and queued EVM txs across a graceful
+# restart: written to <home>/evm-mempool/journal.rlp on shutdown and
+# re-submitted through CheckTx after start. Off by default.
+journal = false
+
 ###############################################################################
 ###                           JSON RPC Configuration                        ###
 ###############################################################################

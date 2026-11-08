@@ -25,8 +25,9 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		txFeeChecker = evmante.NewDynamicFeeChecker(&feemarketParams)
 	}
 
-	// The disabled msg type list is shared between the pre-sig
-	// AuthzPreSigScreenDecorator and the post-fee
+	// SA-AUDIT-2026-06-07 M1 + LOW-4 (round 2 R2-M1, R2-LOW4), refined by
+	// SA-AUDIT-2026-06-08 fix15-2: the disabled msg type list is shared
+	// between the pre-sig AuthzPreSigScreenDecorator and the post-fee
 	// recursive cosmosante.NewAuthzLimiterDecorator. The pre-sig screen
 	// catches the common shallow attacks (authz.MsgExec up to depth
 	// AuthzPreSigScreenMaxDepth, and authz.MsgGrant at depth 0) without
@@ -46,31 +47,37 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewValidateBasicDecorator(),
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
-		// Depth-0 pre-sig screen for the COMMON shallow attack (single
-		// authz.MsgExec wrapping a
+		// SA-AUDIT-2026-06-07 M1 + LOW-4 (round 2 re-audit): depth-0 pre-sig
+		// screen for the COMMON shallow attack (single authz.MsgExec wrapping a
 		// disabled type). Runs BEFORE the signature verification block so a
 		// disabled-type tx never consumes ecrecover. Constant cost per top-
 		// level msg, no Any-unpack, no recursion.
 		//
-		// Why both layers exist: the recursive
+		// Why both layers exist: round 2 audit confirmed that the recursive
 		// AuthzLimiter at its post-fee position (below) does NOT economically
 		// deter spammers — Cosmos SDK baseapp wraps the entire ante chain in
 		// cacheTxContext (baseapp.go:925) and discards the cache on any error,
 		// so DeductFeeDecorator's bank.SendCoins for the fee is reverted along
 		// with everything else when AuthzLimiter returns ErrUnauthorized. The
-		// fee is never actually charged. The pre-sig screen provides
-		// ecrecover-avoidance for shallow attacks; the post-fee
+		// fee is never actually charged. The pre-sig screen is what restores
+		// the pre-fix13 ecrecover-avoidance for shallow attacks; the post-fee
 		// recursive AuthzLimiter remains as defence-in-depth for deep nesting.
 		NewTopLevelAuthzMsgExecScreenDecorator(authzDisabledMsgTypes...),
-		// The message-walking decorators (IBCCustomTokenRestriction,
-		// CustomTokenChainOpsRestriction, RedundantRelayDecorator,
-		// AuthzLimiterDecorator) run AFTER DeductFee. Note that this does
-		// NOT make a failing tx pay for the traversal: baseapp aborts ante
-		// via msCache discard on any error, so the fee debit
-		// DeductFeeDecorator writes into the branched store is reverted when
-		// a downstream decorator returns error — the spammer pays zero
-		// whether the message walkers run pre- or post-fee. The genuine
-		// benefit of the post-fee placement
+		// v5.0.3: reject top-level IBC v2 messages before signature
+		// verification (no v2 router is registered; see ibc_v2_disabled.go).
+		NewIBCV2DisabledDecorator(),
+		// SA-2026-06-02 MED-7 (senior-skeptic audit), updated by
+		// SA-AUDIT-2026-06-07 M1 (round 2 re-audit R2-M1): the original MED-7
+		// godoc claimed that moving the message-walking decorators
+		// (IBCCustomTokenRestriction, CustomTokenChainOpsRestriction,
+		// RedundantRelayDecorator, AuthzLimiterDecorator) AFTER DeductFee
+		// "means any tx that survives ValidateBasic + signature checks pays
+		// for the deep traversal that follows." Round 2 audit established
+		// that claim is INACCURATE: baseapp aborts ante via msCache discard
+		// on any error, so the fee debit DeductFeeDecorator writes into the
+		// branched store is reverted when a downstream decorator returns
+		// error — the spammer pays zero whether the message walkers run pre-
+		// or post-fee. The remaining genuine benefit of the post-fee placement
 		// is that it forces a valid signature + sufficient balance + correct
 		// sequence number BEFORE the walker runs, raising the cost of
 		// nested-Any amplification attacks from "any unsigned attacker" to
@@ -78,7 +85,7 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		// (sequence is reverted along with the fee on ante failure, so the
 		// same nonce can be reused indefinitely)". The depth-0 pre-sig screen
 		// above closes the shallow-attack ecrecover-avoidance gap left by
-		// this ordering.
+		// this reorder.
 		NewCosmosMinGasPriceDecorator(&feemarketParams),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
 		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeChecker),
@@ -88,26 +95,30 @@ func newCosmosAnteHandler(ctx sdk.Context, options StocAnteOptions) sdk.AnteHand
 		ante.NewSigGasConsumeDecorator(options.AccountKeeper, options.SigGasConsumer),
 		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler),
 		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
-		// NewAuthzLimiterDecorator runs post-fee (the fee gate alone does not
-		// deter nested-Any CPU amplification, see above). The pre-sig
-		// shallow screen above catches the common single-MsgExec attack;
+		// SA-AUDIT-2026-06-06 MED-3 (deep re-audit M3, audit batch B), updated
+		// by SA-AUDIT-2026-06-07 M1 (round 2 R2-M1): NewAuthzLimiterDecorator
+		// was previously placed at position 2, BEFORE fee deduction. Fix13
+		// moved it post-fee under the (inaccurate, see above) belief that the
+		// fee gate would deter nested-Any CPU amplification. The pre-sig
+		// shallow screen above now catches the common single-MsgExec attack;
 		// this recursive walker stays here as defence-in-depth for deep
 		// nesting (depth up to maxNestedMsgs=7 in cosmos-evm v0.6.0
 		// ante/cosmos/authz.go:14). Disabled msg type list is shared with the
 		// pre-sig screen via authzDisabledMsgTypes above so both layers agree
 		// on what to reject.
 		cosmosante.NewAuthzLimiterDecorator(authzDisabledMsgTypes...),
-		// Message-walking restriction layer (post-fee). These decorators
-		// recurse into authz/group/gov msg trees, so requiring a valid
-		// signature, balance and sequence before them raises the cost of
-		// CPU-DoS amplification.
+		// Message-walking restriction layer (now post-fee per MED-7). These
+		// decorators recurse into authz/group/gov msg trees, so charging
+		// gas + fee before them prevents free CPU-DoS amplification.
 		stocante.NewIBCCustomTokenRestriction(options.StocKeeper),      // block custom token IBC transfers
 		stocante.NewCustomTokenChainOpsRestriction(options.StocKeeper), // block custom token in gov/pool/vesting/group/erc20 (tax evasion + chain entanglement)
-		// IBC redundant-relay check stays in the post-fee block. It still
-		// saves CPU on duplicate relays at CheckTx relative to the full msg
-		// execution, while running BEFORE fee deduction would allow
-		// unauthenticated CPU amplification. This matches the placement
-		// commonly used by other Cosmos SDK chains.
+		// SA-L6 audit-2026-05-29 (re-confirmed 2026-06-02): IBC redundant-relay
+		// check stays in the post-fee block. The original SA-L6 rationale
+		// (save CPU on duplicate relays at CheckTx) is preserved relative to
+		// SignatureVerification but the senior-skeptic MED-7 finding
+		// established that running BEFORE fee deduct enabled free CPU
+		// amplification. Relayers now pay for the inspection slot, which is
+		// matched by Osmosis / Evmos placement.
 		ibcante.NewRedundantRelayDecorator(options.IBCKeeper),
 		evmante.NewGasWantedDecorator(options.EvmKeeper, options.FeeMarketKeeper, &feemarketParams),
 	)

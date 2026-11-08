@@ -28,15 +28,15 @@ import (
 //	ConversionFactor = 10^12 (for 6-decimal coins)
 //	Cosmos price = 10^9 / 10^12 = 0.001 ustoc/gas ✓
 //
-// Design notes:
+// SA-M2 / SA-L7 audit-2026-05-29 (FALSE POSITIVE — by design):
 //   - `evmDenom` is not literally hardcoded; it is read from the EvmCoinInfo
 //     singleton (initialized once at chain start via `WithDefaultEvmCoinInfo`,
 //     re-initialized in upgrade handler via `InitEvmCoinInfo` from bank
 //     metadata). For STOChain this denom is `ustoc` (the Cosmos base denom),
 //     not the 18-decimal EVM extended denom (`astoc`).
-//   - Rejection of non-EVM-denom fees matches upstream cosmos/evm
-//     behavior. IBC-relayer-paying-in-IBC-denom scenarios are not
-//     supported at this layer; if a future
+//   - Rejection of non-EVM-denom fees (line 87) matches upstream
+//     cosmos/evm behavior. IBC-relayer-paying-in-IBC-denom scenarios are
+//     not supported on STOChain at this layer (LOW #7); if a future
 //     governance proposal needs to enable multi-denom fee acceptance,
 //     a `feemarket` extension is the correct surface, not this decorator.
 //   - A future governance upgrade that changes the base denom must

@@ -99,7 +99,7 @@ func (m *mockBankKeeper) GetSupply(_ context.Context, denom string) sdk.Coin {
 func (m *mockBankKeeper) SetDenomMetaData(_ context.Context, _ banktypes.Metadata) {}
 func (m *mockBankKeeper) BlockedAddr(_ sdk.AccAddress) bool                         { return false }
 
-// mockAccountKeeper satisfies the nil-keeper guard in keeper.NewKeeper.
+// mockAccountKeeper satisfies SA-L8 nil-keeper guard in keeper.NewKeeper.
 type mockAccountKeeper struct{}
 
 func (m *mockAccountKeeper) GetAccount(_ context.Context, _ sdk.AccAddress) sdk.AccountI {
@@ -281,7 +281,7 @@ func TestTaxPostDecorator_ZeroTaxPercent(t *testing.T) {
 	require.Equal(t, math.NewInt(100), recipientBal)
 }
 
-func TestTaxPostDecorator_SkipOnSimulate(t *testing.T) {
+func TestTaxPostDecorator_AppliedOnSimulate(t *testing.T) {
 	setDefaultBondDenom(t)
 	k, ctx, mockBank, cdc := setupTaxTest(t)
 
@@ -321,13 +321,59 @@ func TestTaxPostDecorator_SkipOnSimulate(t *testing.T) {
 	decorator := ante.NewTaxPostDecorator(k, cdc)
 	tx := mockTx{msgs: []sdk.Msg{msg}}
 
-	// simulate=true → no tax
-	_, err := decorator.PostHandle(ctx, tx, true, true, noopPostHandler)
+	// v5.0.3: simulate executes the messages, so it applies the tax too —
+	// gas estimation includes the tax leg (the simulate context derives from
+	// the CheckTx state, hence IsCheckTx=true here).
+	_, err := decorator.PostHandle(ctx.WithIsCheckTx(true).WithExecMode(sdk.ExecModeSimulate), tx, true, true, noopPostHandler)
 	require.NoError(t, err)
 
-	// Recipient balance unchanged
-	recipientBal := mockBank.balances[recipient.String()].AmountOf(denom)
-	require.Equal(t, math.NewInt(100), recipientBal)
+	require.Equal(t, math.NewInt(90), mockBank.balances[recipient.String()].AmountOf(denom))
+	require.Equal(t, math.NewInt(10), mockBank.balances[taxCollector.String()].AmountOf(denom))
+}
+
+// v5.0.3: baseapp calls the post handler in CheckTx, ReCheckTx,
+// PrepareProposal and ProcessProposal with success=true WITHOUT executing the
+// messages. The recipient has not received the transfer there, so the tax
+// must be skipped — otherwise the fail-closed tax leg would reject every
+// taxed transfer to a recipient that does not already hold the tax amount.
+func TestTaxPostDecorator_SkipWhenMessagesNotExecuted(t *testing.T) {
+	setDefaultBondDenom(t)
+	k, ctx, mockBank, cdc := setupTaxTest(t)
+
+	sender := sdk.AccAddress([]byte("sender______________"))
+	recipient := sdk.AccAddress([]byte("fresh_recipient_____"))
+	taxCollector := sdk.AccAddress([]byte("tax_collector_______"))
+	denom := "MODE_0"
+	require.NoError(t, k.SetToken(ctx, types.Token{
+		Id: denom, Name: "Mode", Symbol: "MODE", Decimals: 6, Logo: "https://example.com/logo.png",
+		InitialSupply: math.NewInt(10000), TotalSupply: math.NewInt(10000), RemainingSupply: math.ZeroInt(),
+		MinimalDenom: denom, Creator: sender.String(),
+		Tax: types.TokenTax{Percent: math.LegacyNewDecWithPrec(1, 1), RecipientAddress: taxCollector.String()},
+	}))
+	// Fresh recipient: holds nothing because the MsgSend was not executed.
+	msg := &banktypes.MsgSend{
+		FromAddress: sender.String(),
+		ToAddress:   recipient.String(),
+		Amount:      sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(100))),
+	}
+	decorator := ante.NewTaxPostDecorator(k, cdc)
+	tx := mockTx{msgs: []sdk.Msg{msg}}
+
+	for name, c := range map[string]sdk.Context{
+		"check":            ctx.WithIsCheckTx(true),
+		"recheck":          ctx.WithIsReCheckTx(true),
+		"prepare_proposal": ctx.WithExecMode(sdk.ExecModePrepareProposal),
+		"process_proposal": ctx.WithExecMode(sdk.ExecModeProcessProposal),
+	} {
+		_, err := decorator.PostHandle(c, tx, false, true, noopPostHandler)
+		require.NoError(t, err, name)
+		require.True(t, mockBank.balances[taxCollector.String()].IsZero(), name)
+	}
+
+	// FinalizeBlock (messages executed): the tax is enforced. Here the
+	// recipient still holds nothing, so the tax leg fails closed.
+	_, err := decorator.PostHandle(ctx.WithExecMode(sdk.ExecModeFinalize), tx, false, true, noopPostHandler)
+	require.ErrorContains(t, err, "tax enforcement failed")
 }
 
 func TestTaxPostDecorator_SkipOnFailure(t *testing.T) {
@@ -529,18 +575,19 @@ func TestTaxPostDecorator_TaxFailRevertsTx(t *testing.T) {
 	decorator := ante.NewTaxPostDecorator(k, cdc)
 	tx := mockTx{msgs: []sdk.Msg{msg}}
 
-	// When the BankKeeper's SendCoins returns an error (drain-then-evade OR
-	// a stale balance read for a fresh recipient), the tax decorator
-	// SILENTLY SKIPS the tax for that message and lets the original
-	// transfer stand. See the tax_post.go comment block at the SendCoins
-	// call site for the full rationale. The contract for this PostHandle
-	// is: never revert on tax SendCoins failure.
+	// v5.0.3 audit round 1: the tax leg is fail-closed. When the tax
+	// SendCoins fails (drain-then-evade, or a tax recipient that cannot
+	// receive custom tokens) the whole tx is rejected — it never completes
+	// untaxed. Replaces the SA-C5 v3b silent skip.
 	_, err := decorator.PostHandle(ctx, tx, false, true, noopPostHandler)
-	require.NoError(t, err, "SA-C5 v3b: tax SendCoins failure must NOT revert the tx until v4 redesign lands")
+	require.Error(t, err, "v5.0.3: tax SendCoins failure must revert the tx")
+	require.Contains(t, err.Error(), "tax enforcement failed")
+	require.Contains(t, err.Error(), "insufficient funds")
 }
 
 // TestTaxPostDecorator_FeegrantPayerDoesNotShiftTax pins the feegrant
-// interaction semantics: when a third party pays the tx FEES via a
+// interaction semantics (SA-AUDIT-2026-06-11 fix19 A16-CROSS-L4, resolves
+// deferred A14-CROSS-M5): when a third party pays the tx FEES via a
 // feegrant allowance, the custom-token TAX must still be deducted from the
 // MsgSend RECIPIENT — never from the fee granter. The tax PostDecorator
 // reads only MsgSend.From/To and is blind to the FeeTx fee payer by

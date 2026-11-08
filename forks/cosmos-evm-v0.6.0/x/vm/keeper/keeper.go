@@ -365,17 +365,17 @@ func (k *Keeper) GetBalance(ctx sdk.Context, addr common.Address) *uint256.Int {
 }
 
 // GetBaseFee returns current base fee, return values:
-// - `nil`: london hardfork not enabled, OR feemarket disabled.
+// - `nil`: london hardfork not enabled, OR feemarket disabled (STOChain MM-UX fix 2026-05-17).
 // - `n`:   both london hardfork and feemarket enabled with positive base fee.
 //
-// When feemarket is disabled (params.NoBaseFee=true or BaseFee=0), return nil
-// instead of 0. Together with rpc/types/utils.go and x/vm/types/utils.go this
-// hides baseFeePerGas from the JSON-RPC block header so wallets fall back to
-// legacy Type-0 gas semantics (a header advertising EIP-1559 with baseFee=0
-// leads wallets to build Type-2 txs with maxFeePerGas=0, which ante rejects
-// as InsufficientFee against the validator min-gas-price).
+// STOChain v8.2 feemarket fix (2026-05-17): when feemarket is disabled (params.NoBaseFee=true
+// or BaseFee=0), return nil instead of 0. Combined with rpc/types/utils.go and x/vm/types/utils.go
+// changes, this hides baseFeePerGas from the JSON-RPC block header so MetaMask falls back to
+// legacy Type-0 gas semantics and signs in 1 popup instead of 2 (was: fee-market header advertised
+// EIP-1559 with baseFee=0 → MM built Type-2 tx with maxFeePerGas=0 → ante rejected as
+// InsufficientFee against validator min-gas-price → MM auto-retried → second popup).
 //
-// Re-enabling feemarket via governance with positive params re-exposes baseFee.
+// Re-enabling feemarket via gov prop with positive params naturally re-exposes baseFee.
 func (k Keeper) GetBaseFee(ctx sdk.Context) *big.Int {
 	ethCfg := types.GetEthChainConfig()
 	if !types.IsLondon(ethCfg, ctx.BlockHeight()) {

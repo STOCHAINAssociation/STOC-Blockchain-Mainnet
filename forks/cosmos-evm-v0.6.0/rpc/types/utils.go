@@ -138,21 +138,23 @@ func MakeHeader(
 		Time:       uint64(cmtHeader.Time.UTC().Unix()), //nolint:gosec // G115 // timestamp won't exceed uint64
 	}
 
-	// Gate BaseFee population on non-nil AND positive. Unconditionally
-	// assigning a zero baseFee makes JSON-RPC block headers advertise
-	// `baseFeePerGas: "0x0"`; wallets then switch to EIP-1559 mode with
-	// maxFeePerGas=0 and get rejected by the validator mempool floor.
-	// Hiding the field when feemarket is disabled makes wallets use legacy
-	// Type-0 gas estimation.
+	// STOChain v8.2 feemarket fix (2026-05-17): gate BaseFee population on
+	// non-nil AND positive. The upstream code unconditionally assigned even a
+	// zero baseFee, causing JSON-RPC block headers to advertise
+	// `baseFeePerGas: "0x0"`. MetaMask then switched to EIP-1559 UX with
+	// maxFeePerGas=0 and got rejected by the validator mempool floor, opening
+	// a second popup. Hiding the field when feemarket is disabled forces MM
+	// to use legacy Type-0 gas estimation (single popup).
 	//
-	// Hiding BaseFee causes some wallets to emit legacy (Type-0) transactions.
-	// Wallets that attach the EIP-155 chain-id to legacy txs remain
-	// replay-safe. Cross-chain replay only becomes possible if a *pre*-EIP-155
-	// tx (no chain id in signature) is submitted, which is rejected at the
-	// JSON-RPC layer when AllowUnprotectedTxs is false — the shipped default
-	// (config.DefaultAllowUnprotectedTxs = false, see rpc/backend/call_tx.go
-	// SendRawTransaction) — and at the ante layer (see ante/evm/mono_decorator.go).
-	// Operators who enable allow-unprotected-txs=true accept the RPC-side risk.
+	// SA-M11 audit-2026-05-29 (FALSE POSITIVE — mitigated by config default):
+	// hiding BaseFee causes some wallets to emit legacy (Type-0) transactions.
+	// Modern wallets (MetaMask, WalletConnect) attach EIP-155 chain-id to
+	// legacy txs and remain replay-safe. Cross-chain replay only becomes
+	// possible if a *pre*-EIP-155 tx (no chain id in signature) is submitted,
+	// which is rejected at the JSON-RPC layer when AllowUnprotectedTxs is
+	// false — the shipped default (config.DefaultAllowUnprotectedTxs = false,
+	// see rpc/backend/call_tx.go SendRawTransaction). Operators who manually
+	// enable allow-unprotected-txs=true accept the cross-chain replay risk.
 	if evmtypes.GetEthChainConfig().IsLondon(header.Number) && baseFee != nil && baseFee.Sign() > 0 {
 		header.BaseFee = baseFee
 	}
@@ -298,15 +300,16 @@ func NewRPCPendingTransaction(tx *ethtypes.Transaction, current *ethtypes.Header
 		blockTime   = uint64(0)
 	)
 	if current != nil {
-		// Companion guard to the nil-BaseFee guard in
-		// mempool/txpool/legacypool. On a fresh-genesis EVM chain whose feemarket
-		// has not yet populated header.BaseFee (EthHeaderFromTendermint in this
-		// file returns nil when the feemarket baseFee is zero),
-		// eip1559.CalcBaseFee would dereference parent.BaseFee → nil pointer panic
-		// in the JSON-RPC goroutine, so a single txpool_content /
-		// txpool_contentFrom call could crash RPC for that endpoint. When BaseFee
-		// is nil, leave baseFee nil — NewRPCTransaction already handles nil
-		// baseFee by falling back to tx.GasFeeCap().
+		// SA-AUDIT-2026-06-10 fix16 A14-FORKS-H1: companion guard to the
+		// commit 176066b nil-BaseFee patch in mempool/txpool/legacypool.
+		// On a fresh-genesis EVM chain whose feemarket has not yet
+		// populated header.BaseFee (EthHeaderFromTendermint at this file
+		// line ~158 returns nil when feemarket baseFee is zero), eip1559.CalcBaseFee
+		// dereferences parent.BaseFee → SIGSEGV in the JSON-RPC goroutine.
+		// A single txpool_content / txpool_contentFrom call from any external
+		// client crashes RPC for that endpoint. Mirror the runReorg guard:
+		// when BaseFee is nil, leave baseFee nil — NewRPCTransaction already
+		// handles nil baseFee by falling back to tx.GasFeeCap().
 		if current.BaseFee != nil {
 			baseFee = eip1559.CalcBaseFee(config, current)
 		}

@@ -272,7 +272,7 @@ func TestMsgCreateToken_ValidateBasic(t *testing.T) {
 	}
 }
 
-// Distribution percent overflow check
+// L17 fix: distribution percent overflow check
 func TestMsgCreateToken_DistributionOverflow(t *testing.T) {
 	oldBondDenom := sdk.DefaultBondDenom
 	sdk.DefaultBondDenom = "ustoc"
@@ -596,7 +596,8 @@ func TestMsgBurnToken_ValidateBasic(t *testing.T) {
 	}
 }
 
-// Regression coverage: ValidateBasic must dedup
+// SA-AUDIT-2026-06-08 fix15-4 regression coverage (R3 fix14-regression-1 +
+// ante-chain-cumulative-1 + token-keeper-fresh-0): ValidateBasic must dedup
 // distribution addresses by canonical bech32 form so an uppercase /
 // lowercase pair that resolves to the same AccAddress is caught at the
 // validation gate rather than slipping to the handler.

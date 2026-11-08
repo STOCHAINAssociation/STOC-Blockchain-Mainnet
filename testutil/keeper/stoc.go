@@ -24,7 +24,7 @@ import (
 )
 
 // noopBankKeeper satisfies types.BankKeeper with no-op behavior — used by the
-// test harness so x/stoc keeper construction passes its nil-keeper checks
+// test harness so x/stoc keeper construction passes SA-L8 nil-keeper checks
 // without pulling production bank state into unit tests.
 type noopBankKeeper struct{}
 
