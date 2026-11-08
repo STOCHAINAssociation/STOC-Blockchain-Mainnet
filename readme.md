@@ -2,7 +2,7 @@
 
 STOChain is a high-performance blockchain with full EVM (Ethereum Virtual Machine) compatibility, built on Cosmos SDK v0.53.6 and CometBFT consensus.
 
-> **Current release: `v5.0.1`** — security patch backporting the upstream cosmos/evm v0.6.3 fix for GHSA-367m-g444-9mg3 ("non-atomic StateDB commit"). App-hash-identical to v5.0.0. Node operators: upgrade with a simple binary swap (no halt). See [HISTORY.md](./HISTORY.md).
+> **Current release: `v5.0.3`** — security release, governance upgrade `v5.0.3` (proposal #6) applied at block **7,946,000** on 2026-11-08. Backports the upstream cosmos/evm v0.6.4 security fixes. Release binary (linux/amd64) SHA256 `d81a0a023d6ce0deb7d2f4581738b5693b3934ee5b3424b988b75d6db873a2f5`; needs Go ≥ 1.26.10 to build. Binary history per network: [mainnet](./HISTORY-MAINNET.md), [testnet](./HISTORY-TESTNET.md).
 
 ## Features
 
@@ -45,7 +45,7 @@ ignite chain serve
 # Clone the public repository and check out the current release tag
 git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
 cd STOC-Blockchain-Mainnet
-git checkout v5.0.1
+git checkout v5.0.3
 
 # Build binary (Go only — no buf/protoc needed; proto is generated + committed)
 make install
@@ -56,7 +56,7 @@ stocd version
 
 ### Source by Phase
 
-`main` is the current release, `v5.0.1`. Each earlier binary that ran on mainnet has a tag and a branch, kept so the chain can be replayed from genesis. [HISTORY.md](./HISTORY.md) gives the exact block ranges and the replay order.
+`main` is the current release, `v5.0.3`. Each earlier binary that ran on mainnet has a tag and a branch, kept so the chain can be replayed from genesis. [HISTORY-MAINNET.md](./HISTORY-MAINNET.md) gives the exact block ranges and the replay order.
 
 | Branch | Tag | Mainnet blocks | Go |
 |---|---|---|---|
@@ -67,8 +67,9 @@ stocd version
 | [`phase/v2-evm-tail`](../../tree/phase/v2-evm-tail) | `v2-evm-tail` | 4,699,538 – 4,705,315 | 1.24.3 |
 | [`phase/v3`](../../tree/phase/v3) | `v3` | 4,705,316 – 4,794,076 | 1.24.3 |
 | [`phase/v3.1`](../../tree/phase/v3.1) | `v3.1` | 4,794,077 – 6,408,099 | 1.24.3 |
-| [`phase/v5.0.0`](../../tree/phase/v5.0.0) | `v5.0.0` | 6,408,100 – head | 1.25.8 |
-| `main` | `v5.0.1` | same as `v5.0.0` (app-hash-identical) | 1.25.8 |
+| [`phase/v5.0.0`](../../tree/phase/v5.0.0) | `v5.0.0` | 6,408,100 – 7,945,999 | 1.25.8 |
+| — | `v5.0.1` | same as `v5.0.0` (app-hash-identical) | 1.25.8 |
+| `main` | `v5.0.3` | 7,946,000 – head | 1.26.10 |
 
 ### Run a Node
 
@@ -76,7 +77,7 @@ stocd version
 2. Fetch the genesis file from the public RPC:
    `curl -s https://rpc-stoc-mainnet.stochainscan.io/genesis | jq '.result.genesis' > ~/.stoc/config/genesis.json`
 3. In `~/.stoc/config/app.toml` set `minimum-gas-prices = "0.001ustoc"` and, under `[evm]`, `evm-chain-id = 1306`.
-4. Either restore the latest snapshot, or replay from block 1 by following [HISTORY.md](./HISTORY.md).
+4. Either restore the latest snapshot, or replay from block 1 by following [HISTORY-MAINNET.md](./HISTORY-MAINNET.md).
 
 ## Technology Stack
 
@@ -120,7 +121,8 @@ stochain/
 
 | Document | Description |
 |----------|-------------|
-| [HISTORY.md](./HISTORY.md) | Binary history from genesis, replay instructions, verification |
+| [HISTORY-MAINNET.md](./HISTORY-MAINNET.md) | Mainnet binary history from genesis, replay instructions, verification |
+| [HISTORY-TESTNET.md](./HISTORY-TESTNET.md) | Testnet binary history (current reset cycle + past cycles), updated at every upgrade and reset |
 
 ## Build & Test Commands
 

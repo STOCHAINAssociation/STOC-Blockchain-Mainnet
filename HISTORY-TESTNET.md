@@ -1,7 +1,7 @@
 # Binary history — STOChain testnet (chain-id `tstoc_1999-1`, EVM chain id 1999)
 
 Which binary produced which range of blocks on the **current** testnet chain, plus a log of past reset cycles.
-Mainnet has its own file: [HISTORY.md](HISTORY.md).
+Mainnet has its own file: [HISTORY-MAINNET.md](HISTORY-MAINNET.md).
 
 Testnet is not permanent. Every two to three months it is **reset**: a fresh genesis built from the newest
 code, new validator keys, and the history below starts again from block 1 (the faucet account is kept).
@@ -37,7 +37,7 @@ have a different hash and still produce the same app hashes.
 - **v5.0.2** — EVM mempool and JSON-RPC fixes plus dependency security updates. No state-machine change, so it
   was swapped one node at a time with no proposal; mixed `v5.0.1` / `v5.0.2` nodes kept the same app hash.
   Pre-release test builds of it ran on testnet on 2026-10-29 and 2026-10-30 before the final build.
-- **v5.0.3** — the security release, same source as mainnet `v5.0.3` (see [HISTORY.md](HISTORY.md)).
+- **v5.0.3** — the security release, same source as mainnet `v5.0.3` (see [HISTORY-MAINNET.md](HISTORY-MAINNET.md)).
 - **v6.0.0-rc3** — release candidate of `v6.0.0`. The native coin moves from 6 to 18 decimals in place:
   base denom `utstoc` → `atstoc`, every amount ×10¹², 1 TSTOC is still 1 TSTOC. Fees after the upgrade are paid
   in `atstoc`; the node minimum gas price becomes `1000000000atstoc` (`0.001utstoc` before). The EVM side is
