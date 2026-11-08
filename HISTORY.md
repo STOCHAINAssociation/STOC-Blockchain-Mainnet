@@ -4,10 +4,10 @@
 
 Which source produced which range of blocks, from genesis to the current head.
 
-Mainnet has run **eight** binaries since it launched on 2025-04-24. Only **three** of those changes
+Mainnet has run **nine** binaries since it launched on 2025-04-24. Only **four** of those changes
 went through governance; the other five were swapped in without a proposal, so nothing on chain records
-them. Anyone replaying the chain from block 1 needs every one up to `v5.0.0`, in order, or their app hash
-diverges and the node stops.
+them. Anyone replaying the chain from block 1 needs every one up to `v5.0.0`, in order, then `v5.0.3` from
+block 7,946,000, or their app hash diverges and the node stops.
 
 Replaying up to `v5.0.0` takes **eight** steps for seven binaries, because no single source reproduces
 the `v2-evm` range on its own. See the `v2-evm` note below — two sources in sequence reproduce the same
@@ -35,12 +35,13 @@ comparing app hashes, not from any on-chain record.
 | `v3.1` | 4,794,077 | 6,408,099 | [`v3.1`](../../tree/phase/v3.1) | `go1.24.3` | — | replay-verified |
 | `v5.0.0` | 6,408,100 | head | [`v5.0.0`](../../tree/phase/v5.0.0) | `go1.25.8` | ✔ prop #5 | replay-verified |
 | `v5.0.1` | rolling swap from 2026-08-28 | 7,945,999 | [`v5.0.1`](../../tree/v5.0.1) | `go1.25.8` | — | app-hash-identical to `v5.0.0` |
-| `v5.0.3` | 7,946,000 | head | [`v5.0.3`](../../tree/v5.0.3) | `go1.26.10` | ✔ prop #6 | **scheduled** — upgrade height 7,946,000 (~2026-11-08 10:00 UTC) |
+| `v5.0.3` | 7,946,000 | head | [`v5.0.3`](../../tree/v5.0.3) | `go1.26.10` | ✔ prop #6 | running on mainnet since 2026-11-08 (upgrade block time 09:57:27 UTC) |
 
-`v5.0.1` (tag `v5.0.1`, the `main` branch) is the binary mainnet runs today. Nodes switched to it one
-at a time from 2026-08-28, with no proposal and no halt, so it has no single start height. It is
-app-hash-identical to `v5.0.0` and owns no separate replay range — a `v5.0.0` binary re-executes the same
-blocks to the same hashes. Run `v5.0.1`: it carries a security fix. See *What each version changes* below.
+`v5.0.3` (tag `v5.0.3`) is the binary mainnet runs today, from the governance upgrade at block 7,946,000
+on 2026-11-08. Before it, `v5.0.1` ran from 2026-08-28: nodes switched to it one at a time, with no
+proposal and no halt, so it has no single start height. It is app-hash-identical to `v5.0.0` and owns no
+separate replay range — a `v5.0.0` binary re-executes the same blocks to the same hashes. Use `v5.0.1`
+(or `v5.0.0`) up to 7,945,999 and `v5.0.3` from 7,946,000. See *What each version changes* below.
 
 Every source up to `v5.0.0` is a tag with a matching branch, `phase/<tag>`, and is only tagged once a node
 has re-executed its range from block 1 and matched mainnet. `v5.0.1` is tag `v5.0.1` on `main`, verified
