@@ -1,6 +1,6 @@
 module stoc
 
-go 1.26.10
+go 1.26.11
 
 replace (
 	// required by cosmos/evm v0.6.0
