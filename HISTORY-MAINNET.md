@@ -4,10 +4,10 @@
 
 Which source produced which range of blocks, from genesis to the current head.
 
-Mainnet has run **nine** binaries since it launched on 2025-04-24. Only **four** of those changes
+Mainnet has run **ten** binaries since it launched on 2025-04-24. Only **five** of those changes
 went through governance; the other five were swapped in without a proposal, so nothing on chain records
 them. Anyone replaying the chain from block 1 needs every one up to `v5.0.0`, in order, then `v5.0.3` from
-block 7,946,000, or their app hash diverges and the node stops.
+block 7,946,000 and `v5.0.4` from block 8,126,220, or their app hash diverges and the node stops.
 
 Replaying up to `v5.0.0` takes **eight** steps for seven binaries, because no single source reproduces
 the `v2-evm` range on its own. See the `v2-evm` note below — two sources in sequence reproduce the same
@@ -33,15 +33,16 @@ comparing app hashes, not from any on-chain record.
 | `v2-evm` *(tail)* | 4,699,538 | 4,705,315 | [`v2-evm-tail`](../../tree/phase/v2-evm-tail) | `go1.24.3` | — | replay-verified |
 | `v3` | 4,705,316 | 4,794,076 | [`v3`](../../tree/phase/v3) | `go1.24.3` | ✔ prop #4 | replay-verified |
 | `v3.1` | 4,794,077 | 6,408,099 | [`v3.1`](../../tree/phase/v3.1) | `go1.24.3` | — | replay-verified |
-| `v5.0.0` | 6,408,100 | head | [`v5.0.0`](../../tree/phase/v5.0.0) | `go1.25.8` | ✔ prop #5 | replay-verified |
+| `v5.0.0` | 6,408,100 | 7,945,999 | [`v5.0.0`](../../tree/phase/v5.0.0) | `go1.25.8` | ✔ prop #5 | replay-verified |
 | `v5.0.1` | rolling swap from 2026-08-28 | 7,945,999 | [`v5.0.1`](../../tree/v5.0.1) | `go1.25.8` | — | app-hash-identical to `v5.0.0` |
-| `v5.0.3` | 7,946,000 | head | [`v5.0.3`](../../tree/v5.0.3) | `go1.26.10` | ✔ prop #6 | running on mainnet since 2026-11-08 (upgrade block time 09:57:27 UTC) |
+| `v5.0.3` | 7,946,000 | 8,126,219 | [`v5.0.3`](../../tree/v5.0.3) | `go1.26.10` | ✔ prop #6 | superseded by `v5.0.4` at 8,126,220 (ran on mainnet from 2026-11-08, upgrade block time 09:57:27 UTC) |
+| `v5.0.4` | 8,126,220 | head | [`v5.0.4`](../../tree/v5.0.4) | `go1.26.11` | ✔ prop #9 | running on mainnet since 2026-11-20 (upgrade block time 05:57:34 UTC) |
 
-`v5.0.3` (tag `v5.0.3`) is the binary mainnet runs today, from the governance upgrade at block 7,946,000
-on 2026-11-08. Before it, `v5.0.1` ran from 2026-08-28: nodes switched to it one at a time, with no
+`v5.0.4` (tag `v5.0.4`) is the binary mainnet runs today, from the governance upgrade at block 8,126,220
+on 2026-11-20. Before it, `v5.0.3` ran from the governance upgrade at block 7,946,000 on 2026-11-08, and before that `v5.0.1` ran from 2026-08-28: nodes switched to it one at a time, with no
 proposal and no halt, so it has no single start height. It is app-hash-identical to `v5.0.0` and owns no
 separate replay range — a `v5.0.0` binary re-executes the same blocks to the same hashes. Use `v5.0.1`
-(or `v5.0.0`) up to 7,945,999 and `v5.0.3` from 7,946,000. See *What each version changes* below.
+(or `v5.0.0`) up to 7,945,999, `v5.0.3` from 7,946,000 to 8,126,219, and `v5.0.4` from 8,126,220. See *What each version changes* below.
 
 Every source up to `v5.0.0` is a tag with a matching branch, `phase/<tag>`, and is only tagged once a node
 has re-executed its range from block 1 and matched mainnet. `v5.0.1` is tag `v5.0.1` on `main`, verified
@@ -108,6 +109,36 @@ inferred.
   `d81a0a023d6ce0deb7d2f4581738b5693b3934ee5b3424b988b75d6db873a2f5`, the same hash written in the proposal's
   plan `info`. Run `v5.0.1` up to block 7,945,999; the v5.0.1 node halts at 7,946,000 with
   `UPGRADE "v5.0.3" NEEDED` and must be restarted on `v5.0.3`.
+- **v5.0.4** — governance upgrade `v5.0.4` (proposal #9, "Upgrade to v5.0.4 (one-time burn of 3,000,000,000 STOC)",
+  height **8,126,220**; voting ended 2026-11-19 10:42:15 UTC, passed). Consensus-wise it is the `v5.0.3` code plus one
+  upgrade handler: at the upgrade block it burns a fixed amount of `ustoc` from seven Foundation wallets, once,
+  3,000,000,000 STOC in total. No transaction is involved, so there is no transaction hash; the record is the block's
+  finalize-block events — seven `upgrade_v504_foundation_burn` events (address, category, amount, denom) and one
+  `upgrade_v504_foundation_burn_summary` event (total_burned, supply_before, supply_after). Total supply went from
+  4,999,908,035.101895 STOC to 1,999,908,035.101895 STOC (`ustoc` 4999908035101895 → 1999908035101895). Go 1.26.11
+  (the only `go.mod` change from `v5.0.3`). Source: tag `v5.0.4`, commit
+  `e1821104bcbd1b9ec926e78e3a3f32d58ab3898f`. Release binary (linux/amd64) SHA256
+  `11a2a2f51204d5fb67e565d19a55211d7e94c320a6895e738ff1a0f7368ce547`. Run `v5.0.3` up to block 8,126,219; the
+  `v5.0.3` node halts at 8,126,220 with `UPGRADE "v5.0.4" NEEDED` and must be restarted on `v5.0.4`. A `v5.0.4`
+  binary started before 8,126,220 stops with `BINARY UPDATED BEFORE TRIGGER`.
+
+  The upgrade block's header time is 2026-11-20T05:57:34Z (block 8,126,219 is at 05:57:29Z). The chain halted at
+  8,126,220, validators switched binaries and it resumed about a minute later; the app hash at block 8,126,225
+  matched on every node checked.
+
+  Amounts burned per wallet (total 3,000,000,000 STOC):
+
+  - `stoc18tfsgxy6hx6jy3dmcq49m7ex398hn926h83jqk` — Seed & Private Sales — 300,000,000 STOC
+  - `stoc1xevdypv5xmcjv8rw87c87j7ac5ljyzjjwdedql` — Team & Advisor — 550,000,001 STOC
+  - `stoc1adgm0sjpesjafvqgz0xj2na8z0u4fdepza3ddz` — Public sales — 150,000,000 STOC
+  - `stoc1xmgghfl5c7ww2tk52fsd8s65xsffpl67qj4hp9` — Liquidity & Exchange — 150,000,000 STOC
+  - `stoc13qn7rhcwdy42n3ay28a09jfhgesgw8jahy2dgn` — Staking Rewards — 900,000,000 STOC
+  - `stoc1yk6cwrmxfajcj8rgk4v6kzv0fytyv48me66qx7` — Development fund — 649,999,999 STOC
+  - `stoc103rm28zu9fxndzaxuapuu36y7ejyzxe42kttpc` — Community rewards — 300,000,000 STOC
+
+  To verify it yourself: read `finalize_block_events` from `/block_results?height=8126220` on any RPC, compare the
+  seven wallets' balances at heights 8,126,219 and 8,126,220, and check that
+  `/cosmos/upgrade/v1beta1/applied_plan/v5.0.4` returns `8126220`.
 
 ## Three things that will cost you a day if you miss them
 
@@ -207,7 +238,7 @@ loop instead of stopping. The wrong hash is already committed by then.
 
 ## Building
 
-`GOTOOLCHAIN=go1.24.3` builds every tag except `v5.0.0` and `v5.0.1`, whose `go.mod` requires go ≥ 1.25.8, and `v5.0.3`, which requires go ≥ 1.26.10. Do not
+`GOTOOLCHAIN=go1.24.3` builds every tag except `v5.0.0` and `v5.0.1`, whose `go.mod` requires go ≥ 1.25.8, `v5.0.3`, which requires go ≥ 1.26.10, and `v5.0.4`, which requires go ≥ 1.26.11. Do not
 simply use the newest Go for all of them — `v1.1` fails to compile on Go 1.25, because
 `bytedance/sonic` v1.13.2 reaches into runtime internals that release removed.
 
@@ -231,6 +262,10 @@ CGO_ENABLED=1 GOTOOLCHAIN=go1.25.8 go build -o ~/stocd-bins/stocd_v5.0.1 ./cmd/s
 # From the v5.0.3 upgrade height (7,946,000) on.
 git checkout v5.0.3
 CGO_ENABLED=1 GOTOOLCHAIN=go1.26.10 go build -o ~/stocd-bins/stocd_v5.0.3 ./cmd/stocd
+
+# From the v5.0.4 upgrade height (8,126,220) on.
+git checkout v5.0.4
+CGO_ENABLED=1 GOTOOLCHAIN=go1.26.11 go build -o ~/stocd-bins/stocd_v5.0.4 ./cmd/stocd
 ```
 
 Each tag also has a branch of the same name under `phase/`, for example `git checkout phase/v3`.
@@ -297,7 +332,7 @@ snapshot restores in under an hour and needs none of the above:
 
 ```bash
 git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
-cd STOC-Blockchain-Mainnet && git checkout v5.0.3 && make install
+cd STOC-Blockchain-Mainnet && git checkout v5.0.4 && make install
 
 stocd init <moniker> --chain-id stoc
 curl -s https://api-stoc-mainnet.stochainscan.io/rpc/genesis | jq '.result.genesis' > ~/.stoc/config/genesis.json
