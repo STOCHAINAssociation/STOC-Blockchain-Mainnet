@@ -2,7 +2,7 @@
 
 STOChain is a high-performance blockchain with full EVM (Ethereum Virtual Machine) compatibility, built on Cosmos SDK v0.53.6 and CometBFT consensus.
 
-> **Current release: `v5.0.3`** — security release, governance upgrade `v5.0.3` (proposal #6) applied at block **7,946,000** on 2026-11-08. Backports the upstream cosmos/evm v0.6.4 security fixes. Release binary (linux/amd64) SHA256 `d81a0a023d6ce0deb7d2f4581738b5693b3934ee5b3424b988b75d6db873a2f5`; needs Go ≥ 1.26.10 to build. Binary history per network: [mainnet](./HISTORY-MAINNET.md), [testnet](./HISTORY-TESTNET.md).
+> **Current release: `v5.0.4`** — governance upgrade `v5.0.4` (proposal #9) applied at block **8,126,220** on 2026-11-20: a one-time burn of 3,000,000,000 STOC from 7 Foundation wallets, executed by the upgrade handler (no transaction; recorded as `upgrade_v504_foundation_burn` events in that block). Release binary (linux/amd64) SHA256 `11a2a2f51204d5fb67e565d19a55211d7e94c320a6895e738ff1a0f7368ce547`; needs Go ≥ 1.26.11 to build. Binary history per network: [mainnet](./HISTORY-MAINNET.md), [testnet](./HISTORY-TESTNET.md).
 
 ## Features
 
@@ -45,7 +45,7 @@ ignite chain serve
 # Clone the public repository and check out the current release tag
 git clone https://github.com/STOCHAINAssociation/STOC-Blockchain-Mainnet.git
 cd STOC-Blockchain-Mainnet
-git checkout v5.0.3
+git checkout v5.0.4
 
 # Build binary (Go only — no buf/protoc needed; proto is generated + committed)
 make install
@@ -56,7 +56,7 @@ stocd version
 
 ### Source by Phase
 
-`main` is the current release, `v5.0.3`. Each earlier binary that ran on mainnet has a tag and a branch, kept so the chain can be replayed from genesis. [HISTORY-MAINNET.md](./HISTORY-MAINNET.md) gives the exact block ranges and the replay order.
+`main` is the current release, `v5.0.4`. Each earlier binary that ran on mainnet has a tag and a branch, kept so the chain can be replayed from genesis. [HISTORY-MAINNET.md](./HISTORY-MAINNET.md) gives the exact block ranges and the replay order.
 
 | Branch | Tag | Mainnet blocks | Go |
 |---|---|---|---|
@@ -69,7 +69,8 @@ stocd version
 | [`phase/v3.1`](../../tree/phase/v3.1) | `v3.1` | 4,794,077 – 6,408,099 | 1.24.3 |
 | [`phase/v5.0.0`](../../tree/phase/v5.0.0) | `v5.0.0` | 6,408,100 – 7,945,999 | 1.25.8 |
 | — | `v5.0.1` | same as `v5.0.0` (app-hash-identical) | 1.25.8 |
-| `main` | `v5.0.3` | 7,946,000 – head | 1.26.10 |
+| — | `v5.0.3` | 7,946,000 – 8,126,219 | 1.26.10 |
+| `main` | `v5.0.4` | 8,126,220 – head | 1.26.11 |
 
 ### Run a Node
 

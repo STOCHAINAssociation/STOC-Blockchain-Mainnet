@@ -219,6 +219,11 @@ const (
 	//     state are unchanged (mainnet: enable_erc20=true,
 	//     permissionless_registration=true, 0 token pairs).
 	UpgradeNameV503 = "v5.0.3"
+
+	// UpgradeNameV504 is a one-time foundation burn: the handler burns a fixed
+	// amount of ustoc from 7 hardcoded foundation wallets (see
+	// v504FoundationBurns). It changes no module, parameter or store layout.
+	UpgradeNameV504 = "v5.0.4"
 )
 
 // RegisterUpgradeHandlers registers the upgrade handlers for the app.
@@ -398,6 +403,9 @@ func (app *App) RegisterUpgradeHandlers() {
 	// applies the matching state changes.
 	app.UpgradeKeeper.SetUpgradeHandler(UpgradeNameV503, app.upgradeHandlerV503)
 
+	// v5.0.4: one-time foundation burn (see UpgradeNameV504).
+	app.UpgradeKeeper.SetUpgradeHandler(UpgradeNameV504, app.upgradeHandlerV504)
+
 	upgradeInfo, err := app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
 	if err != nil {
 		panic(fmt.Sprintf("failed to read upgrade info from disk: %s", err))
@@ -417,7 +425,7 @@ func (app *App) RegisterUpgradeHandlers() {
 		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
 	}
 
-	// v3-fix-evm-denom + v5.0.0 + v5.0.3: no new stores needed.
+	// v3-fix-evm-denom + v5.0.0 + v5.0.3 + v5.0.4: no new stores needed.
 }
 
 // upgradeHandlerV503 is the v5.0.3 upgrade handler. Idempotent: running it
